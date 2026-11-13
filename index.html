@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Finans Pusulası: bütçe, birikim ve helal yatırım planı. Veriler yalnızca bu cihazda.">
+<meta name="theme-color" content="#1f6feb">
+<title>Finans Pusulası</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6feb'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial'%3E₺%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<a class="skip" href="#main">İçeriğe geç</a>
+<header class="top">
+  <div class="top-in">
+    <div class="logo"><span class="dot" aria-hidden="true">₺</span> Finans Pusulası</div>
+    <div class="switch" role="group" aria-label="Görünüm seçimi">
+      <button type="button" id="view-simple" aria-pressed="true">Sade görünüm</button>
+      <button type="button" id="view-detailed" aria-pressed="false">Detaylı görünüm</button>
+    </div>
+  </div>
+  <nav class="tabs" aria-label="Bölümler">
+    <a href="#ozet" data-tab="ozet">Özet</a>
+    <a href="#butce" data-tab="butce">Bütçe</a>
+    <a href="#varliklar" data-tab="varliklar">Varlıklar ve hedef</a>
+    <a href="#islemler" data-tab="islemler">İşlemler</a>
+    <a href="#veri" data-tab="veri">Veri ekle</a>
+    <a href="#asistan" data-tab="asistan">Yapay zekâ asistanı</a>
+    <a href="#ayarlar" data-tab="ayarlar">Ayarlar ve yedek</a>
+  </nav>
+</header>
+<main id="main" tabindex="-1">
+  <div id="banner"></div>
+  <div id="view" aria-live="polite"><p class="muted">Yükleniyor…</p></div>
+</main>
+<footer class="disc">
+  Bu uygulama bir hesaplama ve planlama aracıdır; yatırım tavsiyesi değildir. Getiri ve enflasyon rakamları varsayımdır, gerçek piyasa fiyatı içermez.
+  Helal (faizsiz) uygunluk için ürünün ilgili kurumun danışma kurulu onayını ayrıca kontrol et. Verilerin yalnızca bu cihazda saklanır.
+</footer>
+<div id="toast-root" aria-live="assertive"></div>
+<script src="js/money.js" defer></script>
+<script src="js/calc.js" defer></script>
+<script src="js/importparse.js" defer></script>
+<script src="js/sample.js" defer></script>
+<script src="js/store.js" defer></script>
+<script src="js/ai.js" defer></script>
+<script src="js/app.js" defer></script>
+</body>
+</html>
