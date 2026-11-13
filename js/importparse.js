@@ -241,8 +241,11 @@
     sel.forEach(function (r) { if (r.amount >= 0) income = M.add(income, r.amount); else expense = M.add(expense, -r.amount); });
     var res = { count: sel.length, income: income, expense: expense, net: M.sub(income, expense) };
     if (docTotal != null) {
-      var cmp = expense > 0 ? expense : income;
-      res.docTotal = docTotal; res.diff = M.sub(cmp, docTotal); res.match = res.diff === 0;
+      // Belge toplamı ya giderlerin toplamıdır ya da (kart ekstresinde ödemeler düşülmüş) net tutardır; ikisinden biri tutarsa doğru.
+      var cmp = expense > 0 ? expense : income, absNet = res.net < 0 ? -res.net : res.net;
+      var d1 = M.sub(cmp, docTotal), d2 = M.sub(absNet, docTotal);
+      res.docTotal = docTotal; res.match = d1 === 0 || (income > 0 && expense > 0 && d2 === 0);
+      res.diff = res.match ? 0 : d1; res.byNet = d1 !== 0 && res.match;
     }
     return res;
   }

@@ -5,6 +5,8 @@
   var C = isNode ? require('../js/calc.js') : root.Calc;
   var P = isNode ? require('../js/importparse.js') : root.ImportParse;
   var S = isNode ? require('../js/sample.js') : root.Sample;
+  var L = isNode ? require('../js/ledger.js') : root.Ledger;
+  var V1 = isNode ? require('./fixture-v1.js') : root.FIXTURE_V1;
   var results = [];
   function test(name, fn) { try { fn(); results.push({ name: name, ok: true }); } catch (e) { results.push({ name: name, ok: false, err: e.message }); } }
   function eq(a, b, msg) { var A = JSON.stringify(a), B = JSON.stringify(b); if (A !== B) throw new Error((msg || '') + ' beklenen ' + B + ', gelen ' + A); }
@@ -40,7 +42,7 @@
   test('parseDate geçersiz tarihler', function () { eq(P.parseDate('31.02.2026'), null); eq(P.parseDate('29.02.2025'), null); eq(P.parseDate('29.02.2024'), '2024-02-29'); eq(P.parseDate('13.13.2026'), null); eq(P.parseDate('merhaba'), null); });
 
   // ---- Hesaplar ----
-  var st = S.exampleState('2026-11');
+  var st = S.validateState(JSON.parse(JSON.stringify(V1))); // v1 örnek yedeği, v2'ye göç ettirilmiş hâliyle (regresyon)
   var an = C.analyze(st, '2026-11');
   test('örnek bütçe: fazla 15.000 TL', function () { eq(an.budget.income, 6000000); eq(an.budget.fixed, 3500000); eq(an.budget.variable, 1000000); eq(an.budget.surplus, 1500000); eq(an.budget.savingsRateBp, 2500); });
   test('örnek varlık toplamı 400.000 TL', function () { eq(an.assets.total, 40000000); eq(an.assets.netWorth, 40000000); });
@@ -109,11 +111,239 @@
     var r = P.parseReceiptText(txt);
     eq(r.date, '2026-11-12'); eq(r.docTotal, 5750); eq(r.rows.length, 3); eq(r.rows.map(function (x) { return x.amount; }), [-750, -3250, -1750]); eq(r.rows[0].description, 'EKMEK');
     r.rows.forEach(function (x) { x.include = true; }); ok(P.totalsCheck(r.rows, r.docTotal).match);
+    var tcn = P.totalsCheck([{ include: true, amount: -631588 }, { include: true, amount: 300000 }], 331588); ok(tcn.match && tcn.byNet && tcn.diff === 0, 'ödemeler düşülmüş ekstre toplamı');
+    ok(!P.totalsCheck([{ include: true, amount: -631588 }, { include: true, amount: 300000 }], 331500).match);
   });
 
   test('fiş OCR gürültüsü', function () {
     var r = P.parseReceiptText('ÖRNEK MARKET\nTARİH: 12.11.2026\nEKMEK %1 *7,50\nSÜT 1L S1  *32,50\nDETERJAN 520  *17,50\nTOPKDV *4,12\nTOPLAM *57,:50\nNAKIT *60,00');
     eq(r.docTotal, 5750); eq(r.rows.map(function (x) { return x.description; }), ['EKMEK', 'SÜT 1L', 'DETERJAN']);
+  });
+
+
+  // ================= Bütçe v2 (ledger.js) =================
+  var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
+  var nid = 0, uidT = function () { return 't' + (++nid); };
+
+  // ---- Para birimi ----
+  test('kur çevirme: USD, EUR, gram altın', function () {
+    var rates = { USD: { rate: 4250, date: '2026-11-13' }, EUR: { rate: 4900, date: '2026-11-13' }, XAU: { rate: 540000, date: '2026-11-13' } };
+    eq(L.toTRY(100000, 'USD', rates), 4250000);          // 1.000 USD × 42,50 = 42.500 TL
+    eq(L.toTRY(1250, 'XAU', rates), 6750000);            // 12,50 gr × 5.400 = 67.500 TL
+    eq(L.toTRY(1, 'USD', { USD: { rate: 4257, date: '2026-11-13' } }), 43); // 0,01 USD × 42,57 = 0,4257 TL → 43 kuruş
+    eq(L.toTRY(-1, 'USD', { USD: { rate: 4257, date: '2026-11-13' } }), -43);
+    eq(L.toTRY(12345, 'TRY', {}), 12345);
+    eq(L.toTRY(100, 'EUR', {}), null, 'kur yoksa null');
+    eq(L.toTRY(100, 'EUR', { EUR: { rate: 0, date: '2026-11-13' } }), null, 'sıfır kur geçersiz');
+    eq(L.formatCur(1250, 'XAU'), '12,50 gr altın'); eq(L.formatCur(100000, 'USD'), '1.000,00 USD'); eq(L.rateAgeDays(rates, 'USD', '2026-11-20'), 7);
+  });
+  test('kur çevirme float hatası yok (büyük tutar)', function () { eq(L.toTRY(123456789012, 'USD', { USD: { rate: 4250, date: '2026-01-01' } }), 5246913533010); });
+
+  // ---- Taksit ----
+  test('taksit bölme: toplam korunur, kuruşlar ilk taksitlere', function () {
+    eq(L.installmentParts(2499999, 6), [416667, 416667, 416667, 416666, 416666, 416666]);
+    eq(L.installmentParts(4200000, 12).every(function (x) { return x === 350000; }), true);
+    eq(L.installmentParts(100, 3), [34, 33, 33]); eq(L.installmentParts(5, 1), [5]);
+    for (var i = 0; i < 300; i++) { var t = Math.floor(Math.random() * 1e10) + 60, n = 1 + Math.floor(Math.random() * 60); var p = L.installmentParts(t, n); eq(M.sum(p), t); ok(p[0] - p[n - 1] <= 1); }
+  });
+  test('taksit durumu: bu ay, kalan, gelecek', function () {
+    var plan = { total: 4200000, count: 12, firstYm: '2026-07' }, s = L.installmentStatus(plan, '2026-11');
+    eq(s.paidCount, 4); eq(s.thisMonth, 350000); eq(s.remainingCount, 8); eq(s.remaining, 2800000); eq(s.future, 2450000); eq(s.lastYm, '2027-06');
+    eq(M.add(s.paid, s.remaining), plan.total);
+    var done = L.installmentStatus(plan, '2027-07'); ok(done.done); eq(done.remaining, 0);
+    var nys = L.installmentStatus({ total: 300, count: 3, firstYm: '2027-01' }, '2026-11'); ok(nys.notStarted); eq(nys.thisMonth, 0); eq(nys.future, 300);
+  });
+  test('aylık taksit yükü (tüm kartlar)', function () {
+    var st2 = { installments: [{ cardId: 'a', total: 600, count: 3, firstYm: '2026-11' }, { cardId: 'b', total: 1000, count: 2, firstYm: '2026-12' }] };
+    var b = L.installmentBurden(st2, '2026-11', 4);
+    eq(b.map(function (x) { return x.total; }), [200, 700, 700, 0]); eq(b[1].byCard, { a: 200, b: 500 });
+    eq(L.futureInstallmentsForCard(st2, 'a', '2026-11'), 400);
+  });
+  test('ekstrede taksit ifadesini tanıma', function () {
+    eq(L.detectInstallment('MEDIAMARKT TAKSİT 2/6'), { no: 2, count: 6 }); eq(L.detectInstallment('TEKNOSA 3/12 TK'), { no: 3, count: 12 });
+    eq(L.detectInstallment('IKEA (1/6)'), { no: 1, count: 6 }); eq(L.detectInstallment('Taksit 02/06 Boyner'), { no: 2, count: 6 });
+    eq(L.detectInstallment('Market 13/11'), null); eq(L.detectInstallment('TAKSIT 7/6'), null); eq(L.detectInstallment('13/11/2026 TAKSİT'), null);
+  });
+
+  // ---- Kredi kartı ----
+  test('kart son ödeme tarihi', function () {
+    eq(L.cardDueDate('2026-11', 5, 15), '2026-11-15'); eq(L.cardDueDate('2026-11', 25, 5), '2026-12-05');
+    eq(L.cardDueDate('2027-01', 20, 31), '2027-01-31'); eq(L.cardDueDate('2027-01', 31, 28), '2027-02-28'); eq(L.cardDueDate('2028-01', 31, 30), '2028-02-29');
+    eq(L.nextStatementDate('2026-11-13', 5), '2026-12-05'); eq(L.nextStatementDate('2026-11-13', 20), '2026-11-20'); eq(L.nextStatementDate('2027-02-10', 31), '2027-02-28');
+  });
+  test('kart durumu: kalan ekstre borcu, limit, uyarı', function () {
+    var card = { id: 'c', type: 'card', currency: 'TRY', balance: -1073050, card: { statementDay: 5, dueDay: 15, limit: 8000000, statementDebt: 1248050, statementYm: '2026-11', paid: 500000, remindDays: 3 } };
+    var st2 = { accounts: [card], installments: [{ cardId: 'c', total: 600000, count: 3, firstYm: '2026-11' }] };
+    var cs = L.cardStatus(st2, card, '2026-11-13');
+    eq(cs.remaining, 748050); eq(cs.daysLeft, 2); eq(cs.level, 'soon'); eq(cs.futureInstallments, 400000); eq(cs.used, 1473050); eq(cs.available, 6526950);
+    eq(L.cardStatus(st2, card, '2026-11-01').level, 'later'); eq(L.cardStatus(st2, card, '2026-11-15').level, 'today'); eq(L.cardStatus(st2, card, '2026-11-16').level, 'overdue');
+    card.card.paid = 1248050; eq(L.cardStatus(st2, card, '2026-11-16').level, 'ok');
+  });
+
+  // ---- Kategori sınırları ----
+  test('sınır uyarı eşikleri (%80 ve %100) kesin', function () {
+    eq(L.limitLevel(7999, 10000), 'ok'); eq(L.limitLevel(8000, 10000), 'warn'); eq(L.limitLevel(10000, 10000), 'warn'); eq(L.limitLevel(10001, 10000), 'over');
+    eq(L.limitLevel(79999, 100000), 'ok', '%79,999 yuvarlanıp uyarı vermemeli'); eq(L.limitLevel(0, 0), null);
+    eq(L.limitLevel(9007199254740991, 9007199254740990), 'over');
+    var s = L.limitStatus(12000, 10000); eq(s.remaining, -2000); eq(s.usedBp, 12000); ok(L.limitStatus(10000, 10000).atLimit);
+  });
+  test('kategori sınırı: harcanan + bekleyen düzenli ödeme', function () {
+    var st2 = { transactions: [{ id: 'x', date: '2026-11-03', amount: -50000, category: 'Abonelik/Eğlence' }, { id: 'y', date: '2026-11-04', amount: -500000, category: 'Market' }],
+      limits: { 'Abonelik/Eğlence': 65000, 'Market': 600000, 'Giyim': 0 },
+      recurring: [{ id: 'r', name: 'Dizi platformu', direction: 'expense', amount: 20000, category: 'Abonelik/Eğlence', freq: 'monthly', day: 20, startYm: '2026-01', skipped: [] }] };
+    var cl = L.categoryLimits(st2, '2026-11', '2026-11-13');
+    eq(cl.length, 2); eq(cl[0].category, 'Market'); eq(cl[0].level, 'warn');
+    var ab = cl[1]; eq(ab.level, 'ok'); eq(ab.expected, 20000); eq(ab.projected, 70000); eq(ab.projectedLevel, 'over');
+  });
+
+  // ---- Düzenli ödemeler ----
+  var RC = { id: 'r1', name: 'Kira', direction: 'expense', amount: 2000000, category: 'Kira/Konut', freq: 'monthly', everyMonths: 1, day: 31, startYm: '2026-09', endYm: '2027-02', skipped: [], remindDays: 3 };
+  test('düzenli ödeme tarihleri: aylık, yıllık, N ayda bir, ay sonu', function () {
+    eq(L.occurrence(RC, '2026-08'), null); eq(L.occurrence(RC, '2026-09').date, '2026-09-30'); eq(L.occurrence(RC, '2027-02').date, '2027-02-28'); eq(L.occurrence(RC, '2027-03'), null);
+    var y = { freq: 'yearly', day: 15, startYm: '2026-03' }; eq(L.occurrence(y, '2027-03').date, '2027-03-15'); eq(L.occurrence(y, '2027-04'), null);
+    var c = { freq: 'custom', everyMonths: 3, day: 1, startYm: '2026-11' }; eq(['2026-11', '2026-12', '2027-01', '2027-02'].map(function (m) { return !!L.occurrence(c, m); }), [true, false, false, true]);
+    eq(L.occurrence({ freq: 'monthly', day: 1, startYm: '2026-01', active: false }, '2026-11'), null);
+  });
+  test('düzenli ödeme durumları ve eşleşme', function () {
+    var st2 = { recurring: [clone(RC), { id: 'r2', name: 'Elektrik faturası', direction: 'expense', amount: 95000, category: 'Faturalar', freq: 'monthly', day: 5, startYm: '2026-01', skipped: [] },
+      { id: 'r3', name: 'İnternet', direction: 'expense', amount: 45000, category: 'Faturalar', freq: 'monthly', day: 15, startYm: '2026-01', skipped: [] },
+      { id: 'r4', name: 'Spor salonu', direction: 'expense', amount: 80000, category: 'Diğer', freq: 'monthly', day: 1, startYm: '2026-01', skipped: ['2026-11'] }],
+      transactions: [{ id: 'k', date: '2026-11-02', amount: -2000000, category: 'Kira/Konut', recurringId: 'r1', period: '2026-11', description: 'Kira' },
+        { id: 'e', date: '2026-11-06', amount: -96040, category: 'Faturalar', description: 'ENERJISA ELEKTRIK' },
+        { id: 'z', date: '2026-11-06', amount: -96040, category: 'Market', description: 'Migros' }] };
+    var occ = L.occurrencesForMonth(st2, '2026-11', '2026-11-13'), by = {}; occ.forEach(function (o) { by[o.item.id] = o; });
+    eq(by.r1.status, 'paid'); eq(by.r2.status, 'matched'); eq(by.r2.match.id, 'e'); eq(by.r3.status, 'soon'); eq(by.r4.status, 'skipped');
+    eq(L.occurrencesForMonth(st2, '2026-11', '2026-11-10').find(function (o) { return o.item.id === 'r3'; }).status, 'later');
+    eq(L.occurrencesForMonth(st2, '2026-11', '2026-11-16').find(function (o) { return o.item.id === 'r3'; }).status, 'overdue');
+    // %10 toleransın dışı eşleşmez
+    eq(L.matchScore(st2.recurring[1], { date: '2026-11-05' }, { date: '2026-11-05', amount: -110000, category: 'Faturalar', description: 'Elektrik' }), -1);
+    eq(L.matchScore(st2.recurring[1], { date: '2026-11-05' }, { date: '2026-11-20', amount: -95000, category: 'Faturalar', description: 'Elektrik' }), -1, '7 günden uzak');
+    eq(L.matchScore(st2.recurring[1], { date: '2026-11-05' }, { date: '2026-11-05', amount: 95000, category: 'Faturalar', description: 'Elektrik' }), -1, 'yön farklı');
+  });
+  test('beklenen kayıt oluşturma: eşleşene bağlar, çift sayım yok, tekrar çalıştırınca boş', function () {
+    var st2 = { recurring: [{ id: 'r2', name: 'Elektrik faturası', direction: 'expense', amount: 95000, category: 'Faturalar', freq: 'monthly', day: 5, startYm: '2026-01', skipped: [] },
+      { id: 'r3', name: 'İnternet', direction: 'expense', amount: 45000, category: 'Faturalar', freq: 'monthly', day: 15, startYm: '2026-01', skipped: [] }],
+      transactions: [{ id: 'e', date: '2026-11-06', amount: -96040, category: 'Faturalar', description: 'Elektrik' }] };
+    var plan = L.generationPlan(st2, '2026-11', '2026-11-13');
+    eq(plan.link.length, 1); eq(plan.link[0].txId, 'e'); eq(plan.create.length, 1); eq(plan.create[0].tx.amount, -45000); eq(plan.create[0].tx.date, '2026-11-15');
+    L.applyGeneration(st2, plan, uidT);
+    eq(st2.transactions.length, 2); eq(st2.transactions[0].recurringId, 'r2');
+    eq(C.monthActuals(st2.transactions, '2026-11').expense, 141040, 'elektrik bir kez sayılır');
+    var again = L.generationPlan(st2, '2026-11', '2026-11-13'); eq(again.create.length + again.link.length, 0);
+    L.applyGeneration(st2, plan, uidT); eq(st2.transactions.length, 2, 'aynı plan iki kez uygulansa da çift kayıt yok');
+  });
+  test('içe aktarılan gerçek işlem beklenen kaydın yerine geçer', function () {
+    var txs = [{ id: 'g', date: '2026-11-15', amount: -45000, category: 'Faturalar', description: 'İnternet', source: 'düzenli', recurringId: 'r3', period: '2026-11' }];
+    var rows = [{ date: '2026-11-16', amount: -45000, description: 'TURK TELEKOM INTERNET', category: 'Faturalar' }, { date: '2026-11-16', amount: -45000, description: 'Kitap', category: 'Eğitim' }];
+    L.reconcileImported(rows, txs); eq(rows[0].replaces.id, 'g'); eq(rows[1].replaces, null);
+    var rows2 = [{ date: '2026-11-16', amount: -45000, description: 'internet', category: 'Faturalar' }, { date: '2026-11-17', amount: -45000, description: 'internet', category: 'Faturalar' }];
+    L.reconcileImported(rows2, txs); eq(rows2.filter(function (r) { return r.replaces; }).length, 1, 'bir beklenen kayıt yalnızca bir kez değiştirilir');
+  });
+  test('yaklaşan ödemeler ve rozet sayısı', function () {
+    var ex = S.exampleState('2026-11', '2026-11-13');
+    var up = L.upcoming(ex, '2026-11-13', 30);
+    ok(up.length > 0); ok(up.every(function (x, i) { return i === 0 || up[i - 1].date <= x.date; }), 'tarih sıralı');
+    ok(up.some(function (x) { return x.kind === 'card' && x.level === 'soon' && x.amount === -748050; }), 'kart son ödeme uyarısı');
+    ok(up.some(function (x) { return x.kind === 'recurring' && x.title.indexOf('Müzik') === 0 && x.level === 'soon'; }), 'abonelik hatırlatması');
+    ok(!up.some(function (x) { return x.title === 'Kira' && x.period === '2026-11'; }), 'bu ay ödenen kira listede yok');
+    ok(up.some(function (x) { return x.title === 'Kira' && x.period === '2026-12' && x.level === 'later'; }), 'gelecek ayın kirası listede');
+    ok(!up.some(function (x) { return x.title === 'Elektrik faturası' && x.period === '2026-11'; }), 'eşleşen fatura listede yok');
+    ok(L.badgeCount(up) >= 2);
+  });
+
+  // ---- Yıllık giderler (kumbara) ----
+  test('kumbara: aylık ayırma tam ve kuruşu kuruşuna', function () {
+    var f = { amount: 1800000, saved: 900000, dueYm: '2027-04', everyMonths: 12 }, p = L.sinkingPlan(f, '2026-11');
+    eq(p.contributions, 5); eq(p.monthlyNeed, 180000); eq(p.remaining, 900000); eq(M.sum(p.parts), 900000); eq(p.progressBp, 5000); eq(p.steadyMonthly, 150000);
+    var g = { amount: 1000000, saved: 0, dueYm: '2027-02', everyMonths: 12 }, q = L.sinkingPlan(g, '2026-11'); // 10.000 TL / 3 ay
+    eq(q.parts, [333334, 333333, 333333]); eq(M.sum(q.parts), 1000000); eq(q.monthlyNeed, 333334);
+    eq(L.sinkingPlan({ amount: 50000, saved: 10000, dueYm: '2026-11', everyMonths: 12 }, '2026-11').monthlyNeed, 40000, 'ödeme ayı geldiyse kalanın tamamı');
+    ok(L.sinkingPlan({ amount: 50000, saved: 10000, dueYm: '2026-09', everyMonths: 12 }, '2026-11').overdue);
+    var r = L.sinkingPlan({ amount: 50000, saved: 60000, dueYm: '2027-09', everyMonths: 12 }, '2026-11'); ok(r.ready); eq(r.monthlyNeed, 0); eq(r.progressBp, 10000);
+  });
+  test('kumbara: bu ay ayrılınca aylık ihtiyaç değişmez, "şimdi ayır" sıfırlanır', function () {
+    var f = { amount: 1000000, saved: 0, dueYm: '2027-02', everyMonths: 12 }, before = L.sinkingPlan(f, '2026-11');
+    f.saved = before.toSetAsideNow; f.setAsideYm = '2026-11'; f.setAsideAmount = before.toSetAsideNow;
+    var after = L.sinkingPlan(f, '2026-11'); eq(after.monthlyNeed, before.monthlyNeed); eq(after.toSetAsideNow, 0); ok(after.doneThisMonth);
+    var next = L.sinkingPlan(f, '2026-12'); eq(next.monthlyNeed, 333333); eq(M.add(f.saved, M.mulRatio(next.monthlyNeed, 2, 1)), 1000000, 'kalan iki ayda tam kapanır');
+  });
+
+  // ---- Aylık karşılaştırma ----
+  test('aylık karşılaştırma: aynı dönem, geçen ay, 3 ay ortalaması', function () {
+    var txs = [
+      { date: '2026-08-05', amount: -30000, category: 'Market' }, { date: '2026-09-05', amount: -60000, category: 'Market' },
+      { date: '2026-10-05', amount: -90000, category: 'Market' }, { date: '2026-10-20', amount: -10000, category: 'Market' },
+      { date: '2026-11-03', amount: -120000, category: 'Market' }, { date: '2026-11-20', amount: -5000, category: 'Market' },
+      { date: '2026-11-04', amount: -1000, category: 'Transfer' }];
+    var c = L.compareMonths(txs, '2026-11-13'), m = c.rows[0];
+    eq(m.category, 'Market'); eq(m.current, 120000, 'bugünden sonraki işlem sayılmaz'); eq(m.prevSamePeriod, 90000); eq(m.prevFull, 100000);
+    eq(m.avg3, 63333); eq(m.diffSame, 30000); eq(m.diffSameBp, 3333); eq(c.total.current, 120000);
+    var ins = L.insights(c, function (k) { return M.format(k, { noDecimals: true }); });
+    ok(ins.some(function (x) { return /Market harcaman geçen ayın aynı dönemine göre 300 TL arttı/.test(x.text); }));
+    ok(ins.some(function (x) { return /ortalamasını/.test(x.text); }));
+    eq(L.monthSeries(txs, '2026-11', 4).map(function (x) { return x.expense; }), [30000, 60000, 100000, 125000]);
+    eq(L.insights(L.compareMonths([], '2026-11-13'), String)[0].level, 'info');
+  });
+
+  // ---- Hesaplar ve net varlık ----
+  test('hesaplar: TL karşılığı, kart borcu ve gelecek taksitler net varlıktan düşer', function () {
+    var st2 = { rates: { USD: { rate: 4000, date: '2026-11-13' } }, installments: [{ cardId: 'c', total: 300000, count: 3, firstYm: '2026-11' }],
+      accounts: [{ id: 'a', type: 'bank', currency: 'TRY', balance: 1000000, emergency: true }, { id: 'u', type: 'cash', currency: 'USD', balance: 10000 },
+        { id: 'e', type: 'cash', currency: 'EUR', balance: 10000 }, { id: 'c', type: 'card', currency: 'TRY', balance: -50000, card: { statementDay: 1, dueDay: 10, limit: 0, statementDebt: 0, paid: 0 } }] };
+    var s = L.accountsSummary(st2, '2026-11-13');
+    eq(s.assetsTL, 1400000); eq(s.cardDebt, 50000); eq(s.futureInstallments, 200000); eq(s.netTL, 1150000); eq(s.missingRates, ['EUR']);
+    var eff = L.effectiveState({ assets: [], debts: [], expenses: [], accounts: st2.accounts, rates: st2.rates, installments: st2.installments, sinkingFunds: [] }, '2026-11-13');
+    var a = C.assets(eff); eq(a.total, 1400000); eq(a.debts, 250000); eq(a.netWorth, 1150000); eq(a.emergencyEligible, 1000000);
+  });
+  test('analiz: kumbara ve taksitler aylık plana dahil, plan toplamı korunur', function () {
+    var ex = S.exampleState('2026-11', '2026-11-13'), eff = L.effectiveState(ex, '2026-11-13'), an2 = C.analyze(eff, '2026-11');
+    var sink = L.sinkingTotals(ex, '2026-11').monthlyNeed;
+    eq(sink, 180000 + 60000 + 100000 + 250000);
+    ok(eff.expenses.some(function (e) { return e.id === 'auto:sinking' && e.amount === sink; }));
+    var inst = L.installmentBurden(ex, '2026-11', 1)[0].total; eq(inst, 350000 + 416667, 'telefon 5/12 + buzdolabı 2/6');
+    ok(eff.expenses.some(function (e) { return e.id === 'auto:installments' && e.amount === inst; }));
+    eq(an2.budget.expense, M.add(C.budget(ex).expense, sink, inst));
+    var p = an2.plan; eq(M.add(p.toEmergency, p.safe, p.medium, p.risky), p.surplus);
+    eq(M.add(an2.investTotal, an2.emergency.current), an2.assets.total);
+    eq(ex.expenses.filter(function (e) { return e.auto; }).length, 0, 'sanal kalemler asıl veriye yazılmaz');
+  });
+
+  // ---- Şema göçü ve doğrulama ----
+  test('göç: v1 yedeği eksiksiz yüklenir ve sonuçlar değişmez', function () {
+    var v1 = clone(V1), before = C.analyze(clone(V1), '2026-11');
+    var m = S.validateState(v1);
+    eq(m.schema, 2); eq(m.migratedFrom, 1); eq(m.accounts, []); eq(m.recurring, []); eq(m.rates, {}); eq(m.limits, {});
+    eq(m.transactions.length, V1.transactions.length); eq(m.incomes, V1.incomes); eq(m.assets, V1.assets); eq(m.goal, V1.goal);
+    var after = C.analyze(L.effectiveState(m, '2026-11-13'), '2026-11');
+    eq(after.budget, before.budget); eq(after.assets.netWorth, before.assets.netWorth); eq(after.plan, before.plan);
+  });
+  test('göç: yeni sürüm ve bozuk sürüm reddedilir', function () {
+    var threw = ''; try { var x = clone(V1); x.schema = 3; S.validateState(x); } catch (e) { threw = e.message; } ok(/daha yeni/.test(threw), threw);
+    threw = ''; try { var y = clone(V1); delete y.schema; S.validateState(y); } catch (e) { threw = e.message; } ok(/Sürüm/.test(threw), threw);
+  });
+  test('örnek veri (v2) doğrulamadan geçer ve yedek gidiş-dönüşü aynı', function () {
+    var ex = S.exampleState('2026-11', '2026-11-13'), back = S.validateState(JSON.parse(JSON.stringify(ex)));
+    eq(back.accounts.length, 6); eq(back.recurring.length, 7); eq(back.installments.length, 2); eq(back.sinkingFunds.length, 4); eq(JSON.stringify(back), JSON.stringify(ex));
+    ok(ex.transactions.every(function (t) { return t.date <= '2026-11-13'; }), 'bu ayın örnek işlemleri gelecekte değil');
+  });
+  test('sıkı doğrulama yeni alanlardaki hataları yakalar', function () {
+    var base = S.exampleState('2026-11', '2026-11-13');
+    function bad(fn, re) { var s = clone(base); fn(s); var m = ''; try { S.validateState(s); } catch (e) { m = e.message; } ok(re.test(m), 'beklenen hata: ' + re + ' gelen: ' + m); }
+    bad(function (s) { s.accounts[0].balance = -1; }, /eksi/);
+    bad(function (s) { s.accounts[0].balance = 1.5; }, /bakiye/);
+    bad(function (s) { s.accounts[0].currency = 'GBP'; }, /para birimi/);
+    bad(function (s) { s.transfers[0].toId = s.transfers[0].fromId; }, /aynı hesaba/);
+    bad(function (s) { s.transfers[0].amountTo = 1; }, /eşit olmalı/);
+    bad(function (s) { s.installments[0].cardId = 'yok'; }, /kart/);
+    bad(function (s) { s.installments[0].count = 0; }, /taksit sayısı/);
+    bad(function (s) { s.recurring[0].day = 32; }, /gün/);
+    bad(function (s) { s.recurring[0].freq = 'weekly'; }, /sıklık/);
+    bad(function (s) { s.transactions[0].recurringId = 'yok'; }, /düzenli ödeme bulunamadı/);
+    bad(function (s) { var t = clone(s.transactions[0]); t.id = 'dup'; s.transactions.push(t); }, /iki kez/);
+    bad(function (s) { s.sinkingFunds[0].dueYm = '2026-13'; }, /ödeme ayı/);
+    bad(function (s) { s.rates.USD.rate = -5; }, /Kur USD/);
+    bad(function (s) { s.limits.Market = -100; }, /Sınır/);
+    bad(function (s) { s.accounts[5].card.dueDay = 0; }, /son ödeme/);
   });
 
   var passed = results.filter(function (r) { return r.ok; }).length;

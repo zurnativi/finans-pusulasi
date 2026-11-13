@@ -1,7 +1,7 @@
 /* app.js — Arayüz. Hesaplar calc.js'te, para işlemleri money.js'te (tam sayı kuruş). */
 (function () {
   'use strict';
-  var M = window.Money, C = window.Calc, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI;
+  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI;
   var state = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
@@ -73,20 +73,21 @@
     risky: 'Katılım endeksi hisseleri veya katılım hisse senedi fonları, helal ETF\'ler (ör. SPUS, HLAL)'
   };
   function renderDashboard() {
-    var an = C.analyze(state), b = an.budget, a = an.assets, em = an.emergency, g = an.goal, plan = an.plan;
-    var noData = !state.incomes.length && !state.expenses.length && !state.assets.length;
+    var an = analyzeNow(), b = an.budget, a = an.assets, em = an.emergency, g = an.goal, plan = an.plan;
+    var noData = !state.incomes.length && !state.expenses.length && !state.assets.length && !state.accounts.length;
     if (noData) {
       return '<h1>Hoş geldin</h1><div class="card"><p>Henüz veri yok. Başlamak için gelir ve giderlerini, sonra birikimlerini gir. İstersen önce örnek veriyle sistemi tanı.</p>' +
         '<div class="row"><a class="btn primary" href="#butce">Gelir ve gider gir</a><a class="btn" href="#varliklar">Birikimlerimi gir</a><a class="btn" href="#veri">Belgeden aktar</a><button class="btn" data-act="load-example">Örnek veriyi yükle</button></div></div>';
     }
-    var acts = C.actions(an);
+    var ex = extraActions(), acts = ex.filter(function (x) { return x.level === 'danger'; }).concat(C.actions(an), ex.filter(function (x) { return x.level !== 'danger'; }));
     var h = '<h1>Özet <span class="muted" style="font-size:.9rem;font-weight:400">— ' + esc(ymLabel(an.nowYm)) + '</span></h1>';
     h += '<div class="grid kpis">';
-    h += kpi('Net varlığın', tl(a.netWorth), 'Tüm birikimlerin' + (a.debts ? ' − borçların' : '') + '.', 'Sahip olduğun her şeyin bugünkü değeri eksi borçların.');
+    h += kpi('Net varlığın', tl(a.netWorth), 'Tüm birikimlerin' + (a.debts ? ' − borçların' : '') + '.', 'Sahip olduğun her şeyin bugünkü değeri eksi borçların. Hesaplar (kurla TL\'ye çevrilmiş), varlıklar, kart borçları ve henüz ekstreye gelmemiş taksitler dahildir.');
     h += kpi('Her ay artan para', '<span class="' + (b.surplus < 0 ? 'neg' : 'pos') + '">' + tl(b.surplus) + '</span>', 'Gelirinin ' + pct(Math.max(0, b.savingsRateBp)) + '\'ini biriktiriyorsun.', 'Aylık gelir eksi sabit ve değişken giderler. Yatırıma ayrılabilecek tutar.');
     h += kpi('Acil durum fonu', tl(em.current) + ' <span class="muted" style="font-size:1rem">/ ' + tl(em.target) + '</span>', progress(em.progressBp) + (em.shortfall ? 'Eksik: ' + tl(em.shortfall) : 'Tamamlandı ✓'), em.months + ' aylık giderin kadar, kolay çekilebilir bir kenarda tutulan para. İş kaybı veya sağlık gibi beklenmedik durumlar için.');
     h += kpi(esc(g.name) + ' hedefi', tl(g.current) + ' <span class="muted" style="font-size:1rem">/ ' + tl(g.target) + '</span>', progress(g.progressBp) + 'Hedefe ' + monthsLabel(g.monthsLeft) + ' kaldı (' + esc(ymLabel(g.targetYm)) + ').', 'Acil durum fonu ayrıldıktan sonra kalan birikimin hedefe sayılır. Tutar bugünün fiyatlarıyladır.');
     h += '</div>';
+    h += renderOverviewExtras();
 
     h += '<div class="grid two" style="margin-top:14px">';
     h += '<section class="card"><h2>Bu ay ne yapmalıyım?</h2><ul class="actions">' + acts.map(function (x) { return '<li class="lv-' + x.level + '"><span>' + esc(x.text) + '</span></li>'; }).join('') + '</ul>';
@@ -193,8 +194,8 @@
   }
   function delBtn(list, id, name) { return '<button class="btn small danger" data-act="del" data-list="' + list + '" data-id="' + id + '" aria-label="' + esc(name) + ' sil">Sil</button>'; }
   function renderBudget() {
-    var b = C.budget(state);
-    var h = '<h1>Bütçe</h1><p class="hint">Rakamları kutuya yazman yeterli; değişiklik anında kaydedilir. "1.250,50" veya "1250.50" gibi yazabilirsin.</p><div class="grid two">';
+    var E = eff(), b = C.budget(E), autoEx = E.expenses.filter(function (x) { return x.auto; });
+    var h = '<p class="hint">Rakamları kutuya yazman yeterli; değişiklik anında kaydedilir. "1.250,50" veya "1250.50" gibi yazabilirsin.</p><div class="grid two">';
     h += '<section class="card"><h2>Aylık gelirler ' + tip('Eline geçen net tutarlar: maaş, kira geliri, ek iş gibi.') + '</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th class="r">Aylık tutar (TL)</th><th></th></tr></thead><tbody>';
     state.incomes.forEach(function (x) { h += '<tr><td>' + textInput('incomes', x.id, 'name', x.name, 'Gelir adı') + '</td><td>' + moneyInput('incomes', x.id, 'amount', x.amount, x.name + ' tutarı') + '</td><td>' + delBtn('incomes', x.id, x.name) + '</td></tr>'; });
     h += '</tbody><tfoot><tr><th>Toplam</th><th class="r num">' + tl2(b.income) + '</th><th></th></tr></tfoot></table></div><button class="btn" data-act="add" data-list="incomes">+ Gelir ekle</button></section>';
@@ -206,6 +207,9 @@
     h += '</div><section class="card" style="margin-top:14px"><h2>Aylık giderler</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th>Tür</th><th class="r">Aylık tutar (TL)</th><th></th></tr></thead><tbody>';
     state.expenses.forEach(function (x) {
       h += '<tr><td>' + textInput('expenses', x.id, 'name', x.name, 'Gider adı') + '</td><td><select aria-label="Gider türü" data-list="expenses" data-id="' + x.id + '" data-field="type"><option value="fixed"' + (x.type === 'fixed' ? ' selected' : '') + '>Sabit</option><option value="variable"' + (x.type === 'variable' ? ' selected' : '') + '>Değişken</option></select></td><td>' + moneyInput('expenses', x.id, 'amount', x.amount, x.name + ' tutarı') + '</td><td>' + delBtn('expenses', x.id, x.name) + '</td></tr>';
+    });
+    autoEx.forEach(function (x) {
+      h += '<tr class="auto"><td>' + esc(x.name) + ' ' + tip(x.id === 'auto:sinking' ? 'Yıllık giderler kumbarası için bu ay ayrılması gereken tutar. Yıllık giderler sekmesinden hesaplanır; burada değiştirilemez.' : 'Kredi kartı taksitlerinin bu ayki toplamı. Kartlar ve taksitler bölümünden hesaplanır. Kart harcamalarını ayrıca gider olarak yazdıysan taksitleri oraya tekrar ekleme.') + '</td><td><span class="pill info">Sabit · otomatik</span></td><td class="r num">' + tl2(x.amount) + '</td><td><a class="btn small" href="' + (x.id === 'auto:sinking' ? '#butce/yillik' : '#odemeler/kartlar') + '">Gör</a></td></tr>';
     });
     h += '</tbody><tfoot><tr><th colspan="2">Toplam</th><th class="r num">' + tl2(b.expense) + '</th><th></th></tr></tfoot></table></div><button class="btn" data-act="add" data-list="expenses">+ Gider ekle</button></section>';
     // Gerçekleşen vs plan
@@ -222,7 +226,7 @@
   /* ---------- VARLIKLAR ve HEDEF ---------- */
   function renderAssets() {
     var a = C.assets(state);
-    var h = '<h1>Varlıklar ve hedef</h1><p class="hint">Her varlığın bugünkü TL değerini yaz. Uygulama piyasa fiyatı çekmez; değeri sen güncellersin (ör. ayda bir).</p>';
+    var h = '<h1>Varlıklar ve hedef</h1><p class="hint">Her varlığın bugünkü TL değerini yaz. Uygulama piyasa fiyatı çekmez; değeri sen güncellersin (ör. ayda bir). Banka/katılım hesabı, nakit, döviz, altın hesabı ve kredi kartlarını <a href="#hesaplar">Hesaplar</a> bölümünde tut; net varlığa otomatik eklenir (burada tekrar yazma).</p>';
     h += '<section class="card"><h2>Birikimlerim ' + tip('"Acil fon" işaretli varlıklar acil durum fonuna sayılır. Risk seviyesi dağılım hesabında kullanılır.') + '</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th>Tür</th><th>Risk</th><th>Acil fon</th><th class="r">Değer (TL)</th><th></th></tr></thead><tbody>';
     state.assets.forEach(function (x) {
       h += '<tr><td>' + textInput('assets', x.id, 'name', x.name, 'Varlık adı') + '</td><td><select aria-label="Varlık türü" data-list="assets" data-id="' + x.id + '" data-field="cls">' + Object.keys(C.ASSET_CLASSES).map(function (k) { return '<option value="' + k + '"' + (x.cls === k ? ' selected' : '') + '>' + esc(C.ASSET_CLASSES[k].label) + '</option>'; }).join('') + '</select></td>' +
@@ -267,7 +271,8 @@
     else {
       h += '<div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Açıklama</th><th>Kategori</th><th class="r">Tutar</th><th class="detail-only">Kaynak</th><th></th></tr></thead><tbody>';
       list.slice(0, 500).forEach(function (t) {
-        h += '<tr><td class="num">' + dateLabel(t.date) + '</td><td>' + esc(t.description) + '</td><td><select aria-label="Kategori" data-list="transactions" data-id="' + t.id + '" data-field="category">' + catOptions(t.category) + '</select></td>' +
+        var acc = t.accountId ? accById(t.accountId) : null;
+        h += '<tr><td class="num">' + dateLabel(t.date) + '</td><td>' + esc(t.description) + (t.recurringId ? ' <span class="pill info" title="Düzenli ödemeye bağlı (' + esc(t.period) + ')">🔁 düzenli</span>' : '') + (acc ? '<div class="hint">' + esc(acc.name) + '</div>' : '') + '</td><td><select aria-label="Kategori" data-list="transactions" data-id="' + t.id + '" data-field="category">' + catOptions(t.category) + '</select></td>' +
           '<td class="r num ' + (t.amount < 0 ? 'neg' : 'pos') + '">' + tl2(t.amount) + '</td><td class="detail-only hint">' + esc(t.source || '') + '</td><td>' + delBtn('transactions', t.id, t.description) + '</td></tr>';
       });
       h += '</tbody></table></div>' + (list.length > 500 ? '<p class="hint">İlk 500 işlem gösteriliyor; filtreyi daralt.</p>' : '');
@@ -350,7 +355,8 @@
   function revalidate(initial) {
     var today = todayYmd();
     P.markDuplicates(review.rows, state.transactions);
-    review.rows.forEach(function (r) { P.validateRow(r, today); if (initial && (r.duplicate || r.errors.length)) r.include = false; });
+    review.rows.forEach(function (r) { P.validateRow(r, today); if (initial && (r.duplicate || r.errors.length)) r.include = false; r.inst = L.detectInstallment(r.description); });
+    L.reconcileImported(review.rows, state.transactions);
   }
 
   function loadPdfLib() {
@@ -483,6 +489,7 @@
     }
     if (r.preview) h += '<details class="card" style="margin-top:10px"><summary><b>Belgeyi göster</b> <span class="hint">(karşılaştırmak için)</span></summary><img src="' + r.preview + '" alt="Yüklenen belge" style="max-width:100%;max-height:600px;margin-top:10px;border-radius:8px"></details>';
     h += '<section class="card" style="margin-top:10px" id="rv-summary">' + reviewSummary() + '</section>';
+    h += reviewCardBox();
     h += '<section class="card" style="margin-top:10px"><div class="row" style="margin-bottom:10px">' +
       '<button class="btn small" data-act="rv-all">Tümünü seç</button><button class="btn small" data-act="rv-none">Tümünü kaldır</button>' +
       '<button class="btn small" data-act="rv-flip">Seçililerde gelir ↔ gider çevir</button><button class="btn small" data-act="rv-merge">Seçilileri tek işlemde birleştir</button>' +
@@ -505,6 +512,8 @@
   function rowStatus(x) {
     var s = x.errors.map(function (e) { return '<span class="pill err">' + esc(e) + '</span>'; }).concat(x.warnings.map(function (w) { return '<span class="pill warn" title="' + esc(x.duplicate || '') + '">' + esc(w) + '</span>'; }));
     if (x.note) s.push('<span class="pill info">' + esc(x.note) + '</span>');
+    if (x.replaces) s.push('<span class="pill info" title="Kaydedince beklenen kayıt silinir, bu gerçek işlem onun yerine geçer (çift sayım olmaz)">Beklenen "' + esc(x.replaces.description) + '" kaydının yerine geçer</span>');
+    if (x.inst) s.push('<span class="pill info">Taksit ' + x.inst.no + '/' + x.inst.count + '</span>');
     return s.length ? s.join(' ') : '<span class="pill ok">Uygun</span>';
   }
   function reviewSummary() {
@@ -516,7 +525,7 @@
       '<div class="row" style="gap:16px;margin-top:8px"><span>Seçili gider: <b class="num neg">' + tl2(tc.expense) + '</b></span><span>Seçili gelir: <b class="num pos">' + tl2(tc.income) + '</b></span><span>Net: <b class="num">' + tl2(tc.net) + '</b></span></div>' +
       '<div class="row" style="margin-top:10px"><label for="rv-total"><b>Belgedeki toplam</b> ' + tip('Fişin TOPLAM\'ı veya ekstrenin dönem borcu. Okunan satırların toplamıyla karşılaştırılır; kuruşu kuruşuna eşleşmeli.') + '</label>' +
       '<input id="rv-total" class="money" type="text" inputmode="decimal" style="max-width:160px" placeholder="isteğe bağlı" value="' + (r.docTotal != null ? esc(moneyInputVal(r.docTotal)) : '') + '">';
-    if (r.docTotal != null) h += tc.match ? '<span class="pill ok">Toplam tutuyor ✓</span>' : '<span class="pill err">Fark: ' + tl2(tc.diff) + '</span><span class="hint">Eksik/fazla satır, yanlış okunan tutar veya ekstrede önceki dönem borcu olabilir.</span>';
+    if (r.docTotal != null) h += tc.match ? '<span class="pill ok">Toplam tutuyor ✓' + (tc.byNet ? ' (ödemeler düşülmüş net)' : '') + '</span>' : '<span class="pill err">Fark: ' + tl2(tc.diff) + '</span><span class="hint">Eksik/fazla satır, yanlış okunan tutar veya ekstrede önceki dönem borcu olabilir.</span>';
     h += '</div>';
     if (r.totalsFound && r.totalsFound.length > 1) h += '<p class="hint">Belgede bulunan toplamlar: ' + r.totalsFound.map(function (t) { return esc(t.label) + ' → ' + tl2(t.amount); }).join(' · ') + '</p>';
     return h;
@@ -540,16 +549,44 @@
     if (review.docTotal != null && !tc.match && !confirm('Seçili satırların toplamı belgedeki toplamla uyuşmuyor (fark ' + tl2(tc.diff) + '). Yine de kaydedilsin mi?')) return;
     var d = sel.filter(function (x) { return x.duplicate; }).length;
     if (d && !confirm(d + ' satır daha önce kaydedilmiş bir işlemle aynı görünüyor. Yine de kaydedilsin mi?')) return;
-    var src = review.source;
+    var src = review.source, cardId = review.cardId || null, mkInst = !!(cardId && review.mkInst), updStmt = !!(cardId && review.updStmt && review.docTotal != null);
+    var nRep = 0, nInst = 0, stmtYm = sel.map(function (x) { return x.date.slice(0, 7); }).sort().pop(); // ekstrenin ayı = en yeni işlem ayı
     var ok = mutate(function (s) {
-      sel.forEach(function (x) { s.transactions.push({ id: S.uid(), date: x.date, description: x.description.trim(), amount: x.amount, category: x.category, source: src }); });
-    }, sel.length + ' işlem kaydedildi.');
+      sel.forEach(function (x) {
+        var tx = { id: S.uid(), date: x.date, description: x.description.trim(), amount: x.amount, category: x.category, source: src };
+        if (cardId) tx.accountId = cardId;
+        if (x.replaces && s.transactions.some(function (t) { return t.id === x.replaces.id; })) { // beklenen düzenli kaydın yerine geç
+          s.transactions = s.transactions.filter(function (t) { return t.id !== x.replaces.id; });
+          tx.recurringId = x.replaces.recurringId; tx.period = x.replaces.period; nRep++;
+        }
+        s.transactions.push(tx);
+        if (mkInst && x.inst && x.amount < 0) {
+          var firstYm = L.addMonthsYm(stmtYm, -(x.inst.no - 1)), desc = x.description.trim().replace(/\s*\(?\b(taksit|tks|tk)\b.*$/i, '').trim() || x.description.trim();
+          var exists = s.installments.some(function (p) { return p.cardId === cardId && p.count === x.inst.count && p.firstYm === firstYm && p.description === desc; });
+          if (!exists) { s.installments.push({ id: S.uid(), cardId: cardId, description: desc, category: x.category, total: M.mulRatio(-x.amount, x.inst.count, 1), count: x.inst.count, firstYm: firstYm, fromStatement: true }); nInst++; }
+        }
+      });
+      if (updStmt) {
+        var c = s.accounts.find(function (a) { return a.id === cardId; });
+        c.card.statementDebt = review.docTotal; c.card.statementYm = stmtYm; c.card.paid = 0;
+      }
+    }, sel.length + ' işlem kaydedildi.' + (nRep ? ' ' + nRep + ' beklenen kayıt gerçeğiyle değiştirildi.' : '') + (nInst ? ' ' + nInst + ' taksit planı eklendi.' : '') + (updStmt ? ' Kart ekstre borcu güncellendi.' : ''));
     if (ok) { review = null; location.hash = '#islemler'; }
+  }
+
+  function reviewCardBox() {
+    var cs = cards(); if (!cs.length) return '';
+    var r = review; if (r.cardId === undefined) { r.cardId = r.cc && cs.length === 1 ? cs[0].id : ''; r.mkInst = true; r.updStmt = r.cc; }
+    var nInst = r.rows.filter(function (x) { return x.inst; }).length;
+    return '<section class="card" style="margin-top:10px"><h2>Kredi kartı bağlantısı ' + tip('Ekstre bir kredi kartına aitse kartı seç: işlemler o karta bağlanır, taksitli satırlar taksit listesine eklenir, ekstre borcu güncellenir.') + '</h2><div class="row">' +
+      '<label for="rv-card">Bu belge hangi karta ait?</label><select id="rv-card" style="max-width:280px">' + accOptions(r.cardId, function (a) { return a.type === 'card'; }, '— karta ait değil —') + '</select></div>' +
+      (r.cardId ? '<label class="row" style="margin-top:8px"><input type="checkbox" id="rv-mkinst"' + (r.mkInst ? ' checked' : '') + '> Taksitli satırları (' + nInst + ' adet bulundu) taksit listesine ekle <span class="hint">(toplam = taksit tutarı × taksit sayısı, tahmini; ekstre ayı = en yeni işlem ayı)</span></label>' +
+        '<label class="row" style="margin-top:6px"><input type="checkbox" id="rv-stmt"' + (r.updStmt ? ' checked' : '') + (r.docTotal == null ? ' disabled' : '') + '> Kartın son ekstre borcunu belgedeki toplamla (' + (r.docTotal != null ? tl2(r.docTotal) : 'toplam girilmedi') + ') güncelle</label>' : '') + '</section>';
   }
 
   /* ---------- YAPAY ZEKÂ ASİSTANI ---------- */
   function contextSummary() {
-    var an = C.analyze(state), b = an.budget, l = [];
+    var an = analyzeNow(), b = an.budget, l = [];
     l.push('Tarih: ' + ymLabel(an.nowYm) + (state.isExample ? ' (DİKKAT: bunlar ÖRNEK veridir)' : ''));
     l.push('Aylık gelir: ' + tl(b.income) + '; sabit gider: ' + tl(b.fixed) + '; değişken gider: ' + tl(b.variable) + '; aylık fazla: ' + tl(b.surplus) + ' (tasarruf oranı ' + pct(b.savingsRateBp) + ')');
     l.push('Gider kalemleri: ' + state.expenses.map(function (e) { return e.name + ' ' + tl(e.amount) + ' (' + (e.type === 'fixed' ? 'sabit' : 'değişken') + ')'; }).join('; '));
@@ -561,6 +598,15 @@
     l.push('Projeksiyon (hedef tarihinde, bugünün parasıyla): ' + ['pessimistic', 'base', 'optimistic'].map(function (k) { return an.scenarios[k].label + ' ' + tl(an.scenarios[k].atGoal); }).join(', ') + '. Enflasyon varsayımı ' + pct(state.settings.inflationBp) + '.');
     var act = an.actuals, cats = Object.keys(act.byCategory);
     if (cats.length) l.push('Bu ay gerçekleşen harcama: ' + tl(act.expense) + ' — ' + cats.map(function (c) { return c + ' ' + tl(act.byCategory[c]); }).join('; '));
+    try {
+      var t = today(), acs = L.accountsSummary(state, t);
+      if (state.accounts.length) l.push('Hesaplar: ' + acs.rows.map(function (r) { return r.acc.name + ' ' + L.formatCur(r.acc.balance, r.acc.currency) + (r.tl != null && r.acc.currency !== 'TRY' ? ' (≈' + tl(r.tl) + ')' : ''); }).join('; ') + '. Kurlar (kullanıcı girdi): ' + Object.keys(state.rates).map(function (c) { return c + ' ' + tl2(state.rates[c].rate) + ' (' + state.rates[c].date + ')'; }).join(', ') + '.');
+      var lim = L.categoryLimits(state, nowYm(), t); if (lim.length) l.push('Kategori sınırları (bu ay harcanan/sınır): ' + lim.map(function (x) { return x.category + ' ' + tl(x.spent) + '/' + tl(x.limit) + (x.level !== 'ok' ? ' [' + (x.level === 'over' ? 'AŞILDI' : '%80+') + ']' : ''); }).join('; '));
+      var up = L.upcoming(state, t, 30); if (up.length) l.push('Yaklaşan ödemeler (30 gün): ' + up.slice(0, 10).map(function (x) { return x.title + ' ' + tl(Math.abs(x.amount)) + ' ' + x.date + ' (' + daysText(x.daysLeft) + ')'; }).join('; '));
+      var ib = L.installmentBurden(state, nowYm(), 3); if (state.installments.length) l.push('Kart taksit yükü: bu ay ' + tl(ib[0].total) + ', gelecek ay ' + tl(ib[1].total) + ', sonraki ay ' + tl(ib[2].total) + '.');
+      if (state.sinkingFunds.length) l.push('Yıllık giderler kumbarası: ' + state.sinkingFunds.map(function (f) { return f.name + ' ' + tl(f.saved) + '/' + tl(f.amount) + ' (' + f.dueYm + ')'; }).join('; ') + '. Bu ay ayrılacak toplam ' + tl(L.sinkingTotals(state, nowYm()).monthlyNeed) + '.');
+      var ins = L.insights(L.compareMonths(state.transactions, t), tl); l.push('Aylık karşılaştırma: ' + ins.map(function (x) { return x.text; }).join(' '));
+    } catch (e) { /* özet eksik kalabilir */ }
     return l.join('\n');
   }
   var SYSTEM = 'Sen "Finans Pusulası" uygulamasının Türkçe kişisel finans asistanısın. Her zaman Türkçe, sade ve anlaşılır yaz; finans bilmeyen biri de anlamalı. ' +
@@ -639,7 +685,7 @@
     h += '</tbody></table></div><button class="btn small" data-act="scen-reset">Varsayılana dön</button></section>';
     h += '<section class="card"><h2>Veri yönetimi</h2><div class="row"><button class="btn" data-act="load-example">Örnek veriyi yükle</button><button class="btn danger" data-act="clear-all">Tüm verileri sil</button></div>' +
       '<p class="hint">Örnek veriyi yüklemek mevcut verilerinin yerine geçer (önce yedek almayı unutma). Silme işlemi API anahtarlarını silmez; onlar Asistan bölümünden silinir.</p>' +
-      '<p class="hint detail-only">Uygulama sürümü 1.0 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
+      '<p class="hint detail-only">Uygulama sürümü 2.0 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
     return h;
   }
   function exportCsv() {
@@ -649,8 +695,542 @@
     Store.download('finans-islemler-' + todayYmd() + '.csv', csv, 'text/csv;charset=utf-8');
   }
 
+  /* =====================================================================
+   * BÜTÇE v2 ARAYÜZÜ: sınırlar, düzenli ödemeler, kartlar ve taksitler, karşılaştırma, yıllık giderler, hesaplar ve kurlar.
+   * Hesaplar ledger.js'te (saf fonksiyonlar, testli). Burada yalnızca gösterim ve kullanıcı işlemleri var.
+   * ===================================================================== */
+  function today() { return todayYmd(); }
+  function nowYm() { return today().slice(0, 7); }
+  function eff() { return L.effectiveState(state, today()); }
+  function analyzeNow() { return C.analyze(eff(), nowYm()); }
+  function curVal(minor) { return M.format(minor, { symbol: false }); }
+  function shortYm(ym) { var a = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara']; var p = ym.split('-'); return a[+p[1] - 1] + ' ' + p[0].slice(2); }
+  function daysText(d) { return d < 0 ? (-d) + ' gün gecikti' : d === 0 ? 'Bugün' : d === 1 ? 'Yarın' : d + ' gün sonra'; }
+  function lvClass(lv) { return lv === 'overdue' || lv === 'today' || lv === 'over' ? 'err' : lv === 'soon' || lv === 'warn' ? 'warn' : lv === 'paid' || lv === 'ok' ? 'ok' : 'info'; }
+  function accById(id) { return (state.accounts || []).find(function (a) { return a.id === id; }); }
+  function cards() { return (state.accounts || []).filter(function (a) { return a.type === 'card'; }); }
+  function accOptions(sel, filter, emptyLabel) {
+    return (emptyLabel != null ? '<option value="">' + esc(emptyLabel) + '</option>' : '') + state.accounts.filter(filter || function () { return true; }).map(function (a) {
+      return '<option value="' + esc(a.id) + '"' + (a.id === sel ? ' selected' : '') + '>' + esc(a.name) + ' (' + L.CURRENCIES[a.currency].short + ')</option>';
+    }).join('');
+  }
+  function sel(list, id, field, options, cur, label) {
+    return '<select aria-label="' + esc(label) + '" data-list="' + list + '" data-id="' + esc(id) + '" data-field="' + field + '">' + options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(cur == null ? '' : cur) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>';
+  }
+  function numIn(list, id, field, val, label, min, max) { return '<input type="number" inputmode="numeric" min="' + min + '" max="' + max + '" step="1" style="max-width:90px" aria-label="' + esc(label) + '" data-list="' + list + '" data-id="' + esc(id) + '" data-field="' + field + '" value="' + esc(val == null ? '' : val) + '">'; }
+  function ymIn(list, id, field, val, label) { return '<input type="month" aria-label="' + esc(label) + '" data-list="' + list + '" data-id="' + esc(id) + '" data-field="' + field + '" value="' + esc(val || '') + '">'; }
+  function chk(list, id, field, on, label) { return '<input type="checkbox" aria-label="' + esc(label) + '" data-list="' + list + '" data-id="' + esc(id) + '" data-field="' + field + '"' + (on ? ' checked' : '') + '>'; }
+  function catOpts() { return P.CATEGORIES.map(function (c) { return [c, c]; }); }
+  var sub = '';
+  function subtabs(base, items) {
+    return '<nav class="subtabs" aria-label="Alt bölümler">' + items.map(function (it) {
+      var cur = (sub || '') === it[0];
+      return '<a href="#' + base + (it[0] ? '/' + it[0] : '') + '"' + (cur ? ' aria-current="page"' : '') + '>' + it[1] + '</a>';
+    }).join('') + '</nav>';
+  }
+  function bar(bp, color, label) { var w = Math.max(0, Math.min(100, bp / 100)); return '<div class="progress" role="progressbar" aria-label="' + esc(label || '') + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(w) + '"><span style="width:' + w + '%;background:' + color + '"></span></div>'; }
+
+  /* ---------- Ortak parçalar (Özet'te de kullanılır) ---------- */
+  function upcomingList(list, max) {
+    if (!list.length) return '<p class="muted">Önümüzdeki 30 günde bekleyen ödeme yok. 👍</p>';
+    return '<ul class="uplist">' + list.slice(0, max || 999).map(function (x) {
+      var act = x.kind === 'recurring' ? '<button class="btn small" data-act="rc-pay" data-id="' + esc(x.id) + '" data-period="' + x.period + '" title="Ödendi olarak işlemlere kaydet">' + (x.amount > 0 ? 'Geldi' : 'Ödendi') + '</button>'
+        : x.kind === 'card' ? '<a class="btn small" href="#odemeler/kartlar">Öde</a>' : '<a class="btn small" href="#butce/yillik">Gör</a>';
+      return '<li><span class="pill ' + lvClass(x.level) + '">' + daysText(x.daysLeft) + '</span><span class="grow"><b>' + esc(x.title) + '</b> <span class="hint">' + dateLabel(x.date) +
+        (x.kind === 'card' ? ' · kalan ekstre borcu' : x.kind === 'sinking' ? (x.ready ? ' · para hazır ✓' : ' · kumbara henüz dolmadı') : '') + '</span></span><b class="num ' + (x.amount < 0 ? 'neg' : 'pos') + '">' + tl2(x.amount) + '</b>' + act + '</li>';
+    }).join('') + '</ul>';
+  }
+  function limitBars(list) {
+    return list.map(function (x) {
+      var col = x.level === 'over' ? 'var(--danger)' : x.level === 'warn' ? 'var(--medium)' : 'var(--safe)';
+      var msg = x.level === 'over' ? 'Sınırı ' + tl(-x.remaining) + ' aştın' : x.atLimit ? 'Sınıra ulaştın' : x.level === 'warn' ? 'Sınıra yaklaştın: ' + tl(x.remaining) + ' kaldı' : tl(x.remaining) + ' kaldı';
+      return '<div class="lim"><div class="row" style="justify-content:space-between;gap:6px"><b>' + esc(x.category) + '</b><span class="num">' + tl(x.spent) + ' / ' + tl(x.limit) + '</span></div>' + bar(x.usedBp, col, x.category + ' sınır kullanımı') +
+        '<div class="hint"><span class="pill ' + lvClass(x.level) + '">' + (x.level === 'ok' ? 'İyi' : x.level === 'warn' ? '⚠ %80+' : '⚠ Aşıldı') + '</span> ' + msg + ' (' + pct(x.usedBp) + ')' +
+        (x.expected ? ' · <span title="Bu ay henüz ödenmemiş düzenli ödemeler">bekleyen düzenli ödeme ' + tl(x.expected) + ' → ay sonu tahmini ' + tl(x.projected) + (x.projectedLevel === 'over' ? ' <b class="neg">(aşacak)</b>' : '') + '</span>' : '') +
+        '<span class="detail-only"> · Bu hızla ay sonu: ' + tl(x.pace) + '</span></div></div>';
+    }).join('');
+  }
+  function extraActions() {
+    var out = [], t = today();
+    L.categoryLimits(state, nowYm(), t).forEach(function (x) {
+      if (x.level === 'over') out.push({ level: 'danger', text: x.category + ' için koyduğun aylık sınırı ' + tl(-x.remaining) + ' aştın. Bu kategoride ay sonuna kadar harcamayı durdurmaya çalış.' });
+      else if (x.level === 'warn') out.push({ level: 'warn', text: x.category + ' sınırının ' + pct(x.usedBp) + '\'ine ulaştın; ' + tl(x.remaining) + ' kaldı.' });
+    });
+    var up = L.upcoming(state, t, 7).filter(function (x) { return x.level === 'overdue' || x.level === 'today' || x.level === 'soon'; });
+    if (up.length) out.push({ level: up.some(function (x) { return x.level === 'overdue'; }) ? 'danger' : 'warn', text: up.length + ' ödeme yaklaştı veya gecikti: ' + up.slice(0, 3).map(function (x) { return x.title + ' (' + daysText(x.daysLeft).toLowerCase() + ')'; }).join(', ') + '.' });
+    var sk = L.sinkingTotals(state, nowYm());
+    var pending = (state.sinkingFunds || []).filter(function (f) { return L.sinkingPlan(f, nowYm()).toSetAsideNow > 0; });
+    if (pending.length) out.push({ level: 'info', text: 'Yıllık giderler için bu ay ' + tl(M.sum(pending.map(function (f) { return L.sinkingPlan(f, nowYm()).toSetAsideNow; }))) + ' kenara koy (' + pending.length + ' kalem). Toplam aylık ihtiyaç ' + tl(sk.monthlyNeed) + '.' });
+    return out;
+  }
+  function renderOverviewExtras() {
+    var t = today(), up = L.upcoming(state, t, 30), lim = L.categoryLimits(state, nowYm(), t), h = '';
+    var cmp = L.compareMonths(state.transactions, t), ins = L.insights(cmp, tl), sk = L.sinkingTotals(state, nowYm()), acs = L.accountsSummary(state, t);
+    h += '<div class="grid two" style="margin-top:14px">';
+    h += '<section class="card"><h2>Yaklaşan ödemeler ' + tip('Önümüzdeki 30 gün: düzenli ödemeler (kira, fatura, abonelik), kredi kartı son ödeme günü ve yıllık giderler. Kırmızı: gecikti/bugün, sarı: birkaç gün kaldı.') + '</h2>' + upcomingList(up, 5) +
+      (up.length > 5 ? '<p class="hint">+' + (up.length - 5) + ' ödeme daha</p>' : '') + '<a class="btn small" href="#odemeler">Tüm ödemeler</a></section>';
+    h += '<section class="card"><h2>Harcama sınırları ' + tip('Her kategori için koyduğun aylık sınıra göre bu ayki harcaman. %80\'e gelince sarı, aşınca kırmızı.') + '</h2>' +
+      (lim.length ? limitBars(lim.slice(0, 5)) + (lim.length > 5 ? '<p class="hint">+' + (lim.length - 5) + ' kategori daha</p>' : '') : '<p class="muted">Henüz sınır koymadın.</p>') + '<a class="btn small" href="#butce/sinirlar">Sınırları düzenle</a></section>';
+    h += '</div><div class="grid two" style="margin-top:14px">';
+    h += '<section class="card"><h2>Geçen aya göre ' + tip('Bu ayın bugüne kadarki harcaması, geçen ayın aynı günlerine göre. Ay bitmeden yapılan karşılaştırma bu yüzden adildir.') + '</h2><ul class="actions">' +
+      ins.slice(0, 3).map(function (x) { return '<li class="lv-' + x.level + '"><span>' + esc(x.text) + '</span></li>'; }).join('') + '</ul><a class="btn small" href="#butce/karsilastirma" style="margin-top:8px">Ayrıntılı karşılaştırma</a></section>';
+    h += '<section class="card"><h2>Yıllık giderler kumbarası ' + tip('Sigorta, vergi, bayram, tatil gibi yılda bir gelen giderler için her ay ayrılan para. Vakti gelince para hazır olur.') + '</h2>' +
+      (state.sinkingFunds.length ? '<p>Bu ay kenara koyman gereken: <b class="num">' + tl(sk.monthlyNeed) + '</b></p>' + bar(sk.target ? M.ratioBp(sk.saved, sk.target) : 0, 'var(--brand)', 'Kumbara doluluğu') + '<p class="hint">Biriken ' + tl(sk.saved) + ' / gereken ' + tl(sk.target) + '</p>' : '<p class="muted">Henüz yıllık gider eklemedin.</p>') +
+      '<a class="btn small" href="#butce/yillik">Yıllık giderler</a>' +
+      (acs.missingRates.length ? '<div class="notice warn">Kur girilmemiş: ' + acs.missingRates.map(function (c) { return L.CURRENCIES[c].short; }).join(', ') + '. Bu hesaplar net varlığa sayılmıyor. <a href="#hesaplar">Kur gir</a></div>' : '') + '</section>';
+    return h + '</div>';
+  }
+
+  /* ---------- BÜTÇE alt bölümleri ---------- */
+  function renderBudgetTab() {
+    var h = '<h1>Bütçe</h1>' + subtabs('butce', [['', 'Plan'], ['sinirlar', 'Harcama sınırları'], ['karsilastirma', 'Aylık karşılaştırma'], ['yillik', 'Yıllık giderler']]);
+    if (sub === 'sinirlar') return h + renderLimits();
+    if (sub === 'karsilastirma') return h + renderCompare();
+    if (sub === 'yillik') return h + renderSinking();
+    return h + renderBudget();
+  }
+  function renderLimits() {
+    var t = today(), ym = nowYm(), list = L.categoryLimits(state, ym, t), act = C.monthActuals(state.transactions, ym), cmp = L.compareMonths(state.transactions, t), avg = {};
+    cmp.rows.forEach(function (r) { avg[r.category] = r.avg3; });
+    var h = '<p class="hint">Her kategori için aylık harcama sınırı koy. Harcaman sınırın <b>%80</b>\'ine gelince sarı, <b>aşınca</b> kırmızı uyarı görürsün (Özet\'te de). Harcamalar İşlemler\'den (elle veya belgeden) gelir; "Transfer" sayılmaz.</p>';
+    h += '<section class="card"><h2>' + esc(ymLabel(ym)) + ' durumu</h2>' + (list.length ? limitBars(list) : '<p class="muted">Henüz sınır yok. Aşağıdaki tablodan ekle veya "Son 3 ay ortalamasını öner"e bas.</p>') + '</section>';
+    var cats = P.CATEGORIES.filter(function (c) { return c !== 'Gelir' && c !== 'Transfer'; }), totLim = 0;
+    h += '<section class="card" style="margin-top:14px"><h2>Sınırları ayarla ' + tip('Boş bırakırsan o kategoride sınır yoktur. Tutarı TL olarak yaz, ör. 6.000') + '</h2><div class="tablewrap"><table><thead><tr><th>Kategori</th><th class="r">Bu ay harcanan</th><th class="r">Son 3 ay ortalaması ' + tip('Önceki 3 tam ayın aylık ortalaması (bu ay hariç).') + '</th><th class="r">Aylık sınır (TL)</th></tr></thead><tbody>';
+    cats.forEach(function (c) {
+      var lim = state.limits[c]; if (lim) totLim = M.add(totLim, lim);
+      h += '<tr><td>' + esc(c) + '</td><td class="r num">' + tl2(act.byCategory[c] || 0) + '</td><td class="r num">' + (avg[c] ? tl2(avg[c]) : '—') + '</td><td><input class="money" type="text" inputmode="decimal" style="max-width:150px;margin-left:auto;display:block" aria-label="' + esc(c) + ' aylık sınır" data-limit="' + esc(c) + '" placeholder="sınır yok" value="' + (lim ? esc(curVal(lim)) : '') + '"></td></tr>';
+    });
+    h += '</tbody><tfoot><tr><th>Toplam sınır</th><th></th><th></th><th class="r num">' + tl2(totLim) + '</th></tr></tfoot></table></div>';
+    h += '<div class="row" style="margin-top:10px"><button class="btn" data-act="lim-suggest">Son 3 ay ortalamasını öner</button><button class="btn danger" data-act="lim-clear">Tüm sınırları kaldır</button></div>';
+    h += '<p class="hint detail-only">Kural: harcanan × 100 ≥ sınır × 80 → uyarı; harcanan &gt; sınır → aşıldı. Karşılaştırma tam sayı kuruşla yapılır, yuvarlama yoktur. "Ay sonu tahmini" = harcanan + bu ay henüz ödenmemiş düzenli ödemeler. "Bu hızla" = harcanan × ayın gün sayısı ÷ bugünün günü (yalnızca bilgi).</p></section>';
+    return h;
+  }
+  var cmpCat = 'Toplam';
+  function barChart(points, label) {
+    var w = 640, hh = 230, padL = 10, padB = 34, padT = 26, n = points.length, maxV = Math.max.apply(null, points.map(function (p) { return p.value; }).concat([1]));
+    var bw = (w - padL * 2) / n, svg = '<svg viewBox="0 0 ' + w + ' ' + hh + '" role="img" aria-label="' + esc(label) + '">';
+    points.forEach(function (p, i) {
+      var bh = Math.round((hh - padT - padB) * p.value / maxV), x = padL + i * bw + bw * 0.18, y = hh - padB - bh;
+      svg += '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + (bw * 0.64).toFixed(1) + '" height="' + bh + '" rx="5" fill="' + (p.partial ? 'var(--info-bg)' : 'var(--brand)') + '" stroke="var(--brand)" stroke-width="' + (p.partial ? 2 : 0) + '"' + (p.partial ? ' stroke-dasharray="5 4"' : '') + '></rect>';
+      svg += '<text x="' + (x + bw * 0.32).toFixed(1) + '" y="' + (y - 6) + '" text-anchor="middle">' + esc(M.formatShort(p.value)) + '</text>';
+      svg += '<text x="' + (x + bw * 0.32).toFixed(1) + '" y="' + (hh - 12) + '" text-anchor="middle">' + esc(p.label) + (p.partial ? '*' : '') + '</text>';
+    });
+    return '<div class="chart">' + svg + '</svg></div>';
+  }
+  function spark(vals) {
+    var w = 96, h = 26, mx = Math.max.apply(null, vals.concat([1]));
+    var pts = vals.map(function (v, i) { return (2 + i * (w - 4) / (vals.length - 1)).toFixed(1) + ',' + (h - 3 - (h - 6) * v / mx).toFixed(1); }).join(' ');
+    return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" aria-hidden="true"><polyline fill="none" stroke="var(--brand)" stroke-width="2" points="' + pts + '"/></svg>';
+  }
+  function chg(bp) { if (bp == null) return '<span class="muted">—</span>'; var c = bp > 1000 ? 'neg' : bp < -1000 ? 'pos' : ''; return '<span class="' + c + '">' + (bp > 0 ? '▲ +' : bp < 0 ? '▼ −' : '') + '%' + Math.round(Math.abs(bp) / 100) + '</span>'; }
+  function renderCompare() {
+    var t = today(), ym = nowYm(), cmp = L.compareMonths(state.transactions, t), series = L.monthSeries(state.transactions, ym, 6), ins = L.insights(cmp, tl);
+    var h = '<section class="card"><h2>Kısaca ' + tip('Ay henüz bitmediği için bu ayı geçen ayın AYNI GÜNLERİYLE karşılaştırıyoruz (ör. 1–13 Kasım ile 1–13 Ekim). Böylece yanıltıcı olmaz.') + '</h2><ul class="actions">' +
+      ins.map(function (x) { return '<li class="lv-' + x.level + '"><span>' + esc(x.text) + '</span></li>'; }).join('') + '</ul></section>';
+    var cats = ['Toplam'].concat(cmp.rows.map(function (r) { return r.category; }));
+    if (cats.indexOf(cmpCat) < 0) cmpCat = 'Toplam';
+    h += '<section class="card" style="margin-top:14px"><h2>Son 6 ay: ' + esc(cmpCat) + '</h2><div class="chips" role="group" aria-label="Kategori seç">' + cats.map(function (c) { return '<button class="chip" data-act="cmp-cat" data-cat="' + esc(c) + '" aria-pressed="' + (c === cmpCat) + '">' + esc(c) + '</button>'; }).join('') + '</div>';
+    h += barChart(series.map(function (s) { return { label: shortYm(s.ym), value: cmpCat === 'Toplam' ? s.expense : (s.byCategory[cmpCat] || 0), partial: s.ym === ym }; }), cmpCat + ' aylık harcama grafiği');
+    h += '<p class="hint">* Bu ay henüz bitmedi (kesikli çubuk, ' + cmp.day + '/' + cmp.daysInMonth + ' gün).</p></section>';
+    h += '<section class="card" style="margin-top:14px"><h2>Kategorilere göre</h2>';
+    if (!cmp.rows.length) h += '<p class="muted">Karşılaştırılacak harcama yok.</p>';
+    else {
+      h += '<div class="tablewrap"><table><thead><tr><th>Kategori</th><th>Son 6 ay</th><th class="r">Bu ay (' + cmp.day + ' gün)</th><th class="r">Geçen ay aynı dönem</th><th class="r">Değişim</th><th class="r detail-only">Geçen ay (tam)</th><th class="r detail-only">3 ay ortalaması</th><th class="r detail-only">Ortalamaya göre</th></tr></thead><tbody>';
+      cmp.rows.forEach(function (r) {
+        h += '<tr><td>' + esc(r.category) + '</td><td>' + spark(series.map(function (s) { return s.byCategory[r.category] || 0; })) + '</td><td class="r num">' + tl2(r.current) + '</td><td class="r num">' + tl2(r.prevSamePeriod) + '</td><td class="r num">' + chg(r.diffSameBp) + '</td>' +
+          '<td class="r num detail-only">' + tl2(r.prevFull) + '</td><td class="r num detail-only">' + tl2(r.avg3) + '</td><td class="r num detail-only">' + chg(r.vsAvgBp) + '</td></tr>';
+      });
+      var T = cmp.total;
+      h += '</tbody><tfoot><tr><th>Toplam</th><th>' + spark(series.map(function (s) { return s.expense; })) + '</th><th class="r num">' + tl2(T.current) + '</th><th class="r num">' + tl2(T.prevSamePeriod) + '</th><th class="r num">' + chg(T.diffSameBp) + '</th><th class="r num detail-only">' + tl2(T.prevFull) + '</th><th class="r num detail-only">' + tl2(T.avg3) + '</th><th class="detail-only"></th></tr></tfoot></table></div>';
+    }
+    h += '<p class="hint detail-only">Değişim % = (bu ay − geçen ayın aynı dönemi) ÷ geçen ayın aynı dönemi. 3 ay ortalaması = önceki 3 tam ayın toplamı ÷ 3 (kuruşa yuvarlanır). Transfer kategorisi ve hesaplar arası transferler sayılmaz.</p></section>';
+    return h;
+  }
+  function renderSinking() {
+    var ym = nowYm(), tot = L.sinkingTotals(state, ym);
+    var h = '<p class="hint">Yılda bir veya birkaç ayda bir gelen büyük giderler (sigorta, vergi, bayram, tatil) için her ay biraz kenara koy; vakti gelince para hazır olur. Bu ay ayrılması gereken toplam, <a href="#butce">bütçe planına</a> otomatik sabit gider olarak eklenir.</p>';
+    h += '<div class="grid kpis">' + kpi('Bu ay kenara koy', tl(tot.monthlyNeed), 'Tüm yıllık giderler için', 'Her kalem için: kalan tutar ÷ ödeme ayına kadar kalan ay. Kuruşu kuruşuna bölünür.') +
+      kpi('Biriken', tl(tot.saved) + ' <span class="muted" style="font-size:1rem">/ ' + tl(tot.target) + '</span>', bar(tot.target ? M.ratioBp(tot.saved, tot.target) : 0, 'var(--brand)', 'Toplam doluluk'), 'Kumbaralarda şu ana kadar biriktirdiğin toplam.') + '</div>';
+    h += '<div class="grid two" style="margin-top:14px">';
+    if (!state.sinkingFunds.length) h += '<div class="card"><p class="muted">Henüz yıllık gider yok. Aşağıdan ekle.</p></div>';
+    state.sinkingFunds.forEach(function (f) {
+      var p = L.sinkingPlan(f, ym);
+      h += '<section class="card"><h2>' + esc(f.name) + '</h2>' + bar(p.progressBp, p.ready ? 'var(--safe)' : 'var(--brand)', f.name + ' doluluk') +
+        '<p><b class="num">' + tl(f.saved) + '</b> / ' + tl(f.amount) + ' · ' + pct(p.progressBp) + '</p>' +
+        '<p class="hint">Ödeme: <b>' + esc(ymLabel(f.dueYm)) + '</b> (' + (p.overdue ? '<span class="neg">tarihi geçti</span>' : p.monthsLeft === 0 ? 'bu ay' : p.monthsLeft + ' ay sonra') + ') · ' + (f.everyMonths === 12 ? 'her yıl' : f.everyMonths + ' ayda bir') + '</p>';
+      if (p.ready) h += '<div class="notice">Para hazır ✓ Ödemeyi yapınca "Ödendi" de; kumbara bir sonraki döneme geçer.</div>';
+      else if (p.doneThisMonth) h += '<div class="notice">Bu ay ' + tl(f.setAsideAmount) + ' ayrıldı ✓' + (p.contributions > 1 ? ' Sonraki aylarda: ' + tl(p.parts[p.parts.length - 1]) + '/ay' : '') + '</div>';
+      else h += '<p>Bu ay ayır: <b class="num">' + tl2(p.toSetAsideNow) + '</b>' + (p.contributions > 1 ? ' <span class="hint">(sonraki aylarda ' + tl2(p.parts[p.parts.length - 1]) + ')</span>' : '') + '</p>';
+      h += '<p class="hint detail-only">Formül: ay başındaki kalan ' + tl2(M.sum(p.parts)) + ' ÷ ' + p.contributions + ' ay = ' + p.parts.slice(0, 2).map(tl2).join(', ') + (p.parts.length > 2 ? '…' : '') + ' (artan kuruşlar ilk aylara). Uzun vadeli aylık ortalama: ' + tl2(p.steadyMonthly) + '</p>';
+      h += '<div class="row">' + (!p.ready && !p.doneThisMonth && p.toSetAsideNow > 0 ? '<button class="btn small primary" data-act="sf-setaside" data-id="' + esc(f.id) + '">Ayırdım (' + tl(p.toSetAsideNow) + ')</button>' : '') +
+        '<button class="btn small" data-act="sf-paid" data-id="' + esc(f.id) + '">Ödendi, sonraki döneme geç</button></div></section>';
+    });
+    h += '</div><section class="card" style="margin-top:14px"><h2>Yıllık giderleri düzenle</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th class="r">Tutar (TL)</th><th class="r">Biriken (TL)</th><th>Ödeme ayı</th><th>Tekrar ' + tip('Kaç ayda bir tekrar eder? Yıllık: 12, 6 ayda bir: 6.') + '</th><th class="detail-only">Kategori</th><th></th></tr></thead><tbody>';
+    state.sinkingFunds.forEach(function (f) {
+      h += '<tr><td>' + textInput('sinkingFunds', f.id, 'name', f.name, 'Ad') + '</td><td>' + moneyInput('sinkingFunds', f.id, 'amount', f.amount, f.name + ' tutarı') + '</td><td>' + moneyInput('sinkingFunds', f.id, 'saved', f.saved, f.name + ' biriken') + '</td><td>' + ymIn('sinkingFunds', f.id, 'dueYm', f.dueYm, 'Ödeme ayı') + '</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">' + numIn('sinkingFunds', f.id, 'everyMonths', f.everyMonths, 'Kaç ayda bir', 1, 120) + ' ay</div></td><td class="detail-only">' + sel('sinkingFunds', f.id, 'category', catOpts(), f.category, 'Kategori') + '</td><td>' + delBtn('sinkingFunds', f.id, f.name) + '</td></tr>';
+    });
+    h += '</tbody></table></div><button class="btn" data-act="add" data-list="sinkingFunds">+ Yıllık gider ekle</button>' +
+      '<p class="hint">Örnekler: kasko/sigorta, emlak vergisi, MTV, bayram harcamaları, kurban, okul masrafları, tatil, yıllık abonelikler. Kumbara parasını katılım hesabında tutabilirsin.</p></section>';
+    return h;
+  }
+
+  /* ---------- ÖDEMELER ---------- */
+  function renderPayments() {
+    var h = '<h1>Ödemeler</h1>' + subtabs('odemeler', [['', 'Yaklaşanlar'], ['duzenli', 'Düzenli ödemeler'], ['kartlar', 'Kartlar ve taksitler']]);
+    if (sub === 'duzenli') return h + renderRecurring();
+    if (sub === 'kartlar') return h + renderCards();
+    return h + renderUpcoming();
+  }
+  var STATUS_TXT = { paid: 'Ödendi ✓', matched: 'Eşleşen işlem bulundu', skipped: 'Bu ay atlandı', overdue: 'Gecikti', today: 'Bugün', soon: 'Yaklaşıyor', later: 'Bekliyor' };
+  var payYm = null;
+  function renderUpcoming() {
+    var t = today(), up = L.upcoming(state, t, 30);
+    if (!payYm) payYm = nowYm();
+    var h = '<section class="card"><h2>Önümüzdeki 30 gün ' + tip('Düzenli ödemeler, kredi kartı son ödeme günleri ve yıllık giderler. "Ödendi"ye basınca işlemlere kaydedilir ve listeden düşer.') + '</h2>' + upcomingList(up) + notifBox() + '</section>';
+    var occ = L.occurrencesForMonth(state, payYm, t), plan = L.generationPlan(state, payYm, t);
+    h += '<section class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">' + esc(ymLabel(payYm)) + ' düzenli ödemeleri</h2><div class="row"><button class="btn small" data-act="pay-month" data-d="-1" aria-label="Önceki ay">‹ Önceki</button><button class="btn small" data-act="pay-month" data-d="1" aria-label="Sonraki ay">Sonraki ›</button></div></div>';
+    if (!occ.length) h += '<p class="muted">Bu ay için düzenli ödeme yok. <a href="#odemeler/duzenli">Düzenli ödeme ekle</a></p>';
+    else {
+      h += '<div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Ad</th><th class="r">Tutar</th><th>Durum</th><th></th></tr></thead><tbody>';
+      occ.forEach(function (o) {
+        var st = o.status, b = '', idp = ' data-id="' + esc(o.item.id) + '" data-period="' + o.period + '"';
+        if (st === 'paid') b = '<button class="btn small" data-act="rc-unlink" data-tx="' + esc(o.tx.id) + '">Geri al</button>';
+        else if (st === 'matched') b = '<button class="btn small primary" data-act="rc-link"' + idp + ' data-tx="' + esc(o.match.id) + '">Bu işlemle eşleştir</button><button class="btn small" data-act="rc-skip"' + idp + '>Atla</button>';
+        else if (st === 'skipped') b = '<button class="btn small" data-act="rc-unskip"' + idp + '>Geri al</button>';
+        else b = '<button class="btn small primary" data-act="rc-pay"' + idp + '>' + (o.amount > 0 ? 'Geldi' : 'Ödendi') + '</button><button class="btn small" data-act="rc-skip"' + idp + '>Atla</button>';
+        h += '<tr><td class="num">' + dateLabel(o.date) + '</td><td>' + esc(o.item.name) + (st === 'matched' ? '<div class="hint">İşlem: ' + esc(o.match.description) + ' · ' + dateLabel(o.match.date) + ' · ' + tl2(o.match.amount) + '</div>' : '') + (o.tx && o.tx.amount !== o.amount ? '<div class="hint">Gerçekleşen: ' + tl2(o.tx.amount) + '</div>' : '') +
+          '</td><td class="r num ' + (o.amount < 0 ? 'neg' : 'pos') + '">' + tl2(o.amount) + '</td><td><span class="pill ' + lvClass(st) + '">' + STATUS_TXT[st] + '</span>' + (st !== 'paid' && st !== 'skipped' && st !== 'matched' ? ' <span class="hint">' + daysText(o.daysLeft) + '</span>' : '') + '</td><td><div class="row" style="gap:6px;flex-wrap:nowrap">' + b + '</div></td></tr>';
+      });
+      h += '</tbody></table></div>';
+      var n = plan.create.length + plan.link.length;
+      h += '<div class="row" style="margin-top:10px"><button class="btn" data-act="rc-gen"' + (n ? '' : ' disabled') + '>Bu ayın beklenen kayıtlarını oluştur (' + n + ')</button><span class="hint">' + plan.link.length + ' tanesi mevcut işlemle eşleştirilir, ' + plan.create.length + ' yeni kayıt eklenir. Onay sorulur, çift kayıt oluşmaz; sonradan ekstreyi aktarırsan gerçek işlem beklenen kaydın yerine geçer.</span></div>';
+    }
+    return h + '</section>';
+  }
+  function notifBox() {
+    if (!('Notification' in window)) return '';
+    if (Notification.permission === 'granted') return '<p class="hint">🔔 Tarayıcı hatırlatmaları açık: uygulamayı açtığında yaklaşan ödemeler günde bir kez bildirilir.</p>';
+    if (Notification.permission === 'denied') return '<p class="hint">Tarayıcı bildirimleri kapalı (tarayıcı ayarlarından açılabilir). Rozetler ve bu liste yine çalışır.</p>';
+    return '<div class="row" style="margin-top:8px"><button class="btn small" data-act="notif-on">🔔 Tarayıcı hatırlatmalarını aç</button><span class="hint">Uygulamayı açtığında yaklaşan ödemeleri bildirir. Site kapalıyken çalışmaz.</span></div>';
+  }
+  function maybeNotify() {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted' || !state) return;
+      var key = 'finans-pusulasi:bildirim', t = today();
+      if (localStorage.getItem(key) === t) return;
+      var up = L.upcoming(state, t, 3).filter(function (x) { return x.level === 'overdue' || x.level === 'today' || x.level === 'soon'; });
+      if (!up.length) return;
+      new Notification('Finans Pusulası: ' + up.length + ' ödeme yaklaştı', { body: up.slice(0, 4).map(function (x) { return x.title + ' · ' + daysText(x.daysLeft) + ' · ' + tl(Math.abs(x.amount)); }).join('\n') });
+      localStorage.setItem(key, t);
+    } catch (e) { /* bildirim desteklenmiyor */ }
+  }
+  function renderRecurring() {
+    var h = '<p class="hint">Kira, faturalar, abonelikler, maaş gibi düzenli tekrarlanan kalemleri bir kez tanımla; her ay beklenen kayıt olarak çıkar, yaklaşınca hatırlatılır. Fatura gibi tutarı değişenlerde yaklaşık tutar yaz; %10 farka ve ±7 güne kadar gerçek işlemle eşleşir.</p>';
+    h += '<section class="card"><div class="tablewrap"><table class="rc"><thead><tr><th>Ad</th><th>Tür</th><th class="r">Tutar (TL)</th><th>Kategori</th><th>Sıklık ' + tip('Her ay, her yıl veya her N ayda bir (ör. 2 ayda bir su faturası, 3 ayda bir aidat).') + '</th><th>Gün ' + tip('Ayın kaçında? 31 yazarsan kısa aylarda ayın son günü kabul edilir.') + '</th><th>Başlangıç</th><th class="detail-only">Bitiş</th><th class="detail-only">Hesap</th><th class="detail-only">Kaç gün önce hatırlat</th><th>Aktif</th><th></th></tr></thead><tbody>';
+    state.recurring.forEach(function (r) {
+      h += '<tr><td>' + textInput('recurring', r.id, 'name', r.name, 'Ad') + '</td><td>' + sel('recurring', r.id, 'direction', [['expense', 'Gider'], ['income', 'Gelir']], r.direction, 'Tür') + '</td><td>' + moneyInput('recurring', r.id, 'amount', r.amount, r.name + ' tutarı') + '</td>' +
+        '<td>' + sel('recurring', r.id, 'category', catOpts(), r.category, 'Kategori') + '</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">' + sel('recurring', r.id, 'freq', [['monthly', 'Her ay'], ['yearly', 'Her yıl'], ['custom', 'Her N ayda']], r.freq, 'Sıklık') +
+        (r.freq === 'custom' ? numIn('recurring', r.id, 'everyMonths', r.everyMonths, 'Kaç ayda bir', 1, 120) : '') + '</div></td><td>' + numIn('recurring', r.id, 'day', r.day, 'Gün', 1, 31) + '</td><td>' + ymIn('recurring', r.id, 'startYm', r.startYm, 'Başlangıç ayı') + '</td>' +
+        '<td class="detail-only">' + ymIn('recurring', r.id, 'endYm', r.endYm, 'Bitiş ayı (boş: süresiz)') + '</td><td class="detail-only"><select aria-label="Hesap" data-list="recurring" data-id="' + esc(r.id) + '" data-field="accountId">' + accOptions(r.accountId, null, '— seçilmedi —') + '</select></td>' +
+        '<td class="detail-only">' + numIn('recurring', r.id, 'remindDays', r.remindDays == null ? 3 : r.remindDays, 'Hatırlatma günü', 0, 31) + '</td><td style="text-align:center">' + chk('recurring', r.id, 'active', r.active !== false, 'Aktif') + '</td><td>' + delBtn('recurring', r.id, r.name) + '</td></tr>';
+    });
+    if (!state.recurring.length) h += '<tr><td colspan="12" class="muted">Henüz düzenli ödeme yok.</td></tr>';
+    h += '</tbody></table></div><button class="btn" data-act="add" data-list="recurring">+ Düzenli ödeme / abonelik ekle</button></section>';
+    var mo = 0, yr = 0;
+    state.recurring.forEach(function (r) { if (r.active === false || r.direction !== 'expense') return; var ev = r.freq === 'monthly' ? 1 : r.freq === 'yearly' ? 12 : r.everyMonths; if (ev === 1) mo = M.add(mo, r.amount); yr = M.add(yr, M.mulRatio(r.amount, 12, ev)); });
+    h += '<section class="card" style="margin-top:14px"><h2>Özet</h2><p>Her ay tekrarlayan giderlerin: <b class="num">' + tl2(mo) + '</b> · Yıllık toplam düzenli gider: <b class="num">' + tl2(yr) + '</b></p><p class="hint">Yıllık toplam = her kalemin tutarı × (12 ÷ kaç ayda bir). Bütçe planındaki giderlerinle karşılaştırarak eksik kalem var mı kontrol et.</p></section>';
+    return h;
+  }
+  function renderCards() {
+    var t = today(), ym = nowYm(), cs = cards(), h = '';
+    if (!cs.length) return '<div class="card"><p>Henüz kredi kartı eklemedin. Kart ekleyince kesim ve son ödeme tarihlerini, taksitleri ve limitini takip edebilirsin.</p><button class="btn primary" data-act="add" data-list="accounts" data-type="card">+ Kredi kartı ekle</button></div>';
+    cs.forEach(function (a) {
+      var s = L.cardStatus(state, a, t), c = a.card;
+      h += '<section class="card" style="margin-bottom:14px"><h2>💳 ' + esc(a.name) + '</h2><div class="grid kpis">';
+      h += '<div><div class="hint">Son ekstreden kalan borç ' + tip('Son ekstrenin (dönem borcunun) henüz ödenmemiş kısmı. Son ödeme gününe kadar ödenmeli; gecikirse faiz/ceza işler.') + '</div><div class="kpi"><div class="value num">' + tl2(s.remaining) + '</div></div>' +
+        (s.statement ? '<span class="pill ' + lvClass(s.level) + '">' + (s.level === 'ok' ? 'Ödendi ✓' : 'Son ödeme ' + dateLabel(s.statement.due) + ' · ' + daysText(s.daysLeft)) + '</span>' : '<span class="hint">Ekstre bilgisi girilmedi</span>') + '</div>';
+      h += '<div><div class="hint">Limit kullanımı ' + tip('Kullanılan = güncel borç + henüz ekstreye gelmemiş taksitler. Bankalar limiti böyle düşer.') + '</div><div class="kpi"><div class="value num">' + tl(s.used) + ' <span class="muted" style="font-size:1rem">/ ' + tl(s.limit) + '</span></div></div>' + bar(s.usageBp, s.usageBp > 8000 ? 'var(--danger)' : 'var(--brand)', 'Limit kullanımı') + '<span class="hint">Kullanılabilir: ' + tl(s.available) + '</span></div>';
+      h += '<div><div class="hint">Gelecek taksitler ' + tip('Bu aydan sonraki aylarda ekstreye gelecek taksitlerin toplamı. Net varlıktan borç olarak düşülür.') + '</div><div class="kpi"><div class="value num">' + tl(s.futureInstallments) + '</div></div><span class="hint">Sonraki kesim: ' + dateLabel(s.nextStatement) + '</span></div></div>';
+      if (s.remaining > 0) h += '<form class="row card-pay" data-cardpay="' + esc(a.id) + '" style="margin-top:12px" novalidate><label for="cp-from-' + esc(a.id) + '" class="hint">Ödeme yap:</label><select id="cp-from-' + esc(a.id) + '" style="max-width:240px">' + accOptions(null, function (x) { return x.type !== 'card' && x.currency === 'TRY'; }) + '</select><input id="cp-amt-' + esc(a.id) + '" class="money" type="text" inputmode="decimal" style="max-width:140px" aria-label="Ödeme tutarı" value="' + esc(curVal(s.remaining)) + '"><button class="btn primary small" type="submit">Öde (transfer)</button><span class="hint">Seçtiğin hesaptan karta transfer olarak kaydedilir; gelir/gider sayılmaz.</span></form>';
+      h += '<details style="margin-top:12px"' + (c.statementYm ? '' : ' open') + '><summary><b>Kart ayarları ve son ekstre</b></summary><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-top:10px">' +
+        '<div class="field"><label>Kesim günü ' + tip('Ekstrenin kesildiği gün (ayın kaçı).') + '</label>' + numIn('accounts', a.id, 'card.statementDay', c.statementDay, 'Kesim günü', 1, 31) + '</div>' +
+        '<div class="field"><label>Son ödeme günü</label>' + numIn('accounts', a.id, 'card.dueDay', c.dueDay, 'Son ödeme günü', 1, 31) + '</div>' +
+        '<div class="field"><label>Kart limiti (TL)</label>' + moneyInput('accounts', a.id, 'card.limit', c.limit, 'Kart limiti') + '</div>' +
+        '<div class="field"><label>Son ekstre ayı</label>' + ymIn('accounts', a.id, 'card.statementYm', c.statementYm, 'Son ekstre ayı') + '</div>' +
+        '<div class="field"><label>Ekstre borcu (TL)</label>' + moneyInput('accounts', a.id, 'card.statementDebt', c.statementDebt, 'Ekstre borcu') + '</div>' +
+        '<div class="field"><label>Bu ekstreye ödenen (TL)</label>' + moneyInput('accounts', a.id, 'card.paid', c.paid, 'Ödenen') + '</div>' +
+        '<div class="field"><label>Güncel borç (TL) ' + tip('Bankanın gösterdiği güncel borç; henüz ekstreye gelmemiş gelecek taksitler HARİÇ.') + '</label>' + moneyInput('accounts', a.id, 'debt', Math.max(0, -a.balance), 'Güncel borç') + '</div>' +
+        '<div class="field"><label>Kaç gün önce hatırlat</label>' + numIn('accounts', a.id, 'card.remindDays', c.remindDays == null ? 3 : c.remindDays, 'Hatırlatma', 0, 31) + '</div></div>' +
+        '<p class="hint">Yeni ekstre geldiğinde ayı ve borcu güncelle (ödenen otomatik sıfırlanır). Ekstre PDF\'ini <a href="#veri">Veri ekle</a>\'den aktarırken bu kartı seçersen harcamalar, taksitler ve ekstre borcu otomatik işlenir.</p></details></section>';
+    });
+    var burden = L.installmentBurden(state, ym, 12);
+    h += '<section class="card"><h2>Taksitli alışverişler ' + tip('Toplam tutar taksit sayısına kuruşu kuruşuna bölünür; artan kuruşlar ilk taksitlere eklenir.') + '</h2><div class="tablewrap"><table><thead><tr><th>Ne aldın?</th><th>Kart</th><th class="r">Toplam (TL)</th><th>Taksit</th><th>İlk taksit ayı</th><th class="r">Bu ay</th><th class="r">Kalan</th><th>Bitiş</th><th class="detail-only">Kategori</th><th></th></tr></thead><tbody>';
+    state.installments.forEach(function (p) {
+      var s = L.installmentStatus(p, ym);
+      h += '<tr><td>' + textInput('installments', p.id, 'description', p.description, 'Açıklama') + '</td><td><select aria-label="Kart" data-list="installments" data-id="' + esc(p.id) + '" data-field="cardId">' + accOptions(p.cardId, function (x) { return x.type === 'card'; }) + '</select></td>' +
+        '<td>' + moneyInput('installments', p.id, 'total', p.total, 'Toplam') + '</td><td>' + numIn('installments', p.id, 'count', p.count, 'Taksit sayısı', 1, 60) + '</td><td>' + ymIn('installments', p.id, 'firstYm', p.firstYm, 'İlk taksit ayı') + '</td>' +
+        '<td class="r num">' + (s.thisMonth ? tl2(s.thisMonth) + '<div class="hint">' + (s.paidCount + 1) + '/' + p.count + '. taksit</div>' : s.notStarted ? '<span class="hint">başlamadı</span>' : '—') + '</td><td class="r num">' + (s.done ? '<span class="pill ok">Bitti ✓</span>' : s.remainingCount + ' taksit · ' + tl2(s.remaining)) + '</td><td class="num">' + esc(shortYm(s.lastYm)) + '</td>' +
+        '<td class="detail-only">' + sel('installments', p.id, 'category', catOpts(), p.category, 'Kategori') + '</td><td>' + delBtn('installments', p.id, p.description) + '</td></tr>';
+    });
+    if (!state.installments.length) h += '<tr><td colspan="10" class="muted">Taksitli alışveriş yok.</td></tr>';
+    h += '</tbody></table></div><button class="btn" data-act="add" data-list="installments">+ Taksitli alışveriş ekle</button>';
+    var maxB = Math.max.apply(null, burden.map(function (b) { return b.total; }).concat([1]));
+    h += '<h3>Önümüzdeki 12 ayın taksit yükü</h3><div class="burden">' + burden.map(function (b) { return '<div class="alloc-row"><span>' + esc(shortYm(b.ym)) + '</span><div class="bar"><span style="width:' + (b.total * 100 / maxB) + '%;background:var(--medium)"></span></div><span class="num r">' + tl(b.total) + '</span></div>'; }).join('') + '</div>';
+    h += '<p class="hint">Bu ayın taksitleri (' + tl2(burden[0].total) + ') bütçe planına otomatik sabit gider olarak eklenir; ileriki aylarınkiler net varlıktan borç olarak düşülür.</p></section>';
+    return h;
+  }
+
+  /* ---------- HESAPLAR ve KURLAR ---------- */
+  function renderAccounts() {
+    var t = today(), s = L.accountsSummary(state, t), h = '<h1>Hesaplar ve kurlar</h1><p class="hint">Banka, katılım, nakit, altın ve kredi kartı hesaplarını ayrı ayrı tut. Döviz ve altın, girdiğin kurla TL\'ye çevrilir. Hesaplar arası para aktarımı (transfer) gelir veya gider sayılmaz.</p>';
+    h += '<div class="grid kpis">' + kpi('Hesaplardaki para (TL)', tl(s.assetsTL), 'Tüm hesaplar TL karşılığıyla', 'Kredi kartı dışındaki hesapların bakiyesi, kurla TL\'ye çevrilmiş toplamı.') +
+      kpi('Kart borçları', '<span class="neg">' + tl(M.add(s.cardDebt, s.futureInstallments)) + '</span>', 'Güncel ' + tl(s.cardDebt) + ' + gelecek taksit ' + tl(s.futureInstallments), 'Kredi kartlarının güncel borcu ve henüz ekstreye gelmemiş taksitler.') +
+      kpi('Hesaplara göre net', tl(s.netTL), 'Özet\'teki net varlığa eklenir', 'Hesaplardaki para eksi kart borçları. Varlıklar bölümündeki fon/hisse gibi yatırımlar bu rakama dahil değildir; Özet\'teki net varlıkta hepsi birlikte hesaplanır.') + '</div>';
+    if (s.missingRates.length) h += '<div class="notice warn" style="margin-top:12px">' + s.missingRates.map(function (c) { return L.CURRENCIES[c].label; }).join(', ') + ' için kur girilmemiş. Bu hesaplar toplamlara sayılmıyor; aşağıdan kur gir.</div>';
+    h += '<section class="card" style="margin-top:14px"><h2>Hesaplarım</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th>Tür</th><th>Para birimi</th><th class="r">Bakiye ' + tip('Hesabın kendi para biriminde bugünkü bakiyesi (altında gram). Kredi kartında güncel borcu yaz.') + '</th><th class="r">TL karşılığı</th><th>Acil fon ' + tip('İşaretli hesaplar acil durum fonuna sayılır (kolay çekilebilen TL hesaplar önerilir).') + '</th><th class="detail-only">Risk</th><th class="detail-only">Net varlığa say</th><th></th></tr></thead><tbody>';
+    var types = Object.keys(L.ACCOUNT_TYPES).map(function (k) { return [k, L.ACCOUNT_TYPES[k].label]; }), curs = Object.keys(L.CURRENCIES).filter(function (k) { return k !== 'XAU'; }).map(function (k) { return [k, L.CURRENCIES[k].label]; });
+    s.rows.forEach(function (r) {
+      var a = r.acc, isCard = a.type === 'card', fixedCur = isCard || a.type === 'gold';
+      h += '<tr><td>' + textInput('accounts', a.id, 'name', a.name, 'Hesap adı') + '</td><td>' + sel('accounts', a.id, 'type', types, a.type, 'Hesap türü') + '</td><td>' + (fixedCur ? esc(L.CURRENCIES[a.currency].label) : sel('accounts', a.id, 'currency', curs, a.currency, 'Para birimi')) + '</td>' +
+        '<td>' + (isCard ? '<div class="row" style="flex-wrap:nowrap;gap:4px"><span class="hint">Borç</span>' + moneyInput('accounts', a.id, 'debt', Math.max(0, -a.balance), a.name + ' borcu') + '</div>' : moneyInput('accounts', a.id, 'balance', a.balance, a.name + ' bakiyesi')) + '</td>' +
+        '<td class="r num ' + (r.tl != null && r.tl < 0 ? 'neg' : '') + '">' + (r.tl == null ? '<span class="pill warn">Kur yok</span>' : tl2(r.tl)) + '</td><td style="text-align:center">' + (isCard ? '—' : chk('accounts', a.id, 'emergency', a.emergency, 'Acil fona say')) + '</td>' +
+        '<td class="detail-only">' + (isCard ? '—' : sel('accounts', a.id, 'risk', [['safe', 'Güvenli'], ['medium', 'Orta'], ['risky', 'Riskli']], a.risk || L.ACCOUNT_TYPES[a.type].risk, 'Risk')) + '</td><td class="detail-only" style="text-align:center">' + (isCard ? '—' : chk('accounts', a.id, 'inNetWorth', a.inNetWorth !== false, 'Net varlığa say')) + '</td><td>' + delBtn('accounts', a.id, a.name) + '</td></tr>';
+    });
+    if (!s.rows.length) h += '<tr><td colspan="9" class="muted">Henüz hesap yok.</td></tr>';
+    h += '</tbody><tfoot><tr><th colspan="4">Toplam (kartlar hariç)</th><th class="r num">' + tl2(s.assetsTL) + '</th><th colspan="4"></th></tr></tfoot></table></div><div class="row"><button class="btn" data-act="add" data-list="accounts">+ Hesap ekle</button><button class="btn" data-act="add" data-list="accounts" data-type="card">+ Kredi kartı ekle</button><button class="btn" data-act="add" data-list="accounts" data-type="gold">+ Altın hesabı ekle</button></div>';
+    var byc = Object.keys(s.byCurrency).filter(function (c) { return c !== 'TRY'; });
+    if (byc.length) h += '<p class="hint">Döviz/altın varlığın: ' + byc.map(function (c) { return L.formatCur(s.byCurrency[c], c); }).join(' · ') + '</p>';
+    h += '<p class="hint">Bakiyeleri ara ara bankandaki rakamla güncelle. Harcama işlemleri bakiyeyi kendiliğinden değiştirmez; transferler ise iki hesabı da otomatik günceller. Faizli vadeli mevduat yerine katılım hesabı, altın hesabı gibi helal seçenekleri tercih et.</p></section>';
+    var accs = state.accounts;
+    h += '<section class="card" style="margin-top:14px"><h2>Hesaplar arası transfer ' + tip('Kendi hesapların arasında para aktarımı, kart borcu ödemesi, döviz/altın alımı. Gelir veya gider sayılmaz; iki hesabın bakiyesi otomatik güncellenir.') + '</h2>';
+    if (accs.length < 2) h += '<p class="muted">Transfer için en az iki hesap gerekir.</p>';
+    else {
+      h += '<form id="tr-form" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end" novalidate>' +
+        '<div class="field"><label for="tr-date">Tarih</label><input id="tr-date" type="date" value="' + t + '"></div>' +
+        '<div class="field"><label for="tr-from">Nereden</label><select id="tr-from">' + accOptions(accs[0].id) + '</select></div>' +
+        '<div class="field"><label for="tr-to">Nereye</label><select id="tr-to">' + accOptions(accs[1].id) + '</select></div>' +
+        '<div class="field"><label for="tr-amt" id="tr-amt-l">Giden tutar</label><input id="tr-amt" class="money" type="text" inputmode="decimal" placeholder="0,00"></div>' +
+        '<div class="field" id="tr-amt2-f"><label for="tr-amt2" id="tr-amt2-l">Gelen tutar</label><input id="tr-amt2" class="money" type="text" inputmode="decimal" placeholder="farklı para biriminde"></div>' +
+        '<div class="field"><label for="tr-note">Not</label><input id="tr-note" type="text" maxlength="120" placeholder="ör. kart ödemesi"></div>' +
+        '<div class="field"><button class="btn primary" type="submit">Transferi kaydet</button></div></form><p class="hint" id="tr-hint"></p>';
+    }
+    if (state.transfers.length) {
+      h += '<div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Nereden → Nereye</th><th class="r">Tutar</th><th>Not</th><th></th></tr></thead><tbody>';
+      state.transfers.map(function (x, i) { return [x, i]; }).sort(function (a, b) { return a[0].date < b[0].date ? 1 : a[0].date > b[0].date ? -1 : b[1] - a[1]; }).map(function (p) { return p[0]; }).slice(0, 100).forEach(function (x) {
+        var f = accById(x.fromId), to = accById(x.toId);
+        h += '<tr><td class="num">' + dateLabel(x.date) + '</td><td>' + esc(f ? f.name : '?') + ' → ' + esc(to ? to.name : '?') + '</td><td class="r num">' + esc(L.formatCur(x.amountFrom, f ? f.currency : 'TRY')) + (f && to && f.currency !== to.currency ? ' → ' + esc(L.formatCur(x.amountTo, to.currency)) : '') + '</td><td>' + esc(x.note || '') + '</td><td><button class="btn small danger" data-act="tr-del" data-id="' + esc(x.id) + '">Sil (geri al)</button></td></tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+    h += '</section>';
+    h += '<section class="card" style="margin-top:14px"><h2>Kurlar ' + tip('Uygulama internetten canlı fiyat ÇEKMEZ. Bankanın veya kuyumcunun ALIŞ kurunu kendin yaz; tarihi otomatik bugüne ayarlanır.') + '</h2><div class="tablewrap"><table><thead><tr><th>Para birimi</th><th class="r">1 birim = ? TL</th><th>Kur tarihi</th><th></th></tr></thead><tbody>';
+    ['USD', 'EUR', 'XAU'].forEach(function (c) {
+      var r = state.rates[c], age = L.rateAgeDays(state.rates, c, t);
+      h += '<tr><td>' + esc(L.CURRENCIES[c].label) + '</td><td><input class="money" type="text" inputmode="decimal" style="max-width:140px;margin-left:auto;display:block" aria-label="' + esc(L.CURRENCIES[c].label) + ' kuru" data-rate="' + c + '" placeholder="girilmedi" value="' + (r ? esc(curVal(r.rate)) : '') + '"></td>' +
+        '<td><input type="date" aria-label="' + esc(L.CURRENCIES[c].label) + ' kur tarihi" data-ratedate="' + c + '" value="' + (r ? esc(r.date) : '') + '"' + (r ? '' : ' disabled') + '></td><td>' + (!r ? '<span class="pill warn">Kur yok</span>' : age > 7 ? '<span class="pill warn">' + age + ' gün önce — güncelle</span>' : age < 0 ? '<span class="pill warn">Tarih gelecekte</span>' : '<span class="pill ok">' + (age === 0 ? 'Bugün' : age + ' gün önce') + '</span>') + '</td></tr>';
+    });
+    h += '</tbody></table></div><p class="hint">Net varlık ve acil fon hesaplarında bu kurlar kullanılır. ' + (state.isExample ? '<b>Örnek veride kurlar uydurmadır, gerçek değildir.</b> ' : '') + 'Kur 7 günden eskiyse uyarı görürsün.</p>' +
+      '<p class="hint detail-only">Hesap: TL karşılığı = tutar (0,01 birim) × kur (kuruş) ÷ 100, kuruşa yuvarlanır (yarım kuruş yukarı). Altın 0,01 gram hassasiyetle tutulur.</p></section>';
+    return h;
+  }
+  function trHint() {
+    var f = accById(($('#tr-from') || {}).value), to = accById(($('#tr-to') || {}).value), el = $('#tr-amt2-f'), hint = $('#tr-hint');
+    if (!f || !to || !el) return;
+    var diff = f.currency !== to.currency;
+    el.style.display = diff ? '' : 'none';
+    $('#tr-amt-l').textContent = 'Giden tutar (' + L.CURRENCIES[f.currency].short + ')';
+    $('#tr-amt2-l').textContent = 'Gelen tutar (' + L.CURRENCIES[to.currency].short + ')';
+    var amt = M.parse($('#tr-amt').value), msg = '';
+    if (diff && amt != null && amt > 0) {
+      var a = L.toTRY(amt, f.currency, state.rates), rb = to.currency === 'TRY' ? 100 : (state.rates[to.currency] || {}).rate;
+      if (a != null && rb) { var sug = M.mulRatio(a, 100, rb); msg = 'Girdiğin kurlarla yaklaşık ' + L.formatCur(sug, to.currency) + ' eder. Bankanın gerçekte verdiği tutarı yaz.'; $('#tr-amt2').placeholder = curVal(sug); }
+    }
+    if (to.type === 'card') { var cs = L.cardStatus(state, to, today()); msg += (msg ? ' ' : '') + 'Kart ödemesi: ekstreden kalan ' + tl2(cs.remaining) + '.'; }
+    hint.textContent = msg;
+  }
+  /* Transferi uygula (sign=1) / geri al (sign=-1): bakiyeler ve kart ekstre ödemesi kuruşu kuruşuna güncellenir. */
+  function applyTransfer(s, x, sign) {
+    var f = s.accounts.find(function (a) { return a.id === x.fromId; }), to = s.accounts.find(function (a) { return a.id === x.toId; });
+    if (!f || !to) throw new Error('Hesap bulunamadı');
+    f.balance = M.sub(f.balance, sign * x.amountFrom); to.balance = M.add(to.balance, sign * x.amountTo);
+    if (to.type === 'card' && to.card) {
+      if (sign > 0) { var rem = Math.max(0, M.sub(to.card.statementDebt, to.card.paid)); x.paidApplied = Math.min(rem, x.amountTo); to.card.paid = M.add(to.card.paid, x.paidApplied); }
+      else to.card.paid = Math.max(0, M.sub(to.card.paid, x.paidApplied || 0));
+    }
+    if (f.type !== 'card' && f.balance < 0) throw new Error(f.name + ' bakiyesi yetersiz');
+    if (to.type !== 'card' && to.balance < 0) throw new Error(to.name + ' bakiyesi eksiye düşerdi; önce bakiyeyi kontrol et');
+  }
+  function submitTransfer(fromId, toId, date, amtFrom, amtTo, note) {
+    var f = accById(fromId), to = accById(toId), errs = [];
+    if (!f || !to) errs.push('hesap'); else if (fromId === toId) return toast('Aynı hesaba transfer yapılamaz.');
+    if (!date) errs.push('tarih'); if (amtFrom == null || amtFrom <= 0) errs.push('tutar');
+    if (f && to && f.currency === to.currency) amtTo = amtFrom; else if (amtTo == null || amtTo <= 0) errs.push('gelen tutar');
+    if (errs.length) return toast('Kontrol et: ' + errs.join(', '));
+    var x = { id: S.uid(), date: date, fromId: fromId, toId: toId, amountFrom: amtFrom, amountTo: amtTo, note: note || '', paidApplied: 0 };
+    mutate(function (s) { applyTransfer(s, x, 1); s.transfers.push(x); }, 'Transfer kaydedildi: ' + L.formatCur(amtFrom, f.currency) + ' (gelir/gider sayılmaz)');
+  }
+
+  /* ---------- Yeni listelerin alan düzenleme kuralları ---------- */
+  var V2_LISTS = { accounts: 1, recurring: 1, installments: 1, sinkingFunds: 1 };
+  var INT_FIELDS = { day: [1, 31], count: [1, 60], everyMonths: [1, 120], remindDays: [0, 31], 'card.statementDay': [1, 31], 'card.dueDay': [1, 31], 'card.remindDays': [0, 31] };
+  var MONEY_FIELDS = { amount: 1, total: 1, saved: 1, 'card.limit': 1, 'card.statementDebt': 1, 'card.paid': 1 };
+  var YM_FIELDS = { startYm: 1, endYm: 1, firstYm: 1, dueYm: 1, 'card.statementYm': 1 };
+  function setPath(o, path, v) { var p = path.split('.'); if (p.length === 2) o[p[0]][p[1]] = v; else o[path] = v; }
+  function onV2FieldChange(el) {
+    var list = el.dataset.list, id = el.dataset.id, f = el.dataset.field, item = findItem(list, id);
+    if (!item) return;
+    function bad(msg) { el.setAttribute('aria-invalid', 'true'); toast(msg); }
+    if (MONEY_FIELDS[f] || f === 'balance' || f === 'debt') {
+      var k = M.parse(el.value);
+      if (k == null || k < 0) return bad('Geçersiz tutar: "' + el.value + '". Örnek: 1.250,50');
+      if ((f === 'amount' || f === 'total') && k === 0) return bad('Tutar sıfırdan büyük olmalı');
+      if (f === 'debt') return mutate(function () { item.balance = k === 0 ? 0 : -k; });
+      return mutate(function () { setPath(item, f, k); });
+    }
+    if (INT_FIELDS[f]) {
+      var n = Number(el.value), lim = INT_FIELDS[f];
+      if (!Number.isInteger(n) || n < lim[0] || n > lim[1]) return bad(lim[0] + ' ile ' + lim[1] + ' arasında tam sayı gir');
+      return mutate(function () { setPath(item, f, n); });
+    }
+    if (YM_FIELDS[f]) {
+      if (!el.value && (f === 'endYm' || f === 'card.statementYm')) return mutate(function () { setPath(item, f, null); });
+      if (!L.isYm(el.value)) return bad('Geçerli bir ay seç');
+      return mutate(function () {
+        if (f === 'card.statementYm' && item.card.statementYm !== el.value) item.card.paid = 0; // yeni ekstre: ödenen sıfırlanır
+        setPath(item, f, el.value);
+      }, f === 'card.statementYm' ? 'Yeni ekstre ayı kaydedildi; "ödenen" sıfırlandı.' : null);
+    }
+    if (f === 'name' || f === 'description') { var v = el.value.trim(); if (!v) return bad('Ad boş olamaz'); return mutate(function () { item[f] = v; }); }
+    if (f === 'emergency' || f === 'inNetWorth' || f === 'active') return mutate(function () { item[f] = el.checked; });
+    if (f === 'accountId') return mutate(function () { item.accountId = el.value || null; });
+    if (f === 'freq') return mutate(function () { item.freq = el.value; item.everyMonths = el.value === 'monthly' ? 1 : el.value === 'yearly' ? 12 : (item.everyMonths > 1 && item.everyMonths !== 12 ? item.everyMonths : 2); });
+    if (f === 'type' && list === 'accounts') {
+      var nt = el.value, T = L.ACCOUNT_TYPES[nt];
+      if (item.type === 'card' && nt !== 'card' && state.installments.some(function (p) { return p.cardId === item.id; })) { toast('Bu kartta taksitler var; önce taksitleri başka karta taşı veya sil.'); return render(); }
+      return mutate(function () {
+        var curChanged = T.currency && item.currency !== T.currency;
+        item.type = nt; item.risk = T.risk; item.emergency = T.emergency;
+        if (curChanged) { item.currency = T.currency; item.balance = 0; }
+        if (nt === 'card') { if (!item.card) item.card = { statementDay: 1, dueDay: 11, limit: 0, statementDebt: 0, statementYm: null, paid: 0, remindDays: 3 }; if (item.balance > 0) item.balance = 0; }
+        else { delete item.card; if (item.balance < 0) item.balance = 0; }
+      }, 'Hesap türü değişti; bakiyeyi kontrol et.');
+    }
+    if (f === 'currency') {
+      if (item.currency === el.value) return;
+      if (item.balance && !confirm('Para birimi değişince bakiye sıfırlanır (yanlış çevrim olmasın diye). Devam?')) return render();
+      return mutate(function () { item.currency = el.value; item.balance = 0; });
+    }
+    mutate(function () { item[f] = el.value; }); // direction, category, risk, cardId
+  }
+  function deleteV2(list, id) {
+    var item = findItem(list, id); if (!item) return;
+    if (list === 'accounts') {
+      var nTr = state.transfers.filter(function (x) { return x.fromId === id || x.toId === id; }).length, nIn = state.installments.filter(function (p) { return p.cardId === id; }).length;
+      if (nTr || nIn) return toast('Bu hesaba bağlı ' + (nTr ? nTr + ' transfer ' : '') + (nIn ? nIn + ' taksit ' : '') + 'var. Önce onları sil.');
+      return mutate(function (s) {
+        s.accounts = s.accounts.filter(function (a) { return a.id !== id; });
+        s.transactions.forEach(function (t) { if (t.accountId === id) delete t.accountId; });
+        s.recurring.forEach(function (r) { if (r.accountId === id) r.accountId = null; });
+      }, 'Hesap silindi.');
+    }
+    if (list === 'recurring') {
+      var gen = state.transactions.filter(function (t) { return t.recurringId === id && t.source === 'düzenli'; }).length;
+      var dropGen = gen > 0 && confirm('"' + item.name + '" için oluşturulmuş ' + gen + ' beklenen kayıt da silinsin mi? (İptal: kayıtlar normal işlem olarak kalır)');
+      return mutate(function (s) {
+        s.recurring = s.recurring.filter(function (r) { return r.id !== id; });
+        if (dropGen) s.transactions = s.transactions.filter(function (t) { return !(t.recurringId === id && t.source === 'düzenli'); });
+        s.transactions.forEach(function (t) { if (t.recurringId === id) { delete t.recurringId; delete t.period; } });
+      }, 'Düzenli ödeme silindi.');
+    }
+    mutate(function (s) { s[list] = s[list].filter(function (x) { return x.id !== id; }); }, 'Silindi.');
+  }
+  function addV2(list, type) {
+    var ym = nowYm(), id = S.uid();
+    if (list === 'installments' && !cards().length) return toast('Önce Hesaplar bölümünden bir kredi kartı ekle.');
+    mutate(function (s) {
+      if (list === 'accounts') {
+        var t = type || 'bank', T = L.ACCOUNT_TYPES[t], a = { id: id, name: t === 'card' ? 'Yeni kredi kartı' : t === 'gold' ? 'Altın hesabı' : 'Yeni hesap', type: t, currency: T.currency || 'TRY', balance: 0, emergency: T.emergency, inNetWorth: true, risk: T.risk };
+        if (t === 'card') a.card = { statementDay: 1, dueDay: 11, limit: 0, statementDebt: 0, statementYm: null, paid: 0, remindDays: 3 };
+        s.accounts.push(a);
+      }
+      if (list === 'recurring') s.recurring.push({ id: id, name: 'Yeni düzenli ödeme', direction: 'expense', amount: 10000, category: 'Faturalar', freq: 'monthly', everyMonths: 1, day: 1, startYm: ym, endYm: null, remindDays: 3, active: true, skipped: [], accountId: null });
+      if (list === 'installments') s.installments.push({ id: id, cardId: cards()[0].id, description: 'Yeni taksitli alışveriş', category: 'Alışveriş', total: 600000, count: 6, firstYm: ym });
+      if (list === 'sinkingFunds') s.sinkingFunds.push({ id: id, name: 'Yeni yıllık gider', category: 'Diğer', amount: 1200000, saved: 0, dueYm: L.addMonthsYm(ym, 12), day: 1, everyMonths: 12 });
+    });
+    var inputs = $$('input[data-list="' + list + '"][data-field="' + (list === 'installments' ? 'description' : 'name') + '"]'); if (inputs.length) { var last = inputs[inputs.length - 1]; last.focus(); last.select(); }
+  }
+  function recurringTx(item, period, amount) {
+    var occ = L.occurrence(item, period) || { date: L.ymdOf(period, item.day) }, t = today();
+    var tx = { id: S.uid(), date: occ.date > t ? t : occ.date, description: item.name, amount: amount, category: item.category, source: 'düzenli', recurringId: item.id, period: period };
+    if (item.accountId) tx.accountId = item.accountId;
+    return tx;
+  }
+  function v2Actions(t) {
+    return {
+      'rc-pay': function () {
+        var item = findItem('recurring', t.dataset.id), period = t.dataset.period; if (!item) return;
+        if (state.transactions.some(function (x) { return x.recurringId === item.id && x.period === period; })) return toast('Bu ay için zaten kayıtlı.');
+        var v = prompt('"' + item.name + '" (' + ymLabel(period) + ') tutarı, TL. Fatura gibi değişiyorsa gerçek tutarı yaz:', M.format(item.amount, { symbol: false }));
+        if (v == null) return; var k = M.parse(v); if (k == null || k <= 0) return toast('Geçersiz tutar');
+        mutate(function (s) { s.transactions.push(recurringTx(item, period, item.direction === 'income' ? k : -k)); }, item.name + ' kaydedildi: ' + tl2(k));
+      },
+      'rc-link': function () { var id = t.dataset.id, period = t.dataset.period, txId = t.dataset.tx; mutate(function (s) { var x = s.transactions.find(function (q) { return q.id === txId; }); if (!x || x.recurringId) throw new Error('İşlem bulunamadı veya zaten bağlı'); x.recurringId = id; x.period = period; }, 'Eşleştirildi; yeni kayıt eklenmedi (çift sayım yok).'); },
+      'rc-unlink': function () {
+        var txId = t.dataset.tx, x = state.transactions.find(function (q) { return q.id === txId; }); if (!x) return;
+        mutate(function (s) { var q = s.transactions.find(function (z) { return z.id === txId; }); if (q.source === 'düzenli') s.transactions = s.transactions.filter(function (z) { return z.id !== txId; }); else { delete q.recurringId; delete q.period; } }, x.source === 'düzenli' ? 'Kayıt silindi.' : 'Eşleştirme kaldırıldı (işlem duruyor).');
+      },
+      'rc-skip': function () { var id = t.dataset.id, p = t.dataset.period; mutate(function (s) { var r = s.recurring.find(function (x) { return x.id === id; }); if (r.skipped.indexOf(p) < 0) r.skipped.push(p); }, 'Bu ay atlandı.'); },
+      'rc-unskip': function () { var id = t.dataset.id, p = t.dataset.period; mutate(function (s) { var r = s.recurring.find(function (x) { return x.id === id; }); r.skipped = r.skipped.filter(function (y) { return y !== p; }); }); },
+      'rc-gen': function () {
+        var plan = L.generationPlan(state, payYm, today());
+        if (!plan.create.length && !plan.link.length) return toast('Oluşturulacak kayıt yok.');
+        var msg = ymLabel(payYm) + ' için:\n' + plan.link.map(function (l) { return '• ' + l.item.name + ': mevcut işlemle eşleştirilecek (yeni kayıt yok)'; }).concat(plan.create.map(function (c) { return '• ' + c.item.name + ': ' + tl2(c.tx.amount) + ' (' + dateLabel(c.tx.date) + ') beklenen kayıt eklenecek'; })).join('\n') + '\n\nOnaylıyor musun?';
+        if (!confirm(msg)) return;
+        mutate(function (s) { L.applyGeneration(s, plan, S.uid); }, (plan.create.length + plan.link.length) + ' düzenli ödeme işlendi.');
+      },
+      'pay-month': function () { payYm = L.addMonthsYm(payYm || nowYm(), Number(t.dataset.d)); render(); },
+      'notif-on': function () { try { Notification.requestPermission().then(function () { render(); maybeNotify(); }); } catch (e) { toast('Bu tarayıcı bildirimleri desteklemiyor.'); } },
+      'sf-setaside': function () {
+        var f = findItem('sinkingFunds', t.dataset.id); if (!f) return; var p = L.sinkingPlan(f, nowYm()); if (p.toSetAsideNow <= 0) return;
+        mutate(function () { f.saved = M.add(f.saved, p.toSetAsideNow); f.setAsideYm = nowYm(); f.setAsideAmount = p.toSetAsideNow; }, f.name + ' için ' + tl2(p.toSetAsideNow) + ' ayrıldı.');
+      },
+      'sf-paid': function () {
+        var f = findItem('sinkingFunds', t.dataset.id); if (!f) return;
+        var nextYm = L.addMonthsYm(f.dueYm, f.everyMonths);
+        var v = prompt('"' + f.name + '" için ödediğin tutar (TL). Harcama olarak işlemlere de kaydedilir; kumbara bir sonraki döneme (' + ymLabel(nextYm) + ') geçer:', M.format(f.amount, { symbol: false }));
+        if (v == null) return; var k = M.parse(v); if (k == null || k <= 0) return toast('Geçersiz tutar');
+        mutate(function (s) {
+          s.transactions.push({ id: S.uid(), date: today(), description: f.name, amount: -k, category: f.category || 'Diğer', source: 'yıllık gider' });
+          f.saved = Math.max(0, M.sub(f.saved, k)); f.dueYm = nextYm; delete f.setAsideYm; delete f.setAsideAmount;
+        }, f.name + ' ödendi; yeni dönem ' + ymLabel(nextYm) + '.');
+      },
+      'tr-del': function () {
+        var x = state.transfers.find(function (q) { return q.id === t.dataset.id; }); if (!x) return;
+        if (!confirm('Transfer silinsin mi? İki hesabın bakiyesi eski hâline döner.')) return;
+        mutate(function (s) { var y = s.transfers.find(function (q) { return q.id === x.id; }); applyTransfer(s, y, -1); s.transfers = s.transfers.filter(function (q) { return q.id !== x.id; }); }, 'Transfer silindi, bakiyeler geri alındı.');
+      },
+      'lim-suggest': function () {
+        var cmp = L.compareMonths(state.transactions, today()), sug = {};
+        cmp.rows.forEach(function (r) { if (r.category !== 'Gelir' && r.category !== 'Transfer' && r.avg3 > 0 && !state.limits[r.category]) sug[r.category] = Math.ceil(r.avg3 / 10000) * 10000; });
+        var ks = Object.keys(sug); if (!ks.length) return toast('Önerilecek yeni sınır yok (geçmiş harcama yok veya sınırlar zaten var).');
+        if (!confirm('Son 3 ayın ortalamasına göre (100 TL\'ye yukarı yuvarlanmış) öneriler:\n' + ks.map(function (c) { return '• ' + c + ': ' + tl(sug[c]); }).join('\n') + '\n\nEklensin mi?')) return;
+        mutate(function (s) { ks.forEach(function (c) { s.limits[c] = sug[c]; }); }, ks.length + ' sınır eklendi.');
+      },
+      'lim-clear': function () { if (confirm('Tüm kategori sınırları kaldırılsın mı?')) mutate(function (s) { s.limits = {}; }, 'Sınırlar kaldırıldı.'); },
+      'cmp-cat': function () { cmpCat = t.dataset.cat; render(); }
+    };
+  }
+  function updateBadge() {
+    var a = $('nav.tabs a[data-tab="odemeler"]'); if (!a || !state) return;
+    var n = 0; try { n = L.badgeCount(L.upcoming(state, today(), 30)); } catch (e) { n = 0; }
+    var b = $('.badge', a);
+    if (!n) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('span'); b.className = 'badge'; a.appendChild(b); }
+    b.textContent = n; b.setAttribute('aria-label', n + ' yaklaşan veya geciken ödeme');
+  }
+
   /* ---------- Yönlendirme ve çizim ---------- */
-  var VIEWS = { ozet: renderDashboard, butce: renderBudget, varliklar: renderAssets, islemler: renderTransactions, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings };
+  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, varliklar: renderAssets, islemler: renderTransactions, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings };
   function render() {
     renderBanner();
     $$('nav.tabs a').forEach(function (a) { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
@@ -658,10 +1238,12 @@
     try { html = VIEWS[tab](); } catch (e) { console.error(e); html = '<div class="notice danger">Bu bölüm gösterilirken bir hata oluştu: ' + esc(e.message) + '. Verilerin güvende; Ayarlar\'dan yedek alabilirsin.</div>'; }
     $('#view').innerHTML = html;
     if (tab === 'veri' && review) refreshReview();
+    if (tab === 'hesaplar') trHint();
+    updateBadge();
   }
   function route() {
-    var t = (location.hash || '#ozet').slice(1);
-    tab = VIEWS[t] ? t : 'ozet';
+    var parts = (location.hash || '#ozet').slice(1).split('/'), t = parts[0];
+    tab = VIEWS[t] ? t : 'ozet'; sub = parts[1] || '';
     render();
     document.title = ($('nav.tabs a[data-tab="' + tab + '"]').textContent) + ' · Finans Pusulası';
   }
@@ -669,8 +1251,11 @@
   /* ---------- Olaylar ---------- */
   function findItem(list, id) { return state[list].find(function (x) { return x.id === id; }); }
   function onFieldChange(el) {
-    var list = el.dataset.list, id = el.dataset.id, f = el.dataset.field, item = findItem(list, id);
+    var list = el.dataset.list, id = el.dataset.id, f = el.dataset.field;
+    if (V2_LISTS[list]) return onV2FieldChange(el);
+    var item = findItem(list, id);
     if (!item) return;
+    if (f === 'accountId') return mutate(function () { if (el.value) item.accountId = el.value; else delete item.accountId; });
     if (f === 'amount' || f === 'value') {
       var k = M.parse(el.value);
       if (k == null || k < 0) { el.setAttribute('aria-invalid', 'true'); toast('Geçersiz tutar: "' + el.value + '". Örnek: 1.250,50'); return; }
@@ -694,6 +1279,7 @@
       'clear-all': function () { if (confirm('TÜM veriler bu cihazdan silinecek. Emin misin? (Önce yedek almanı öneririz.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); }, 'Tüm veriler silindi.'); },
       'add': function () {
         var l = t.dataset.list;
+        if (V2_LISTS[l]) return addV2(l, t.dataset.type);
         mutate(function (s) {
           if (l === 'incomes') s.incomes.push({ id: S.uid(), name: 'Yeni gelir', amount: 0 });
           if (l === 'expenses') s.expenses.push({ id: S.uid(), name: 'Yeni gider', type: 'variable', amount: 0 });
@@ -702,7 +1288,7 @@
         });
         var inputs = $$('input[data-list="' + l + '"][data-field="name"]'); if (inputs.length) { inputs[inputs.length - 1].focus(); inputs[inputs.length - 1].select(); }
       },
-      'del': function () { var l = t.dataset.list, id = t.dataset.id; mutate(function (s) { s[l] = s[l].filter(function (x) { return x.id !== id; }); }, 'Silindi.'); },
+      'del': function () { var l = t.dataset.list, id = t.dataset.id; if (V2_LISTS[l]) return deleteV2(l, id); mutate(function (s) { s[l] = s[l].filter(function (x) { return x.id !== id; }); }, 'Silindi.'); },
       'export': function () { var copy = JSON.parse(JSON.stringify(state)); copy.exportedAt = new Date().toISOString(); copy.app = 'Finans Pusulası'; Store.download('finans-yedek-' + todayYmd() + '.json', JSON.stringify(copy, null, 2)); toast('Yedek indirildi.'); },
       'import': function () { var b = $('#backup-in'); b.value = ''; b.click(); },
       'export-csv': exportCsv,
@@ -732,6 +1318,7 @@
       'ai-test': function () { saveAiFromForm(); var msg = $('#ai-msg'); msg.innerHTML = '<span class="spinner"></span> Test ediliyor…'; AI.chat(aiCfg, 'Kısa cevap ver.', [{ role: 'user', text: 'Sadece "Bağlantı tamam" yaz.' }], false).then(function (r) { msg.textContent = '✓ Çalışıyor. Yanıt: ' + String(r).slice(0, 80); }, function (er) { msg.textContent = '✕ ' + er.message; }); },
       'chat-clear': function () { chatLog = []; render(); }
     };
+    var B = v2Actions(t); Object.keys(B).forEach(function (k) { A[k] = B[k]; });
     if (A[act]) A[act]();
   }
   function onChange(e) {
@@ -743,6 +1330,27 @@
       if (f === 'targetYm') { if (!/^\d{4}-\d{2}$/.test(el.value)) return toast('Geçerli bir ay seç'); if (el.value < C.currentYm()) { toast('Hedef tarihi geçmişte olamaz'); return render(); } return mutate(function (s) { s.goal.targetYm = el.value; }); }
       if (f === 'name') { var v = el.value.trim(); if (!v) return toast('Ad boş olamaz'); return mutate(function (s) { s.goal.name = v; }); }
     }
+    if (el.dataset.limit != null) {
+      var cat = el.dataset.limit, raw = el.value.trim();
+      if (!raw || M.parse(raw) === 0) return mutate(function (s) { delete s.limits[cat]; }, cat + ' sınırı kaldırıldı.');
+      var lk = M.parse(raw); if (lk == null || lk < 0) { el.setAttribute('aria-invalid', 'true'); return toast('Geçersiz tutar'); }
+      return mutate(function (s) { s.limits[cat] = lk; });
+    }
+    if (el.dataset.rate) {
+      var cur = el.dataset.rate, rr = el.value.trim();
+      if (!rr) { if (!confirm(L.CURRENCIES[cur].label + ' kuru silinsin mi? Bu birimdeki hesaplar toplamlara sayılmaz.')) return render(); return mutate(function (s) { delete s.rates[cur]; }); }
+      var rk = M.parse(rr); if (rk == null || rk <= 0) { el.setAttribute('aria-invalid', 'true'); return toast('Geçersiz kur. Örnek: 42,50'); }
+      return mutate(function (s) { s.rates[cur] = { rate: rk, date: today() }; }, L.CURRENCIES[cur].label + ' kuru kaydedildi (tarih: bugün).');
+    }
+    if (el.dataset.ratedate) {
+      var c2 = el.dataset.ratedate; if (!L.isYmd(el.value)) return toast('Geçerli bir tarih seç');
+      if (el.value > today()) { toast('Kur tarihi gelecekte olamaz'); return render(); }
+      return mutate(function (s) { s.rates[c2].date = el.value; });
+    }
+    if (el.id === 'rv-card' && review) { review.cardId = el.value; render(); return; }
+    if (el.id === 'rv-mkinst' && review) { review.mkInst = el.checked; return; }
+    if (el.id === 'rv-stmt' && review) { review.updStmt = el.checked; return; }
+    if (el.id === 'tr-from' || el.id === 'tr-to' || el.id === 'tr-amt') return trHint();
     if (el.dataset.set) {
       var n = Number(String(el.value).replace(',', '.')), key = el.dataset.set;
       var lim = { emergencyMonths: [1, 24], emergencyShareBp: [0, 100], inflationBp: [0, 500] }[key];
@@ -788,7 +1396,8 @@
       var obj; try { obj = JSON.parse(txt); } catch (e) { throw new Error('Dosya JSON değil'); }
       delete obj.exportedAt; delete obj.app;
       S.validateState(obj);
-      var msg = 'Yedek dosyası geçerli: ' + obj.incomes.length + ' gelir, ' + obj.expenses.length + ' gider, ' + obj.assets.length + ' varlık, ' + obj.transactions.length + ' işlem.\nMevcut verilerin bu yedekle DEĞİŞTİRİLECEK. Devam edilsin mi?';
+      var msg = 'Yedek dosyası geçerli' + (obj.migratedFrom ? ' (eski v' + obj.migratedFrom + ' yedeği; yeni sürüme dönüştürüldü, hiçbir veri silinmedi)' : '') + ': ' + obj.incomes.length + ' gelir, ' + obj.expenses.length + ' gider, ' + obj.assets.length + ' varlık, ' + obj.transactions.length + ' işlem, ' +
+        obj.accounts.length + ' hesap, ' + obj.recurring.length + ' düzenli ödeme, ' + obj.installments.length + ' taksit, ' + obj.sinkingFunds.length + ' yıllık gider, ' + Object.keys(obj.limits).length + ' sınır.\nMevcut verilerin bu yedekle DEĞİŞTİRİLECEK. Devam edilsin mi?';
       if (!confirm(msg)) return;
       mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, 'Yedek geri yüklendi.');
       setView(state.settings.view);
@@ -807,6 +1416,16 @@
       if (date > todayYmd() && !confirm('Tarih gelecekte. Emin misin?')) return;
       mutate(function (s) { s.transactions.push(tx); }, 'İşlem eklendi: ' + tl2(tx.amount));
     }
+    if (e.target.id === 'tr-form') {
+      e.preventDefault();
+      return submitTransfer($('#tr-from').value, $('#tr-to').value, P.parseDate($('#tr-date').value), M.parse($('#tr-amt').value), M.parse($('#tr-amt2').value), $('#tr-note').value.trim());
+    }
+    if (e.target.dataset && e.target.dataset.cardpay) {
+      e.preventDefault();
+      var cid = e.target.dataset.cardpay, from = $('#cp-from-' + cid);
+      if (!from || !from.value) return toast('Önce Hesaplar bölümünden bir TL hesabı ekle.');
+      return submitTransfer(from.value, cid, today(), M.parse($('#cp-amt-' + cid).value), null, 'Kart borcu ödemesi');
+    }
     if (e.target.id === 'chat-form') { e.preventDefault(); var q = $('#chat-in').value; ask(q); }
   }
 
@@ -815,7 +1434,7 @@
     document.addEventListener('click', onClick);
     document.addEventListener('change', onChange);
     document.addEventListener('submit', onSubmit);
-    document.addEventListener('input', function (e) { if (e.target.id === 'tx-q') { txFilter.q = e.target.value; var pos = e.target.selectionStart; render(); var q = $('#tx-q'); q.focus(); q.setSelectionRange(pos, pos); } else if (e.target.getAttribute('aria-invalid') === 'true') e.target.removeAttribute('aria-invalid'); });
+    document.addEventListener('input', function (e) { if (e.target.id === 'tr-amt') trHint(); if (e.target.id === 'tx-q') { txFilter.q = e.target.value; var pos = e.target.selectionStart; render(); var q = $('#tx-q'); q.focus(); q.setSelectionRange(pos, pos); } else if (e.target.getAttribute('aria-invalid') === 'true') e.target.removeAttribute('aria-invalid'); });
     document.addEventListener('keydown', function (e) {
       if (e.target.id === 'chat-in' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(e.target.value); }
       if (e.target.id === 'drop' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); $('#file-in').click(); }
@@ -833,7 +1452,12 @@
     window.addEventListener('hashchange', route);
     Store.load().then(function (s) {
       if (s) {
-        try { state = S.validateState(s); }
+        var oldSchema = s.schema;
+        try {
+          if (typeof oldSchema === 'number' && oldSchema < S.SCHEMA_VERSION) { try { localStorage.setItem('finans-pusulasi:v' + oldSchema + '-oncesi-yedek', JSON.stringify(s)); } catch (e3) { /* */ } }
+          state = S.validateState(s);
+          if (oldSchema !== state.schema) { persist(); setTimeout(function () { toast('Verilerin yeni sürüme (v' + state.schema + ') güvenle taşındı. Hiçbir şey silinmedi; eski kopya da saklandı.'); }, 400); }
+        }
         catch (e) {
           console.error(e); state = null;
           try { localStorage.setItem('finans-pusulasi:okunamayan-kayit-' + Date.now(), JSON.stringify(s)); } catch (e2) { /* */ }
@@ -844,6 +1468,7 @@
     }).catch(function (e) { console.error(e); state = S.exampleState(); }).then(function () {
       setView(state.settings.view || 'simple');
       route();
+      maybeNotify();
     });
   }
   init();
