@@ -666,6 +666,40 @@
     threw = false; try { PR.parseFrankfurter({ rates: {} }); } catch (e) { threw = true; } ok(threw, 'bozuk yanıt reddedilir');
   });
 
+  // ---- v4: grafik verisi (net varlık geçmişi) ----
+  var CD = isNode ? require('../js/chartdata.js') : root.ChartData;
+  test('Net varlık geçmişi: kayıt, aynı gün üzerine yazma, gelecek tarih silinir', function () {
+    var r = CD.record([], '2026-11-14', 100000); eq(r.list, [{ d: '2026-11-14', v: 100000 }]); ok(r.changed);
+    r = CD.record(r.list, '2026-11-14', 100050); eq(r.list.length, 1); eq(r.list[0].v, 100050);
+    r = CD.record([{ d: '2026-12-01', v: 5 }, { d: '2026-11-10', v: 7 }], '2026-11-14', 9); eq(r.list, [{ d: '2026-11-10', v: 7 }, { d: '2026-11-14', v: 9 }]);
+    r = CD.record([{ d: 'x', v: 1 }, { d: '2026-11-01', v: 1.5 }, null], '2026-11-14', 3); eq(r.list, [{ d: '2026-11-14', v: 3 }]);
+  });
+  test('Net varlık geçmişi: 120 günden eskisi ay sonuna indirgenir', function () {
+    var list = []; for (var i = 0; i < 300; i++) list.push({ d: CD.addDays('2026-01-01', i), v: i * 100 });
+    var out = CD.prune(list, '2026-10-27'), cut = CD.addDays('2026-10-27', -120);
+    var old = out.filter(function (p) { return p.d < cut; });
+    ok(old.every(function (p) { return CD.addDays(p.d, 1).slice(8) === '01' || p.d.slice(0, 7) === cut.slice(0, 7); }), 'eski noktalar ay sonu');
+    eq(out.filter(function (p) { return p.d >= cut; }).length, list.filter(function (p) { return p.d >= cut; }).length);
+  });
+  test('Örnek geçmiş bugünün değeriyle TAM biter, tam sayı ve sıralı', function () {
+    var h = CD.synthExample(12345678901, '2026-11-14');
+    eq(h[h.length - 1], { d: '2026-11-14', v: 12345678901 });
+    ok(h.every(function (p, i) { return Number.isSafeInteger(p.v) && p.v > 0 && (i === 0 || h[i - 1].d < p.d); }));
+    eq(JSON.stringify(CD.synthExample(500000, '2026-11-14')), JSON.stringify(CD.synthExample(500000, '2026-11-14')), 'deterministik');
+  });
+  test('Zaman aralığı ve değişim (kuruş, yuvarlamasız)', function () {
+    var h = [{ d: '2026-01-31', v: 100000 }, { d: '2026-09-30', v: 150000 }, { d: '2026-10-20', v: 160000 }, { d: '2026-11-14', v: 170001 }];
+    eq(CD.inRange(h, '1A', '2026-11-14').map(function (p) { return p.d; }), ['2026-09-30', '2026-10-20', '2026-11-14']);
+    eq(CD.inRange(h, 'Tümü', '2026-11-14').length, 4);
+    eq(CD.change(CD.inRange(h, 'Tümü', '2026-11-14')), { abs: 70001, bp: M.ratioBp(70001, 100000) });
+    eq(CD.change([{ d: '2026-11-14', v: 5 }]), { abs: 0, bp: null });
+  });
+  test('validateState net varlık geçmişini temizler ve korur', function () {
+    var s = S.exampleState(); s.nwHistory = [{ d: '2026-11-02', v: 5 }, { d: 'bozuk', v: 1 }, { d: '2026-11-01', v: 4 }, { d: '2026-11-02', v: 6 }];
+    var v = S.validateState(JSON.parse(JSON.stringify(s))); eq(v.nwHistory, [{ d: '2026-11-01', v: 4 }, { d: '2026-11-02', v: 6 }]);
+    var e = S.validateState(JSON.parse(JSON.stringify(S.emptyState()))); ok(e.nwHistory == null, 'yoksa eklenmez');
+  });
+
   var passed = results.filter(function (r) { return r.ok; }).length;
   if (isNode) {
     results.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });

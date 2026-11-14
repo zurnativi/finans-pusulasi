@@ -1,4 +1,4 @@
-# Finans Pusulası — v3.0
+# Finans Pusulası — v4.0
 
 Bütçe, birikim ve **helal (faizsiz)** yatırım planı için kişisel finans uygulaması.
 Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir, tek klasör hâlinde her yere taşınabilir.
@@ -7,7 +7,8 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 
 - **Sade görünüm:** finans bilmeyen biri de anlar.
 - **Detaylı görünüm:** formüller, oranlar, enflasyonlu/enflasyonsuz değerler, varsayımlar.
-- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 99 otomatik birim testi + tarayıcıda uçtan uca testler var.
+- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 105 otomatik birim testi + tarayıcıda uçtan uca testler var.
+- **Canlı grafikler (v4):** Ana sayfa, Bütçe ve Portföy Yönetimi açılışında hareketli, dokunmatik grafikler: net varlık eğrisi (1A/3A/6A/1Y/Tümü), birikim halkası, gelir → gider → birikim akışı, hedef halkaları, 6 aylık gelir/harcama çubukları, sayılarda sayaç animasyonu. Üzerine gelince ya da dokununca kuruşu kuruşuna tutar görünür; veri değişince grafik yumuşak geçişle anında güncellenir. Sistem "hareketi azalt" ayarında animasyonlar kapanır.
 
 ## 1. Nasıl açılır?
 
@@ -137,6 +138,9 @@ Denemek için `ornek-dosyalar/` klasöründe örnek CSV, Excel, PDF (taksitli ek
 - Yedek; alım-satım kayıtları, hedefler, risk kuralları, fiyat geçmişi, TÜFE, hesaplar, transferler, kurlar, sınırlar, düzenli ödemeler, taksitler ve yıllık giderleri de içerir. Her alan sıkı kontrol edilir (ör. silinmiş hesaba transfer, aynı ay için iki kez oluşturulmuş düzenli kayıt, geçersiz kur tarihi reddedilir).
 
 ### Veri sürümü (şema) ve eski veriler
+
+v4 şemayı değiştirmez (hâlâ 3). Yalnızca isteğe bağlı `nwHistory` (net varlık geçmişi: `{ d: 'YYYY-MM-DD', v: kuruş }`) eklenir: her kayıtta bugünün değeri yazılır, son 120 gün günlük, daha eskisi ay sonu olarak tutulur. Eski yedekler aynen yüklenir; geçmiş, yükledikten sonra birikmeye başlar. Örnek veride geçmiş, bugünün gerçek hesaplanan değeriyle biten örnek bir seridir.
+
 - Veri biçimi sürümü: **şema 3**. v1.0 ve v2 verisi ilk açılışta otomatik ve güvenle dönüştürülür; dönüştürmeden önceki hâli tarayıcıda yedek olarak saklanır (`finans-pusulasi:v1-oncesi-yedek`, `finans-pusulasi:v2-oncesi-yedek`). v2→v3'te mevcut varlıklar, hedef ve kurlar aynen korunur; kurlar fiyat geçmişine ilk nokta olarak eklenir, alım-satım defteri boş başlar.
 - Eski (v1, v2) yedek dosyaları geri yüklenebilir; yüklenirken dönüştürülür. Uygulamanın bilmediği daha yeni bir şemadaki yedek, veri bozulmasın diye reddedilir.
 
@@ -159,8 +163,8 @@ Uygulama derleme gerektirmez; klasör olduğu gibi yayınlanır. Verilerin yine 
 ## 7. Testler
 
 - Tarayıcıda: `tests/tests.html` dosyasını aç (veya Ayarlar > Detaylı görünüm > "Hesap testlerini çalıştır").
-- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 99 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme, kumbara, karşılaştırma, v1→v2→v3 dönüştürme, yedek doğrulama; v3: ortalama maliyet ve K/Z, fazla satış reddi, XIRR, TWR, reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat sıçrama/eskime kontrolü, aracı kurum dökümü ve toplam kontrolü, fiyat kaynağı ayrıştırıcıları).
-- Uçtan uca testler (Chrome, dosyadan ve http'den, 390 px mobil, canlı fiyat kaynaklarıyla ve onlarsız) ayrı bir klasörde Playwright ile çalıştırıldı: 62 kontrol (canlıda 68), konsol hatası yok.
+- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 105 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme, kumbara, karşılaştırma, v1→v2→v3 dönüştürme, yedek doğrulama; v3: ortalama maliyet ve K/Z, fazla satış reddi, XIRR, TWR, reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat sıçrama/eskime kontrolü, aracı kurum dökümü ve toplam kontrolü, fiyat kaynağı ayrıştırıcıları; v4: net varlık geçmişi kaydı, aralık ve değişim hesabı, örnek geçmişin bugünün değeriyle tam bitmesi).
+- Uçtan uca testler (Chrome, dosyadan ve http'den, 390 px mobil, canlı fiyat kaynaklarıyla ve onlarsız) ayrı bir klasörde Playwright ile çalıştırıldı: 62 kontrol (canlıda 68), konsol hatası yok. v4 grafik testi (`e2e_v4.py`): grafiklerin çizilmesi, sayaçların tam tutara oturması, aralık düğmeleri, ipuçları, veri değişince anında güncelleme, koyu tema, hareketi azalt, 390 px mobil ve dış ağ kapalıyken (çevrimdışı) çalışma.
 
 ## 8. Klasör yapısı
 
@@ -173,12 +177,14 @@ js/ledger.js          Hesaplar, döviz/altın, transfer, sınırlar, düzenli ö
 js/importparse.js     Tarih/tutar ayrıştırma, sütun tespiti, PDF/OCR satırları, kategori, mükerrer
 js/portfolio.js       Alım-satım defteri, maliyet, XIRR/TWR/reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat kontrolü, döküm ayrıştırma
 js/prices.js          Ücretsiz fiyat kaynakları (Frankfurter, Truncgil, gold-api, CoinGecko, Binance, Twelve Data, Currency API) ve ayrıştırıcılar
+js/chartdata.js      Grafik verisi (net varlık geçmişi, zaman aralığı, değişim) — saf, test edilir
+js/charts.js         Canlı grafikler (ECharts sarmalayıcı: alan, halka, çubuk, akış, ilerleme halkası, sayaçlar)
 js/portfolio-ui.js    Ana sayfa kartları, Portföy Yönetimi ve Portföy Analizi ekranları
 js/sample.js          Örnek veri, boş durum, şema dönüştürme (v1→v2→v3), yedek doğrulama
 js/store.js           IndexedDB + localStorage saklama
 js/ai.js              Yapay zekâ sağlayıcıları (resmi REST API'ler)
 js/app.js             Arayüz
-vendor/               SheetJS (Apache-2.0), pdf.js (Apache-2.0), Tesseract.js 5.1.1 + Türkçe dil verisi (Apache-2.0), heic2any (MIT) — yerel kopya, CDN gerekmez
+vendor/               Apache ECharts 5.6 (Apache-2.0), SheetJS (Apache-2.0), pdf.js (Apache-2.0), Tesseract.js 5.1.1 + Türkçe dil verisi (Apache-2.0), heic2any (MIT) — yerel kopya, CDN gerekmez
 tests/                Otomatik testler (fixture-v1.js: dönüştürme testi için gerçek v1 verisi)
 ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek veri)
 ```
@@ -196,6 +202,7 @@ ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek ver
 - Ekstreden oluşturulan taksit planının toplamı tahminidir (taksit × sayı); gerekirse Kartlar sekmesinde düzelt. Taksit tanıma, ekstredeki yazım biçimine bağlıdır.
 - Kumbaraya "ayrılan" para ayrı bir hesaba taşınmaz; birikim/net varlık içinde görünmeye devam eder.
 - Ay seçme kutusunun ay adları tarayıcının diline göre görünür.
+- (v4) Net varlık eğrisi yalnızca uygulamanın açıldığı/kaydedildiği günlerin değerlerini gösterir; geçmişe dönük hesaplanmaz. Gerçek verine geçtiğinde eğri o günden itibaren dolar. Grafik kütüphanesi (~1 MB) ilk açılışta bir kez yüklenir, sonra tarayıcı önbelleğinden gelir.
 - Ücretsiz OCR, el yazısı ve bulanık fotoğraflarda zayıftır; bu durumda yapay zekâ ile oku. Her durumda kontrol tablosundan geçer.
 - HEIC (iPhone) fotoğrafları otomatik JPEG'e çevrilir. Fotoğraf yan yatık çekilmişse (EXIF bilgisi yoksa) OCR okuyamayabilir; fişi dik çek.
 - Fiş okunamazsa bile kontrol tablosunda düzenlenebilir bir satır ve okunan ham metin gösterilir; tutarı elle yazıp kaydedebilirsin.

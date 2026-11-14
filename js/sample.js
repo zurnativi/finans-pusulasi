@@ -294,6 +294,12 @@
     function isPosInt(v, lo, hi) { return Number.isInteger(v) && v >= lo && v <= hi; }
     function isStr(v, max) { return typeof v === 'string' && v.trim().length > 0 && v.length <= (max || 200); }
     migrate(s);
+    // Net varlık geçmişi (isteğe bağlı, yalnızca grafik için): geçersiz noktalar sessizce atılır, tarihler sıralı ve tekil tutulur
+    if (s.nwHistory != null) {
+      var nwBy = {};
+      (Array.isArray(s.nwHistory) ? s.nwHistory : []).forEach(function (p) { if (p && typeof p.d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.d) && isK(p.v)) nwBy[p.d] = p.v; });
+      s.nwHistory = Object.keys(nwBy).sort().slice(-400).map(function (d) { return { d: d, v: nwBy[d] }; });
+    }
     ['incomes', 'expenses', 'assets', 'debts', 'transactions', 'accounts', 'transfers', 'recurring', 'installments', 'sinkingFunds', 'trades', 'cpi', 'goals'].forEach(function (k) { if (!Array.isArray(s[k])) errs.push(k + ' listesi eksik'); });
     ['rates', 'limits', 'prices'].forEach(function (k) { if (!s[k] || typeof s[k] !== 'object' || Array.isArray(s[k])) errs.push(k + ' bilgisi eksik'); });
     if (!errs.length) {

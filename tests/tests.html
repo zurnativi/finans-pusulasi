@@ -2,7 +2,7 @@
 <html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hesap testleri · Finans Pusulası</title>
 <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:20px auto;padding:0 16px}li{margin:3px 0}.ok{color:#16794c}.no{color:#b42318}</style></head>
 <body><h1>Hesap motoru testleri</h1><p><a href="../index.html">← Uygulamaya dön</a></p><p id="sum">Çalışıyor…</p><ul id="list"></ul>
-<script src="../js/money.js"></script><script src="../js/calc.js"></script><script src="../js/ledger.js"></script><script src="../js/importparse.js"></script><script src="../js/portfolio.js"></script><script src="../js/prices.js"></script><script src="../js/sample.js"></script><script src="fixture-v1.js"></script><script src="run-tests.js"></script>
+<script src="../js/money.js"></script><script src="../js/calc.js"></script><script src="../js/ledger.js"></script><script src="../js/importparse.js"></script><script src="../js/portfolio.js"></script><script src="../js/prices.js"></script><script src="../js/sample.js"></script><script src="../js/chartdata.js"></script><script src="fixture-v1.js"></script><script src="run-tests.js"></script>
 <script>
 var r = window.TEST_RESULTS || [], ok = r.filter(function (x) { return x.ok; }).length;
 document.getElementById('sum').innerHTML = '<b class="' + (ok === r.length ? 'ok' : 'no') + '">' + ok + '/' + r.length + ' test geçti</b>';
