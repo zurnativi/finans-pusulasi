@@ -364,7 +364,8 @@
   function startReviewRows(rows) {
     review.rows = rows.map(function (r, i) {
       return { key: i, include: true, date: r.date, rawDate: r.rawDate, description: r.description || '', amount: r.amount, note: r.note || '',
-        category: (r.category && r.amount < 0) ? r.category : P.suggestCategory(r.description, r.amount || 0), source: r.source, manual: !!r.manual };
+        category: (r.category && r.amount < 0) ? r.category : P.suggestCategory(r.description, r.amount || 0), source: r.source, manual: !!r.manual,
+        fromDocTotal: !!r.fromDocTotal };
     });
     revalidate(true);
   }
@@ -657,8 +658,8 @@
         '<div class="field"><label>Başlık satırı</label><input type="number" min="0" max="' + t.rows.length + '" data-map="headerRow" value="' + (t.map.headerRow + 1) + '"></div></div></details>';
     }
     if (r.ocrWarn && r.ocrWarn.length) h += r.ocrWarn.map(function (w) { return '<div class="notice warn">' + esc(w) + '</div>'; }).join('');
-    if (r.preview) h += '<details class="card" style="margin-top:10px"><summary><b>Belgeyi göster</b> <span class="hint">(karşılaştırmak için)</span></summary><img src="' + r.preview + '" alt="Yüklenen belge" style="max-width:100%;max-height:600px;margin-top:10px;border-radius:8px"></details>';
     h += '<section class="card" style="margin-top:10px" id="rv-summary">' + reviewSummary() + '</section>';
+    if (r.preview) h += '<details class="card" style="margin-top:10px"><summary><b>Belgeyi göster</b> <span class="hint">(karşılaştırmak için)</span></summary><img src="' + r.preview + '" alt="Yüklenen belge" style="max-width:100%;max-height:600px;margin-top:10px;border-radius:8px"></details>';
     h += reviewCardBox();
     h += '<section class="card" style="margin-top:10px"><div class="row" style="margin-bottom:10px">' +
       '<button class="btn small" data-act="rv-all">Tümünü seç</button><button class="btn small" data-act="rv-none">Tümünü kaldır</button>' +
@@ -679,28 +680,78 @@
     if (r.pdfText || r.ocrText || r.kind === 'ocr') h += '<details class="card' + (r.kind === 'ocr' ? '' : ' detail-only') + '" style="margin-top:14px"' + (r.rawOpen ? ' open' : '') + ' id="rv-raw"><summary>Belgeden okunan ham metin' + (r.kind === 'ocr' ? ' <span class="hint">(tutarları buradan kontrol edebilirsin)</span>' : '') + '</summary><pre style="white-space:pre-wrap;font-size:.8rem;max-height:400px;overflow:auto">' + esc(r.pdfText || r.ocrText || '(Görselde yazı bulunamadı)') + '</pre></details>';
     return h;
   }
-  function rowClass(x) { return (x.include ? '' : 'excluded ') + (x.include && x.errors.length ? 'has-err' : ''); }
+  function rowClass(x) { return (x.include ? '' : 'excluded ') + (x.include && x.errors.length ? 'has-err ' : '') + (x.fromDocTotal ? 'from-doc' : ''); }
   function rowStatus(x) {
     var s = x.errors.map(function (e) { return '<span class="pill err">' + esc(e) + '</span>'; }).concat(x.warnings.map(function (w) { return '<span class="pill warn" title="' + esc(x.duplicate || '') + '">' + esc(w) + '</span>'; }));
-    if (x.note) s.push('<span class="pill info">' + esc(x.note) + '</span>');
+    if (x.fromDocTotal) s.push('<span class="pill warn">Fişteki TOPLAM’dan (kalemlerin toplamı değil)</span>');
+    else if (x.note) s.push('<span class="pill info">' + esc(x.note) + '</span>');
     if (x.replaces) s.push('<span class="pill info" title="Kaydedince beklenen kayıt silinir, bu gerçek işlem onun yerine geçer (çift sayım olmaz)">Beklenen "' + esc(x.replaces.description) + '" kaydının yerine geçer</span>');
     if (x.inst) s.push('<span class="pill info">Taksit ' + x.inst.no + '/' + x.inst.count + '</span>');
     return s.length ? s.join(' ') : '<span class="pill ok">Uygun</span>';
+  }
+  function docTotalLabel(r) {
+    if (r.kind === 'ocr' || r.kind === 'ai' || r.receipt) return 'Fişteki toplam';
+    if (r.kind === 'pdf') return 'Ekstredeki toplam';
+    return 'Belgedeki toplam';
+  }
+  function reviewSumFormula(sel, tc) {
+    if (!sel.length) return '';
+    if (sel.length > 12) return ' ' + sel.length + ' kalemin kuruş toplamı ' + tc.computed + ' kuruş.';
+    if (tc.income > 0 && tc.expense > 0) return ' Gider ' + tl2(tc.expense) + ' − gelir ' + tl2(tc.income) + ' = net ' + tl2(tc.net) + '.';
+    var parts = sel.map(function (x, i) {
+      var a = M.format(Math.abs(x.amount), { symbol: false });
+      return i === 0 ? a : ((x.amount < 0 === sel[0].amount < 0 ? ' + ' : ' − ') + a);
+    });
+    return ' ' + parts.join('') + ' = ' + M.format(tc.computed, { symbol: false }) + ' TL.';
   }
   function reviewSummary() {
     var r = review, tc = P.totalsCheck(r.rows, r.docTotal);
     var errs = r.rows.filter(function (x) { return x.include && x.errors.length; }).length;
     var dups = r.rows.filter(function (x) { return x.duplicate; }).length;
-    var h = '<div class="row" style="gap:16px"><span><b>' + r.rows.length + '</b> satır bulundu</span><span><b>' + tc.count + '</b> seçili</span>' +
-      (dups ? '<span class="pill warn">' + dups + ' olası mükerrer (seçilmedi)</span>' : '') + (errs ? '<span class="pill err">' + errs + ' seçili satırda hata var</span>' : '') + '</div>' +
-      '<div class="row" style="gap:16px;margin-top:8px"><span>Seçili gider: <b class="num neg">' + tl2(tc.expense) + '</b></span><span>Seçili gelir: <b class="num pos">' + tl2(tc.income) + '</b></span><span>Net: <b class="num">' + tl2(tc.net) + '</b></span></div>' +
-      '<div class="row" style="margin-top:10px"><label for="rv-total"><b>Belgedeki toplam</b> ' + tip('Fişin TOPLAM\'ı veya ekstrenin dönem borcu. Okunan satırların toplamıyla karşılaştırılır; kuruşu kuruşuna eşleşmeli.') + '</label>' +
-      '<input id="rv-total" class="money" type="text" inputmode="decimal" style="max-width:160px" placeholder="isteğe bağlı" value="' + (r.docTotal != null ? esc(moneyInputVal(r.docTotal)) : '') + '">';
-    if (r.docTotal != null) h += tc.match ? '<span class="pill ok">Toplam tutuyor ✓' + (tc.byNet ? ' (ödemeler düşülmüş net)' : '') + '</span>' : '<span class="pill err">Fark: ' + tl2(tc.diff) + '</span><span class="hint">Eksik/fazla satır, yanlış okunan tutar veya ekstrede önceki dönem borcu olabilir.</span>';
+    var included = r.rows.filter(function (x) { return x.include; }).length;
+    var fallbackOnly = tc.fromDocTotal > 0 && tc.fromDocTotal === tc.count && tc.count > 0;
+    var label = docTotalLabel(r);
+    var countTxt = tc.count === 0 ? 'Seçili geçerli satır yok' :
+      ((tc.count === 1 ? '1 kalem' : tc.count + ' kalem tek tek toplandı') + (included > tc.count ? ' (' + (included - tc.count) + ' satırın tutarı yazılmadı)' : ''));
+    var computedLabel = (tc.income > 0 && tc.expense > 0) ? (tc.computedIsNet ? 'Seçili satırların net toplamı' : 'Seçili giderlerin toplamı') : 'Seçili satırların toplamı';
+    var h = '';
+    if (fallbackOnly) h += '<div class="notice warn" id="rv-fallback-note"><b>Dikkat:</b> Kalemler tek tek okunamadı. Aşağıdaki satır, ' + esc(label.toLowerCase()) + ' tutardan geldi; ürün fiyatlarının tek tek toplamı değil. İki tutar bu yüzden aynı görünür. Fişle karşılaştırıp öyle onayla.</div>';
+    h += '<p class="hint" style="margin-top:0">Soldaki tutar, seçtiğin satırların fiyatlarının <b>tek tek toplamıdır</b> — belgede yazanı buraya kopyalamıyoruz. Sağdaki, fişte veya ekstrede yazılı toplamdır.</p>';
+    h += '<div class="row" style="gap:16px"><span><b>' + r.rows.length + '</b> satır bulundu</span><span><b>' + tc.count + '</b> seçili</span>' +
+      (dups ? '<span class="pill warn">' + dups + ' olası mükerrer (seçilmedi)</span>' : '') + (errs ? '<span class="pill err">' + errs + ' seçili satırda hata var</span>' : '') + '</div>';
+    h += '<div class="rv-totals">';
+    h += '<div class="rv-kpi" id="rv-computed"><div class="label">' + computedLabel + ' ' + tip('Bu tutar belgede yazılı toplamın kopyası değildir. Seçili satırların tutarları kuruş kuruş, tek tek toplanır.') + '</div>' +
+      '<div class="value" id="rv-computed-value">' + tl2(tc.computed) + '</div>' +
+      '<div class="sub">' + esc(countTxt) + '</div></div>';
+    h += '<div class="rv-kpi" id="rv-docbox"><label class="label" for="rv-total">' + esc(label) + ' ' + tip('Fişin veya ekstrenin üzerinde yazılı TOPLAM. Satırların toplamıyla karşılaştırılır; kuruşu kuruşuna eşleşmeli. Yanlış okunduysa düzelt.') + '</label>';
+    if (r.docTotal != null) h += '<div class="value" id="rv-doc-value">' + tl2(r.docTotal) + '</div>';
+    else h += '<div class="value muted" id="rv-doc-value">Okunamadı</div>';
+    h += '<div class="sub">Belgede yazılı olan</div>' +
+      '<div class="row" style="margin-top:6px"><span class="hint">Yanlışsa düzelt:</span>' +
+      '<input id="rv-total" class="money" type="text" inputmode="decimal" aria-label="' + esc(label) + '" style="max-width:160px" placeholder="belgedeki toplam" value="' + (r.docTotal != null ? esc(moneyInputVal(r.docTotal)) : '') + '"></div></div>';
+    var stClass, stText, stSub;
+    if (fallbackOnly && r.docTotal != null) {
+      stClass = 'miss'; stText = 'Tek satır fişteki toplamdan'; stSub = 'Kalem kalem toplanmadı, fişle kontrol et.';
+    } else if (r.docTotal == null) {
+      stClass = 'miss'; stText = 'Belgedeki toplam yok'; stSub = 'Kontrol için yukarıya yaz.';
+    } else if (tc.match) {
+      stClass = 'ok'; stText = 'Tutuyor ✓'; stSub = tc.byNet ? 'Ödemeler düşülmüş net tutarla.' : (tc.income > 0 && tc.expense > 0 && !tc.computedIsNet ? 'Giderlerin toplamı belgede yazılanla aynı.' : 'Satırların toplamı belgede yazılanla aynı.');
+    } else {
+      var ad = tc.diff < 0 ? -tc.diff : tc.diff;
+      stClass = 'err'; stText = 'Fark: ' + tl2(ad);
+      stSub = tc.diff < 0 ? 'Satırların toplamı belgede yazılandan ' + tl2(ad) + ' eksik.' : 'Satırların toplamı belgede yazılandan ' + tl2(ad) + ' fazla.';
+    }
+    h += '<div class="rv-status-box ' + stClass + '" id="rv-match-status" role="status"><div class="value">' + esc(stText) + '</div><div class="sub">' + esc(stSub) + '</div></div>';
     h += '</div>';
+    var selAmt = r.rows.filter(function (x) { return x.include && Number.isInteger(x.amount); });
+    h += '<div class="detail-only rv-detail" style="margin-top:14px">';
+    h += '<div class="row" style="gap:16px"><span>Seçili gider: <b class="num neg">' + tl2(tc.expense) + '</b></span><span>Seçili gelir: <b class="num pos">' + tl2(tc.income) + '</b></span><span>Net: <b class="num">' + tl2(tc.net) + '</b></span></div>';
+    h += '<p class="hint" style="margin-bottom:0">Tüm hesaplar kuruş üzerinden: satır toplamı <span class="formula">' + tc.computed + ' kuruş</span>' + (r.docTotal != null ? ', belgedeki toplam <span class="formula">' + r.docTotal + ' kuruş</span>' : '') + '.' + reviewSumFormula(selAmt, tc) + '</p>';
     if (r.totalsFound && r.totalsFound.length > 1) h += '<p class="hint">Belgede bulunan toplamlar: ' + r.totalsFound.map(function (t) { return esc(t.label) + ' → ' + tl2(t.amount); }).join(' · ') + '</p>';
+    h += '</div>';
     return h;
   }
+
   function refreshReviewRow(x) {
     var tr = $('tr[data-key="' + x.key + '"]'); if (!tr) return;
     tr.className = rowClass(x); $('.rv-status', tr).innerHTML = rowStatus(x);
@@ -718,7 +769,7 @@
     if (!sel.length) return;
     if (sel.some(function (x) { return x.errors.length; })) return toast('Hatalı satırlar var.');
     var tc = P.totalsCheck(review.rows, review.docTotal);
-    if (review.docTotal != null && !tc.match && !confirm('Seçili satırların toplamı belgedeki toplamla uyuşmuyor (fark ' + tl2(tc.diff) + '). Yine de kaydedilsin mi?')) return;
+    if (review.docTotal != null && !tc.match && !confirm('Seçili satırların toplamı belgedeki toplamla uyuşmuyor (fark ' + tl2(tc.diff < 0 ? -tc.diff : tc.diff) + '). Yine de kaydedilsin mi?')) return;
     var d = sel.filter(function (x) { return x.duplicate; }).length;
     if (d && !confirm(d + ' satır daha önce kaydedilmiş bir işlemle aynı görünüyor. Yine de kaydedilsin mi?')) return;
     var src = review.source, cardId = review.cardId || null, mkInst = !!(cardId && review.mkInst), updStmt = !!(cardId && review.updStmt && review.docTotal != null);
@@ -1559,7 +1610,7 @@
       if (f2 === 'include') { x.include = el.checked; x.autoEx = false; }
       else if (f2 === 'date') x.date = P.parseDate(el.value);
       else if (f2 === 'description') { x.description = el.value; }
-      else if (f2 === 'amount') { x.amount = M.parse(el.value); if (review.receipt && x.amount > 0 && !/^\s*\+/.test(el.value)) x.amount = -x.amount; /* fişte yazılan tutar harcamadır (+ ile gelir) */ el.setAttribute('aria-invalid', x.amount == null ? 'true' : 'false'); if (x.amount != null) el.value = moneyInputVal(x.amount); }
+      else if (f2 === 'amount') { x.amount = M.parse(el.value); if (review.receipt && x.amount > 0 && !/^\s*\+/.test(el.value)) x.amount = -x.amount; /* fişte yazılan tutar harcamadır (+ ile gelir) */ if (x.fromDocTotal) x.fromDocTotal = false; el.setAttribute('aria-invalid', x.amount == null ? 'true' : 'false'); if (x.amount != null) el.value = moneyInputVal(x.amount); }
       else if (f2 === 'category') x.category = el.value;
       refreshReview(); return;
     }

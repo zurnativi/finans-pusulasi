@@ -154,6 +154,63 @@
     eq(P.parseReceiptText('').rows.length, 0); eq(P.parseReceiptText(null).rows.length, 0);
   });
 
+  test('onay toplamı satırlardan hesaplanır, belge toplamı kopyalanmaz', function () {
+    var rows = [{ include: true, amount: -750 }, { include: true, amount: -3250 }, { include: true, amount: -1750 }];
+    var tc = P.totalsCheck(rows, 5750);
+    eq(tc.computed, 5750); eq(tc.rowSum, -5750); eq(tc.count, 3); ok(tc.match); eq(tc.diff, 0);
+    var tcCopy = P.totalsCheck(rows, 99999);
+    eq(tcCopy.computed, 5750, 'belge toplamı değişince satır toplamı değişmez'); eq(tcCopy.rowSum, -5750); ok(!tcCopy.match);
+    eq(tcCopy.diff, 5750 - 99999);
+    rows[0].include = false;
+    var tcOff = P.totalsCheck(rows, 5750);
+    eq(tcOff.computed, 5000); eq(tcOff.count, 2); ok(!tcOff.match); eq(tcOff.diff, 5000 - 5750);
+    var empty = P.totalsCheck([], 5750);
+    eq(empty.computed, 0); eq(empty.rowSum, 0); eq(empty.count, 0); ok(!empty.match);
+    var noDoc = P.totalsCheck([{ include: true, amount: -1000 }, { include: true, amount: -500 }], null);
+    eq(noDoc.computed, 1500); eq(noDoc.rowSum, -1500); ok(noDoc.docTotal == null);
+    var skip = P.totalsCheck([{ include: true, amount: -1000 }, { include: false, amount: -500 }, { include: true, amount: null }, { include: true, amount: -250 }], 1250);
+    eq(skip.computed, 1250); eq(skip.count, 2); ok(skip.match);
+    // seçim veya tutar değişince canlı güncellenir
+    var live = [{ include: true, amount: -2000 }, { include: true, amount: -3000 }];
+    eq(P.totalsCheck(live, 5000).computed, 5000);
+    live[1].amount = -3500;
+    var afterEdit = P.totalsCheck(live, 5000);
+    eq(afterEdit.computed, 5500); ok(!afterEdit.match); eq(afterEdit.diff, 500);
+  });
+
+  test('yedek tek satır fişteki TOPLAM’dan işaretlenir, toplam yine satırdan gelir', function () {
+    var rec = P.parseReceiptText('KAFE ORNEK\n14.11.2026\nTOPLAM 85,00');
+    var fb = P.receiptFallbackRows(rec, '2026-11-14');
+    eq(fb.length, 1); eq(fb[0].amount, -8500); ok(fb[0].fromDocTotal);
+    ok(/TOPLAM/.test(fb[0].note) && /kalem/.test(fb[0].note));
+    var tc = P.totalsCheck([{ include: true, amount: fb[0].amount, fromDocTotal: true }], rec.docTotal);
+    eq(tc.computed, 8500); eq(tc.rowSum, -8500); eq(tc.fromDocTotal, 1); ok(tc.match);
+    // satır tutarı değişince computed belge toplamına yapışmaz
+    var edited = [{ include: true, amount: -8000, fromDocTotal: false }];
+    var tc2 = P.totalsCheck(edited, rec.docTotal);
+    eq(tc2.computed, 8000); eq(tc2.fromDocTotal, 0); ok(!tc2.match); eq(tc2.diff, 8000 - 8500);
+    var blank = P.receiptFallbackRows(P.parseReceiptText('~~ bulanik ~~'), '2026-11-14');
+    ok(!blank[0].fromDocTotal); eq(blank[0].amount, null);
+  });
+
+  test('karışık gelir-gider onayında fark net üzerindendir', function () {
+    var rows = [{ include: true, amount: -631588 }, { include: true, amount: 300000 }];
+    var tc = P.totalsCheck(rows, 331588);
+    eq(tc.computed, 331588); eq(tc.rowSum, -331588); eq(tc.expense, 631588); eq(tc.income, 300000);
+    ok(tc.match && tc.byNet); eq(tc.diff, 0);
+    var tcb = P.totalsCheck(rows, 331500);
+    ok(!tcb.match); eq(tcb.computed, 331588, 'uyuşmasa da computed satır toplamıdır'); eq(tcb.diff, 88);
+    var onlyInc = P.totalsCheck([{ include: true, amount: 10000 }], 10000);
+    eq(onlyInc.computed, 10000); ok(onlyInc.match);
+    // gider toplamı belgeyle tutuyor, net tutmuyorsa gösterilen computed giderlerdir (yanıltıcı net değil)
+    var charges = [{ include: true, amount: -34990 }, { include: true, amount: -119900 }, { include: true, amount: -24550 }, { include: true, amount: 200000 }, { include: true, amount: -5999 }];
+    var tcc = P.totalsCheck(charges, 185439);
+    eq(tcc.expense, 185439); eq(tcc.net, 14561); eq(tcc.computed, 185439); ok(tcc.match && !tcc.byNet && !tcc.computedIsNet);
+    var tcm = P.totalsCheck(charges, 99999);
+    eq(tcm.computed, 185439, 'uyuşmasa da computed satırlardan'); ok(!tcm.match); eq(tcm.diff, 185439 - 99999);
+  });
+
+
   test('fiş: gölgede iki sütun okunan fiş satır satır eşleşir, tire işaret sayılmaz', function () {
     var txt = 'BIM BIRLESIİK MAĞAZALAR A.S.\nTARIH : 12.11.2026 SAAT : 18:42\nFIS NO : 0087\nSUT 1LT S1 — *34,50\nEKMEK S1 —*12,50\nDOMATES KG S1 — *48,75\n2 AD X 22,50\n\nYUMURTA 10LU\nDETERJAN 4 KG\nPEYNIR BEYAZ\n\nS1 — *45,00\n820 *189,90\nS1 ( *129,95\n\nTOPKDV\nTOPLAM\nKREDİ KARTI\n\nE33,29\n*460,60\n*460,60\n\nKDV ORANI MATRAH\n&1 267,03\n20 158,25';
     var r = P.parseReceiptText(txt);

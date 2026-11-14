@@ -327,22 +327,42 @@
   /* Fişten satır çıkmazsa veya kalem toplamı tutmazsa kullanıcıya her zaman düzenlenebilir bir satır bırak. */
   function receiptFallbackRows(rec, todayYmd) {
     var desc = (rec.merchant ? rec.merchant + ' alışverişi' : 'Fiş alışverişi');
-    return [{ date: rec.date || todayYmd || null, rawDate: rec.rawDate || '', description: desc, amount: rec.docTotal != null ? -Math.abs(rec.docTotal) : null,
-      source: 'OCR', category: rec.category || null, note: rec.docTotal != null ? 'Fişin TOPLAM satırından' : 'Tutarı fişten bakıp yaz', manual: rec.docTotal == null }];
+    var fromDoc = rec.docTotal != null;
+    return [{ date: rec.date || todayYmd || null, rawDate: rec.rawDate || '', description: desc,
+      amount: fromDoc ? -Math.abs(rec.docTotal) : null, source: 'OCR', category: rec.category || null,
+      note: fromDoc ? 'Fişteki TOPLAM’dan — kalemlerin tek tek toplamı değil' : 'Tutarı fişten bakıp yaz',
+      manual: !fromDoc, fromDocTotal: fromDoc }];
   }
 
   /* ---------- Toplam kontrolü ---------- */
   function totalsCheck(rows, docTotal) {
     var sel = rows.filter(function (r) { return r.include && Number.isInteger(r.amount); });
-    var income = 0, expense = 0;
-    sel.forEach(function (r) { if (r.amount >= 0) income = M.add(income, r.amount); else expense = M.add(expense, -r.amount); });
-    var res = { count: sel.length, income: income, expense: expense, net: M.sub(income, expense) };
+    var income = 0, expense = 0, rowSum = 0;
+    sel.forEach(function (r) {
+      rowSum = M.add(rowSum, r.amount);
+      if (r.amount >= 0) income = M.add(income, r.amount); else expense = M.add(expense, -r.amount);
+    });
+    // computed daima seçili satırlardan gelir; belgedeki toplam asla buraya kopyalanmaz.
+    // Karışık gelir/giderde belgedeki toplama en yakın olan (gider toplamı veya net) gösterilir.
+    var net = M.sub(income, expense);
+    var absNet = net < 0 ? -net : net;
+    var computed, computedIsNet = false;
+    if (income === 0 || expense === 0) computed = expense > 0 ? expense : income;
+    else if (docTotal != null) {
+      var adExp = expense >= docTotal ? M.sub(expense, docTotal) : M.sub(docTotal, expense);
+      var adNet = absNet >= docTotal ? M.sub(absNet, docTotal) : M.sub(docTotal, absNet);
+      // Net yalnızca gerçekten daha yakınsa (en fazla yarısı kadar fark) veya birebir tutuyorsa gösterilir.
+      computedIsNet = adNet === 0 || (adNet < adExp && adNet * 2 <= adExp);
+      computed = computedIsNet ? absNet : expense;
+    } else { computed = absNet; computedIsNet = true; }
+    var res = { count: sel.length, income: income, expense: expense, net: net, rowSum: rowSum, computed: computed,
+      computedIsNet: computedIsNet, fromDocTotal: sel.filter(function (r) { return r.fromDocTotal; }).length };
     if (docTotal != null) {
       // Belge toplamı ya giderlerin toplamıdır ya da (kart ekstresinde ödemeler düşülmüş) net tutardır; ikisinden biri tutarsa doğru.
-      var cmp = expense > 0 ? expense : income, absNet = res.net < 0 ? -res.net : res.net;
+      var cmp = expense > 0 ? expense : income;
       var d1 = M.sub(cmp, docTotal), d2 = M.sub(absNet, docTotal);
       res.docTotal = docTotal; res.match = d1 === 0 || (income > 0 && expense > 0 && d2 === 0);
-      res.diff = res.match ? 0 : d1; res.byNet = d1 !== 0 && res.match;
+      res.diff = res.match ? 0 : M.sub(computed, docTotal); res.byNet = d1 !== 0 && res.match;
     }
     return res;
   }
