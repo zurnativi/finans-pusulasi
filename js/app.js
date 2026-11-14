@@ -1,7 +1,7 @@
 /* app.js — Arayüz. Hesaplar calc.js'te, para işlemleri money.js'te (tam sayı kuruş). */
 (function () {
   'use strict';
-  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI;
+  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null;
   var state = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
@@ -51,7 +51,7 @@
     var before = JSON.stringify(state);
     try {
       fn(state);
-      S.validateState(JSON.parse(JSON.stringify(state)));
+      state = S.validateState(JSON.parse(JSON.stringify(state))); // doğrulanmış kopya (alım-satımla izlenen varlık değerleri de güncellenir)
     } catch (e) { state = JSON.parse(before); toast('İşlem yapılmadı: ' + e.message); render(); return false; }
     undoStack = before;
     persist();
@@ -90,15 +90,16 @@
     var noData = !state.incomes.length && !state.expenses.length && !state.assets.length && !state.accounts.length;
     if (noData) {
       return '<h1>Hoş geldin</h1><div class="card"><p>Henüz veri yok. Başlamak için gelir ve giderlerini, sonra birikimlerini gir. İstersen önce örnek veriyle sistemi tanı.</p>' +
-        '<div class="row"><a class="btn primary" href="#butce">Gelir ve gider gir</a><a class="btn" href="#varliklar">Birikimlerimi gir</a><a class="btn" href="#veri">Belgeden aktar</a><button class="btn" data-act="load-example">Örnek veriyi yükle</button></div></div>';
+        '<div class="row"><a class="btn primary" href="#butce">Gelir ve gider gir</a><a class="btn" href="#portfoy/varliklar">Birikimlerimi gir</a><a class="btn" href="#veri">Belgeden aktar</a><button class="btn" data-act="load-example">Örnek veriyi yükle</button></div></div>';
     }
     var ex = extraActions(), acts = ex.filter(function (x) { return x.level === 'danger'; }).concat(C.actions(an), ex.filter(function (x) { return x.level !== 'danger'; }));
-    var h = '<h1>Özet <span class="muted" style="font-size:.9rem;font-weight:400">— ' + esc(ymLabel(an.nowYm)) + '</span></h1>';
-    h += '<div class="grid kpis">';
+    var h = '<h1>Ana sayfa <span class="muted" style="font-size:.9rem;font-weight:400">— ' + esc(ymLabel(an.nowYm)) + '</span></h1>';
+    h += PUI.homeCards();
+    h += '<h2 class="sec-h">Bütçe özeti</h2><div class="grid kpis">';
     h += kpi('Net varlığın', tl(a.netWorth), 'Tüm birikimlerin' + (a.debts ? ' − borçların' : '') + '.', 'Sahip olduğun her şeyin bugünkü değeri eksi borçların. Hesaplar (kurla TL\'ye çevrilmiş), varlıklar, kart borçları ve henüz ekstreye gelmemiş taksitler dahildir.');
     h += kpi('Her ay artan para', '<span class="' + (b.surplus < 0 ? 'neg' : 'pos') + '">' + tl(b.surplus) + '</span>', 'Gelirinin ' + pct(Math.max(0, b.savingsRateBp)) + '\'ini biriktiriyorsun.', 'Aylık gelir eksi sabit ve değişken giderler. Yatırıma ayrılabilecek tutar.');
     h += kpi('Acil durum fonu', tl(em.current) + ' <span class="muted" style="font-size:1rem">/ ' + tl(em.target) + '</span>', progress(em.progressBp) + (em.shortfall ? 'Eksik: ' + tl(em.shortfall) : 'Tamamlandı ✓'), em.months + ' aylık giderin kadar, kolay çekilebilir bir kenarda tutulan para. İş kaybı veya sağlık gibi beklenmedik durumlar için.');
-    h += kpi(esc(g.name) + ' hedefi', tl(g.current) + ' <span class="muted" style="font-size:1rem">/ ' + tl(g.target) + '</span>', progress(g.progressBp) + 'Hedefe ' + monthsLabel(g.monthsLeft) + ' kaldı (' + esc(ymLabel(g.targetYm)) + ').', 'Acil durum fonu ayrıldıktan sonra kalan birikimin hedefe sayılır. Tutar bugünün fiyatlarıyladır.');
+    h += kpi(esc(g.name) + ' hedefi', tl(g.current) + ' <span class="muted" style="font-size:1rem">/ ' + tl(g.target) + '</span>', progress(g.progressBp) + 'Hedefe ' + monthsLabel(g.monthsLeft) + ' kaldı (' + esc(ymLabel(g.targetYm)) + ').' + (g.multi ? ' <a href="#portfoy/hedefler">Tüm hedefler (' + state.goals.length + ')</a>' : ''), g.multi ? 'Birden fazla hedefin var; burada ilki gösterilir. Bu hedefe bağlı varlıklar ve ortak birikimden payı (%' + (state.goals[0].shareBp / 100) + ') sayılır.' : 'Acil durum fonu ayrıldıktan sonra kalan birikimin hedefe sayılır. Tutar bugünün fiyatlarıyladır.');
     h += '</div>';
     h += renderOverviewExtras();
 
@@ -183,6 +184,7 @@
     if (g.monthsLeft <= n) svg += '<line x1="' + x(g.monthsLeft) + '" x2="' + x(g.monthsLeft) + '" y1="' + padT + '" y2="' + (hh - padB) + '" stroke="var(--muted)" stroke-dasharray="2 3"/>';
     keys.forEach(function (k) { svg += '<polyline fill="none" stroke="' + cols[k] + '" stroke-width="2.5" points="' + sc[k].series.map(function (p) { return x(p.m).toFixed(1) + ',' + y(p.invest).toFixed(1); }).join(' ') + '"/>'; });
     svg += '</svg>';
+    if (g.multi) h += '<p class="hint">Bu grafik ilk hedefin (' + esc(g.name) + ') içindir. Tüm hedeflerin tahmini: <a href="#portfoy/hedefler">Portföy Yönetimi → Hedefler</a>.</p>';
     h += '<div class="chart">' + svg + '</div><div class="legend">' + keys.map(function (k) { return '<span><i style="background:' + cols[k] + '"></i>' + sc[k].label + '</span>'; }).join('') + '<span>- - - hedef tutar · dikey çizgi: hedef tarihi</span></div>';
     h += '<div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Senaryo</th><th class="r">' + esc(ymLabel(g.targetYm)) + '\'de hedefe ayrılan birikim</th><th class="r">Hedefe ulaşma</th><th class="r detail-only">Nominal (geleceğin TL\'si)</th><th class="detail-only">Varsayım (yıllık reel getiri: güvenli / orta / riskli)</th></tr></thead><tbody>';
     keys.forEach(function (k) {
@@ -237,27 +239,11 @@
   }
 
   /* ---------- VARLIKLAR ve HEDEF ---------- */
-  function renderAssets() {
-    var a = C.assets(state);
-    var h = '<h1>Varlıklar ve hedef</h1><p class="hint">Her varlığın bugünkü TL değerini yaz. Uygulama piyasa fiyatı çekmez; değeri sen güncellersin (ör. ayda bir). Banka/katılım hesabı, nakit, döviz, altın hesabı ve kredi kartlarını <a href="#hesaplar">Hesaplar</a> bölümünde tut; net varlığa otomatik eklenir (burada tekrar yazma).</p>';
-    h += '<section class="card"><h2>Birikimlerim ' + tip('"Acil fon" işaretli varlıklar acil durum fonuna sayılır. Risk seviyesi dağılım hesabında kullanılır.') + '</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th>Tür</th><th>Risk</th><th>Acil fon</th><th class="r">Değer (TL)</th><th></th></tr></thead><tbody>';
-    state.assets.forEach(function (x) {
-      h += '<tr><td>' + textInput('assets', x.id, 'name', x.name, 'Varlık adı') + '</td><td><select aria-label="Varlık türü" data-list="assets" data-id="' + x.id + '" data-field="cls">' + Object.keys(C.ASSET_CLASSES).map(function (k) { return '<option value="' + k + '"' + (x.cls === k ? ' selected' : '') + '>' + esc(C.ASSET_CLASSES[k].label) + '</option>'; }).join('') + '</select></td>' +
-        '<td><select aria-label="Risk seviyesi" data-list="assets" data-id="' + x.id + '" data-field="risk">' + ['safe', 'medium', 'risky'].map(function (k) { return '<option value="' + k + '"' + (x.risk === k ? ' selected' : '') + '>' + C.RISK[k] + '</option>'; }).join('') + '</select></td>' +
-        '<td style="text-align:center"><input type="checkbox" aria-label="Acil fona say" data-list="assets" data-id="' + x.id + '" data-field="emergency"' + (x.emergency ? ' checked' : '') + '></td><td>' + moneyInput('assets', x.id, 'value', x.value, x.name + ' değeri') + '</td><td>' + delBtn('assets', x.id, x.name) + '</td></tr>';
-    });
-    h += '</tbody><tfoot><tr><th colspan="4">Toplam varlık</th><th class="r num">' + tl2(a.total) + '</th><th></th></tr></tfoot></table></div><button class="btn" data-act="add" data-list="assets">+ Varlık ekle</button>';
-    h += '<p class="hint">Helal araç örnekleri — Güvenli: katılım hesabı, kira sertifikası fonu. Orta: altın, katılım fonları. Riskli: katılım endeksi hisseleri, SPUS/HLAL gibi helal ETF\'ler. Faizli mevduat/fon/tahvil eklememeni öneririz.</p></section>';
-    h += '<section class="card" style="margin-top:14px"><h2>Borçlarım ' + tip('Kredi kartı borcu, taksitler, kişisel borçlar. Net varlıktan düşülür.') + '</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th class="r">Kalan tutar (TL)</th><th></th></tr></thead><tbody>';
+  function debtsCard() {
+    var h = '<section class="card" style="margin-top:14px"><h2>Borçlarım ' + tip('Kişisel borçlar, krediler. Kredi kartları ve taksitler Bütçe → Ödemeler\'de izlenir. Net varlıktan düşülür.') + '</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th class="r">Kalan tutar (TL)</th><th></th></tr></thead><tbody>';
     state.debts.forEach(function (x) { h += '<tr><td>' + textInput('debts', x.id, 'name', x.name, 'Borç adı') + '</td><td>' + moneyInput('debts', x.id, 'amount', x.amount, x.name + ' tutarı') + '</td><td>' + delBtn('debts', x.id, x.name) + '</td></tr>'; });
     if (!state.debts.length) h += '<tr><td colspan="3" class="muted">Borç yok.</td></tr>';
-    h += '</tbody></table></div><button class="btn" data-act="add" data-list="debts">+ Borç ekle</button></section>';
-    var g = state.goal;
-    h += '<section class="card" style="margin-top:14px"><h2>Hedefim ' + tip('Tutarı bugünün fiyatıyla yaz (ör. bugün peşinat kaç TL ise). Uygulama enflasyonu ayrıca hesaba katar.') + '</h2><div class="grid two">' +
-      '<div class="field"><label for="g-name">Hedefin adı</label><input id="g-name" type="text" maxlength="60" data-goal="name" value="' + esc(g.name) + '"></div>' +
-      '<div class="field"><label for="g-target">Hedef tutar (bugünün parasıyla, TL)</label><input id="g-target" class="money" type="text" inputmode="decimal" data-goal="target" value="' + esc(moneyInputVal(g.target)) + '"></div>' +
-      '<div class="field"><label for="g-date">Hedef tarih (ay)</label><input id="g-date" type="month" data-goal="targetYm" value="' + esc(g.targetYm) + '"></div></div></section>';
-    return h;
+    return h + '</tbody></table></div><button class="btn" data-act="add" data-list="debts">+ Borç ekle</button></section>';
   }
 
   /* ---------- İŞLEMLER ---------- */
@@ -300,10 +286,12 @@
   function aiReady() { var p = AI.PROVIDERS[aiCfg.provider]; return !!(p && (!p.needsKey || (aiCfg.keys || {})[aiCfg.provider])); }
   function renderImport() {
     if (review) return renderReview();
+    if (PUI.hasReview()) return PUI.renderImportReview();
     var p = AI.PROVIDERS[aiCfg.provider];
     var h = '<h1>Veri ekle</h1><p>Dosyanı seç veya buraya sürükle. <b>Hiçbir şey sen onaylamadan kaydedilmez:</b> önce kontrol tablosu açılır, düzeltir, sonra onaylarsın.</p>';
+    h += PUI.importModes();
     h += '<div class="choices">' +
-      '<a class="choice" href="#islemler" style="text-decoration:none;color:inherit"><b>✍️ Elle gir</b><span>Tek tek işlem ekle</span></a>' +
+      '<a class="choice" href="' + (PUI.importKind() === 'trades' ? '#portfoy/islemler' : PUI.importKind() === 'prices' ? '#portfoy/fiyatlar' : '#islemler') + '" style="text-decoration:none;color:inherit"><b>✍️ Elle gir</b><span>' + (PUI.importKind() === 'tx' ? 'Tek tek işlem ekle' : PUI.importKind() === 'trades' ? 'Tek tek alım-satım ekle' : 'Tek tek fiyat gir') + '</span></a>' +
       '<button class="choice" data-pick=".xlsx,.xls,.csv,.ods,.txt"><b>📊 Excel / CSV</b><span>Banka hareket dökümü, kendi tablon</span></button>' +
       '<button class="choice" data-pick=".pdf,application/pdf"><b>📄 PDF ekstre</b><span>Hesap veya kredi kartı ekstresi</span></button>' +
       '<button class="choice" data-pick="image/*,.heic,.heif"><b>📷 Fotoğraf / fiş / ekran görüntüsü</b><span>Alışveriş fişi, uygulama ekranı (galeriden)</span></button>' +
@@ -330,7 +318,8 @@
     if (file.size > 30 * 1024 * 1024) return setStatus('Dosya çok büyük (30 MB üstü).', 'danger');
     var name = file.name || 'dosya', ext = (name.split('.').pop() || '').toLowerCase();
     var job;
-    if (/^(xlsx|xls|csv|ods|txt|tsv)$/.test(ext)) job = importSheet(file);
+    if (PUI.importKind() !== 'tx' && ext !== 'json') job = PUI.handleFile(file);
+    else if (/^(xlsx|xls|csv|ods|txt|tsv)$/.test(ext)) job = importSheet(file);
     else if (ext === 'pdf' || file.type === 'application/pdf') job = importPdf(file);
     else if (/^image\//.test(file.type) || /^(jpe?g|png|webp|gif|bmp|heic|heif|avif)$/.test(ext) || (!file.type && !ext)) job = importImage(file);
     else if (ext === 'json') return setStatus('Yedek dosyası mı? Onu <a href="#ayarlar">Ayarlar ve yedek</a> bölümünden geri yükle.', 'warn');
@@ -830,6 +819,7 @@
       if (state.sinkingFunds.length) l.push('Yıllık giderler kumbarası: ' + state.sinkingFunds.map(function (f) { return f.name + ' ' + tl(f.saved) + '/' + tl(f.amount) + ' (' + f.dueYm + ')'; }).join('; ') + '. Bu ay ayrılacak toplam ' + tl(L.sinkingTotals(state, nowYm()).monthlyNeed) + '.');
       var ins = L.insights(L.compareMonths(state.transactions, t), tl); l.push('Aylık karşılaştırma: ' + ins.map(function (x) { return x.text; }).join(' '));
     } catch (e) { /* özet eksik kalabilir */ }
+    var pc = PUI.contextSummary(); if (pc) l.push(pc);
     return l.join('\n');
   }
   var SYSTEM = 'Sen "Finans Pusulası" uygulamasının Türkçe kişisel finans asistanısın. Her zaman Türkçe, sade ve anlaşılır yaz; finans bilmeyen biri de anlamalı. ' +
@@ -908,7 +898,7 @@
     h += '</tbody></table></div><button class="btn small" data-act="scen-reset">Varsayılana dön</button></section>';
     h += '<section class="card"><h2>Veri yönetimi</h2><div class="row"><button class="btn" data-act="load-example">Örnek veriyi yükle</button><button class="btn danger" data-act="clear-all">Tüm verileri sil</button></div>' +
       '<p class="hint">Örnek veriyi yüklemek mevcut verilerinin yerine geçer (önce yedek almayı unutma). Silme işlemi API anahtarlarını silmez; onlar Asistan bölümünden silinir.</p>' +
-      '<p class="hint detail-only">Uygulama sürümü 2.0 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
+      '<p class="hint detail-only">Uygulama sürümü 3.0 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
     return h;
   }
   function exportCsv() {
@@ -925,7 +915,7 @@
   function today() { return todayYmd(); }
   function nowYm() { return today().slice(0, 7); }
   function eff() { return L.effectiveState(state, today()); }
-  function analyzeNow() { return C.analyze(eff(), nowYm()); }
+  function analyzeNow() { var e = eff(), an = C.analyze(e, nowYm()); try { PF.patchAnalysis(an, e, PF.goalsReport(e, an)); } catch (er) { console.error(er); } return an; }
   function curVal(minor) { return M.format(minor, { symbol: false }); }
   function shortYm(ym) { var a = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara']; var p = ym.split('-'); return a[+p[1] - 1] + ' ' + p[0].slice(2); }
   function daysText(d) { return d < 0 ? (-d) + ' gün gecikti' : d === 0 ? 'Bugün' : d === 1 ? 'Yarın' : d + ' gün sonra'; }
@@ -1444,7 +1434,7 @@
     };
   }
   function updateBadge() {
-    var a = $('nav.tabs a[data-tab="odemeler"]'); if (!a || !state) return;
+    var a = $('nav.tabs a[data-tab="butce"]'); if (!a || !state) return;
     var n = 0; try { n = L.badgeCount(L.upcoming(state, today(), 30)); } catch (e) { n = 0; }
     var b = $('.badge', a);
     if (!n) { if (b) b.remove(); return; }
@@ -1453,22 +1443,33 @@
   }
 
   /* ---------- Yönlendirme ve çizim ---------- */
-  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, varliklar: renderAssets, islemler: renderTransactions, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings };
+  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return PUI.renderAnalysis(); }, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings };
+  var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce' };
+  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek' };
+  function areaNav() {
+    if (AREA[tab] !== 'butce') return '';
+    return '<nav class="areanav" aria-label="Bütçe bölümleri">' + [['butce', 'Plan ve sınırlar'], ['odemeler', 'Ödemeler'], ['hesaplar', 'Hesaplar'], ['islemler', 'İşlemler']].map(function (x) {
+      return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
+  }
   function render() {
     renderBanner();
-    $$('nav.tabs a').forEach(function (a) { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    var navTab = AREA[tab] || tab;
+    $$('nav.tabs a').forEach(function (a) { if (a.dataset.tab === navTab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     var html;
-    try { html = VIEWS[tab](); } catch (e) { console.error(e); html = '<div class="notice danger">Bu bölüm gösterilirken bir hata oluştu: ' + esc(e.message) + '. Verilerin güvende; Ayarlar\'dan yedek alabilirsin.</div>'; }
+    try { html = areaNav() + VIEWS[tab](); } catch (e) { console.error(e); html = '<div class="notice danger">Bu bölüm gösterilirken bir hata oluştu: ' + esc(e.message) + '. Verilerin güvende; Ayarlar\'dan yedek alabilirsin.</div>'; }
     $('#view').innerHTML = html;
     if (tab === 'veri' && review) refreshReview();
     if (tab === 'hesaplar') trHint();
+    if (tab === 'portfoy') PUI.afterRender();
     updateBadge();
   }
   function route() {
     var parts = (location.hash || '#ozet').slice(1).split('/'), t = parts[0];
+    if (t === 'varliklar') { location.replace('#portfoy/varliklar'); return; } // eski bağlantılar
     tab = VIEWS[t] ? t : 'ozet'; sub = parts[1] || '';
     render();
-    document.title = ($('nav.tabs a[data-tab="' + tab + '"]').textContent) + ' · Finans Pusulası';
+    document.title = (TITLES[tab] || 'Finans Pusulası') + ' · Finans Pusulası';
+    if (window.scrollY > 200) window.scrollTo(0, 0);
   }
 
   /* ---------- Olaylar ---------- */
@@ -1554,10 +1555,12 @@
       'chat-clear': function () { chatLog = []; render(); }
     };
     var B = v2Actions(t); Object.keys(B).forEach(function (k) { A[k] = B[k]; });
+    var PA = PUI.actions(t); Object.keys(PA).forEach(function (k) { A[k] = PA[k]; });
     if (A[act]) A[act]();
   }
   function onChange(e) {
     var el = e.target;
+    if (PUI.onChange(el)) return;
     if (el.dataset.list && el.dataset.field) return onFieldChange(el);
     if (el.dataset.goal) {
       var f = el.dataset.goal;
@@ -1575,7 +1578,7 @@
       var cur = el.dataset.rate, rr = el.value.trim();
       if (!rr) { if (!confirm(L.CURRENCIES[cur].label + ' kuru silinsin mi? Bu birimdeki hesaplar toplamlara sayılmaz.')) return render(); return mutate(function (s) { delete s.rates[cur]; }); }
       var rk = M.parse(rr); if (rk == null || rk <= 0) { el.setAttribute('aria-invalid', 'true'); return toast('Geçersiz kur. Örnek: 42,50'); }
-      return mutate(function (s) { s.rates[cur] = { rate: rk, date: today() }; }, L.CURRENCIES[cur].label + ' kuru kaydedildi (tarih: bugün).');
+      return mutate(function (s) { s.rates[cur] = { rate: rk, date: today() }; PUI.rateEdited(s, cur, rk, today()); }, L.CURRENCIES[cur].label + ' kuru kaydedildi (tarih: bugün).');
     }
     if (el.dataset.ratedate) {
       var c2 = el.dataset.ratedate; if (!L.isYmd(el.value)) return toast('Geçerli bir tarih seç');
@@ -1632,13 +1635,14 @@
       delete obj.exportedAt; delete obj.app;
       S.validateState(obj);
       var msg = 'Yedek dosyası geçerli' + (obj.migratedFrom ? ' (eski v' + obj.migratedFrom + ' yedeği; yeni sürüme dönüştürüldü, hiçbir veri silinmedi)' : '') + ': ' + obj.incomes.length + ' gelir, ' + obj.expenses.length + ' gider, ' + obj.assets.length + ' varlık, ' + obj.transactions.length + ' işlem, ' +
-        obj.accounts.length + ' hesap, ' + obj.recurring.length + ' düzenli ödeme, ' + obj.installments.length + ' taksit, ' + obj.sinkingFunds.length + ' yıllık gider, ' + Object.keys(obj.limits).length + ' sınır.\nMevcut verilerin bu yedekle DEĞİŞTİRİLECEK. Devam edilsin mi?';
+        obj.accounts.length + ' hesap, ' + obj.recurring.length + ' düzenli ödeme, ' + obj.installments.length + ' taksit, ' + obj.sinkingFunds.length + ' yıllık gider, ' + Object.keys(obj.limits).length + ' sınır, ' + (obj.trades || []).length + ' alım-satım, ' + (obj.goals || []).length + ' hedef, ' + Object.keys(obj.prices || {}).length + ' fiyat serisi.\nMevcut verilerin bu yedekle DEĞİŞTİRİLECEK. Devam edilsin mi?';
       if (!confirm(msg)) return;
       mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, 'Yedek geri yüklendi.');
       setView(state.settings.view);
     }).catch(function (e) { toast('Yedek yüklenemedi, hiçbir şey değişmedi: ' + e.message); });
   }
   function onSubmit(e) {
+    if (PUI.onSubmit(e)) return;
     if (e.target.id === 'tx-form') {
       e.preventDefault();
       var date = P.parseDate($('#tx-date').value), desc = $('#tx-desc').value.trim(), amt = M.parse($('#tx-amt').value), sign = Number($('#tx-type').value);
@@ -1666,19 +1670,25 @@
 
   /* ---------- Başlat ---------- */
   function init() {
+    PUI = window.PortfolioUI({
+      state: function () { return state; }, mutate: mutate, render: render, toast: toast, esc: esc, tl: tl, tl2: tl2, tip: tip, pct: pct, sbp: sbp, kpi: kpi, progress: progress,
+      dateLabel: dateLabel, ymLabel: ymLabel, monthsLabel: monthsLabel, today: today, nowYm: nowYm, eff: eff, sub: function () { return sub; }, subtabs: subtabs, debtsCard: debtsCard,
+      loadScript: loadScript, decodeText: decodeText, loadPdfLib: loadPdfLib, pdfText: pdfText, pdfToImages: pdfToImages, readImage: readImage, getOcrWorker: getOcrWorker, ocrRecognize: ocrRecognize,
+      aiReady: aiReady, aiCfg: function () { return aiCfg; }, setStatus: setStatus, busy: busy
+    });
     document.addEventListener('click', onClick);
     document.addEventListener('change', onChange);
     document.addEventListener('submit', onSubmit);
-    document.addEventListener('input', function (e) { if (e.target.id === 'tr-amt') trHint(); if (e.target.id === 'tx-q') { txFilter.q = e.target.value; var pos = e.target.selectionStart; render(); var q = $('#tx-q'); q.focus(); q.setSelectionRange(pos, pos); } else if (e.target.getAttribute('aria-invalid') === 'true') e.target.removeAttribute('aria-invalid'); });
+    document.addEventListener('input', function (e) { PUI.onInput(e.target); if (e.target.id === 'tr-amt') trHint(); if (e.target.id === 'tx-q') { txFilter.q = e.target.value; var pos = e.target.selectionStart; render(); var q = $('#tx-q'); q.focus(); q.setSelectionRange(pos, pos); } else if (e.target.getAttribute('aria-invalid') === 'true') e.target.removeAttribute('aria-invalid'); });
     document.addEventListener('keydown', function (e) {
       if (e.target.id === 'chat-in' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(e.target.value); }
       if (e.target.id === 'drop' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); $('#file-in').click(); }
     });
-    ['dragover', 'dragenter'].forEach(function (ev) { document.addEventListener(ev, function (e) { if (tab === 'veri' && !review) { e.preventDefault(); var d = $('#drop'); if (d) d.classList.add('over'); } }); });
+    ['dragover', 'dragenter'].forEach(function (ev) { document.addEventListener(ev, function (e) { if (tab === 'veri' && !review && !PUI.hasReview()) { e.preventDefault(); var d = $('#drop'); if (d) d.classList.add('over'); } }); });
     document.addEventListener('dragleave', function (e) { var d = $('#drop'); if (d && e.target === d) d.classList.remove('over'); });
-    document.addEventListener('drop', function (e) { if (tab === 'veri' && !review) { e.preventDefault(); var d = $('#drop'); if (d) d.classList.remove('over'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); } });
+    document.addEventListener('drop', function (e) { if (tab === 'veri' && !review && !PUI.hasReview()) { e.preventDefault(); var d = $('#drop'); if (d) d.classList.remove('over'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); } });
     window.addEventListener('paste', function (e) { // Ekran görüntüsünü doğrudan yapıştır (Ctrl+V)
-      if (tab !== 'veri' || review) return;
+      if (tab !== 'veri' || review || PUI.hasReview()) return;
       var item = Array.prototype.find.call(e.clipboardData.items || [], function (i) { return /^image\//.test(i.type); });
       if (item) { e.preventDefault(); var f = item.getAsFile(); handleFile(new File([f], 'yapistirilan-ekran-goruntusu.png', { type: f.type })); }
     });

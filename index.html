@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Finans Pusulası: bütçe, harcama sınırları, düzenli ödemeler, kredi kartı ve taksit takibi, birikim ve helal yatırım planı. Veriler yalnızca bu cihazda.">
+<meta name="description" content="Finans Pusulası: bütçe, ödemeler ve kart takibi; helal portföy yönetimi (alım-satım, maliyet, getiri, dengeleme, çoklu hedef, risk kuralları, ücretsiz fiyat güncelleme). Veriler yalnızca bu cihazda.">
 <meta name="theme-color" content="#1f6feb">
 <title>Finans Pusulası</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6feb'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial'%3E₺%3C/text%3E%3C/svg%3E">
@@ -20,15 +20,13 @@
     </div>
   </div>
   <nav class="tabs" aria-label="Bölümler">
-    <a href="#ozet" data-tab="ozet">Özet</a>
+    <a href="#ozet" data-tab="ozet">Ana sayfa</a>
     <a href="#butce" data-tab="butce">Bütçe</a>
-    <a href="#odemeler" data-tab="odemeler">Ödemeler</a>
-    <a href="#hesaplar" data-tab="hesaplar">Hesaplar</a>
-    <a href="#varliklar" data-tab="varliklar">Varlıklar ve hedef</a>
-    <a href="#islemler" data-tab="islemler">İşlemler</a>
+    <a href="#portfoy" data-tab="portfoy">Portföy Yönetimi</a>
+    <a href="#analiz" data-tab="analiz">Portföy Analizi <span class="soon-tag">yakında</span></a>
     <a href="#veri" data-tab="veri">Veri ekle</a>
-    <a href="#asistan" data-tab="asistan">Yapay zekâ asistanı</a>
-    <a href="#ayarlar" data-tab="ayarlar">Ayarlar ve yedek</a>
+    <a href="#asistan" data-tab="asistan">Asistan</a>
+    <a href="#ayarlar" data-tab="ayarlar">Ayarlar</a>
   </nav>
 </header>
 <main id="main" tabindex="-1">
@@ -36,7 +34,7 @@
   <div id="view" aria-live="polite"><p class="muted">Yükleniyor…</p></div>
 </main>
 <footer class="disc">
-  Bu uygulama bir hesaplama ve planlama aracıdır; yatırım tavsiyesi değildir. Getiri ve enflasyon rakamları varsayımdır, gerçek piyasa fiyatı içermez.
+  Bu uygulama bir hesaplama ve planlama aracıdır; yatırım tavsiyesi değildir. Gelecek tahminleri varsayımdır. Piyasa fiyatları yalnızca sen "Fiyatları güncelle" dediğinde ücretsiz kaynaklardan alınır; kaynağı ve saati her zaman gösterilir.
   Helal (faizsiz) uygunluk için ürünün ilgili kurumun danışma kurulu onayını ayrıca kontrol et. Verilerin yalnızca bu cihazda saklanır.
 </footer>
 <div id="toast-root" aria-live="assertive"></div>
@@ -44,9 +42,12 @@
 <script src="js/calc.js" defer></script>
 <script src="js/ledger.js" defer></script>
 <script src="js/importparse.js" defer></script>
+<script src="js/portfolio.js" defer></script>
+<script src="js/prices.js" defer></script>
 <script src="js/sample.js" defer></script>
 <script src="js/store.js" defer></script>
 <script src="js/ai.js" defer></script>
+<script src="js/portfolio-ui.js" defer></script>
 <script src="js/app.js" defer></script>
 </body>
 </html>

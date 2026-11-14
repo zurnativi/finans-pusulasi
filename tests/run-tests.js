@@ -411,13 +411,13 @@
   test('göç: v1 yedeği eksiksiz yüklenir ve sonuçlar değişmez', function () {
     var v1 = clone(V1), before = C.analyze(clone(V1), '2026-11');
     var m = S.validateState(v1);
-    eq(m.schema, 2); eq(m.migratedFrom, 1); eq(m.accounts, []); eq(m.recurring, []); eq(m.rates, {}); eq(m.limits, {});
+    eq(m.schema, 3); eq(m.migratedFrom, 1); eq(m.trades, []); eq(m.goals.length, 1); eq(m.goals[0].shareBp, 10000); eq(m.accounts, []); eq(m.recurring, []); eq(m.rates, {}); eq(m.limits, {});
     eq(m.transactions.length, V1.transactions.length); eq(m.incomes, V1.incomes); eq(m.assets, V1.assets); eq(m.goal, V1.goal);
     var after = C.analyze(L.effectiveState(m, '2026-11-13'), '2026-11');
     eq(after.budget, before.budget); eq(after.assets.netWorth, before.assets.netWorth); eq(after.plan, before.plan);
   });
   test('göç: yeni sürüm ve bozuk sürüm reddedilir', function () {
-    var threw = ''; try { var x = clone(V1); x.schema = 3; S.validateState(x); } catch (e) { threw = e.message; } ok(/daha yeni/.test(threw), threw);
+    var threw = ''; try { var x = clone(V1); x.schema = 4; S.validateState(x); } catch (e) { threw = e.message; } ok(/daha yeni/.test(threw), threw);
     threw = ''; try { var y = clone(V1); delete y.schema; S.validateState(y); } catch (e) { threw = e.message; } ok(/Sürüm/.test(threw), threw);
   });
   test('örnek veri (v2) doğrulamadan geçer ve yedek gidiş-dönüşü aynı', function () {
@@ -443,6 +443,191 @@
     bad(function (s) { s.rates.USD.rate = -5; }, /Kur USD/);
     bad(function (s) { s.limits.Market = -100; }, /Sınır/);
     bad(function (s) { s.accounts[5].card.dueDay = 0; }, /son ödeme/);
+  });
+
+  // ================= v3: Portföy yönetimi =================
+  var PF = isNode ? require('../js/portfolio.js') : root.Portfolio;
+  var PR = isNode ? require('../js/prices.js') : root.Prices;
+  var Q = PF.QS, PP = PF.PS;
+  function near(a, b, tol, msg) { if (a == null || Math.abs(a - b) > tol) throw new Error((msg || '') + ' beklenen ≈' + b + ', gelen ' + a); }
+  function tr(id, asset, date, side, qty, price, fee, cur, fx) { var t = { id: id, assetId: asset, date: date, side: side, qty: qty, price: price, fee: fee || 0, currency: cur || 'TRY', note: '' }; if (fx) t.fxRate = fx; return t; }
+
+  test('parseScaled adet/fiyat (TR/EN, binlik, yuvarlama)', function () {
+    eq(PF.parseScaled('1,5', 8), 150000000); eq(PF.parseScaled('0,00012345', 8), 12345); eq(PF.parseScaled('1.234,5678', 6), 1234567800);
+    eq(PF.parseScaled('1,234.56', 6), 1234560000); eq(PF.parseScaled('1.234', 6), 1234000000); eq(PF.parseScaled('0.125', 6), 125000);
+    eq(PF.parseScaled('2,1234567', 6), 2123457); eq(PF.parseScaled('10 adet', 8), 10 * Q); eq(PF.parseScaled(50.368, 6), 50368000);
+    eq(PF.parseScaled('abc', 6), null); eq(PF.parseScaled('1,2,3', 6), null); eq(PF.parseScaled('', 6), null); eq(PF.parseScaled('-3', 8), -3 * Q);
+  });
+  test('valueMinor ve qtyForAmount kesin', function () {
+    eq(PF.valueMinor(10 * Q, 145200000), 145200); eq(PF.valueMinor(Q / 3 | 0, 3 * PP), 100); eq(PF.valueMinor(12345, 3000000000000), 37035);
+    eq(PF.qtyForAmount(100000, 300 * PP, true), 333333333); ok(PF.valueMinor(PF.qtyForAmount(100000, 300 * PP, true), 300 * PP) <= 100000, 'aşağı yuvarlama tutarı aşmaz');
+    eq(PF.formatScaled(123456789, 8), '1,23456789'); eq(PF.fmtQty(15 * Q), '15'); eq(PF.fmtPrice(3180000), '3,18'); eq(PF.fmtPrice(5400 * PP), '5.400,00');
+  });
+  test('ağırlıklı ortalama maliyet, gerçekleşen kâr, komisyon', function () {
+    var lg = PF.ledger([tr('1', 'a', '2026-01-02', 'buy', 10 * Q, 100 * PP, 1000), tr('2', 'a', '2026-02-02', 'buy', 10 * Q, 120 * PP, 0), tr('3', 'a', '2026-03-02', 'sell', 5 * Q, 130 * PP, 500)]);
+    eq(lg.units, 15 * Q); eq(lg.costTL, 165750); eq(lg.realizedTL, 9250); eq(lg.feesTL, 1500); eq(lg.boughtTL, 221000); eq(lg.soldTL, 64500); eq(lg.avgPrice, 110500000); eq(lg.errors, []);
+  });
+  test('aynı gün önce alış; fazla satış hata', function () {
+    var lg = PF.ledger([tr('2', 'a', '2026-01-02', 'sell', 5 * Q, 10 * PP), tr('1', 'a', '2026-01-02', 'buy', 5 * Q, 9 * PP)]);
+    eq(lg.errors, []); eq(lg.units, 0); eq(lg.realizedTL, 500); eq(lg.costTL, 0);
+    var bad = PF.ledger([tr('1', 'a', '2026-01-02', 'buy', 5 * Q, 9 * PP), tr('2', 'a', '2026-01-03', 'sell', 6 * Q, 10 * PP)]); eq(bad.errors.length, 1);
+  });
+  test('döviz işlem: TL maliyet işlem günü kuruyla, gerçekleşen kâr kur farkı dahil', function () {
+    var lg = PF.ledger([tr('1', 'u', '2026-01-02', 'buy', 2 * Q, 50 * PP, 0, 'USD', 4000), tr('2', 'u', '2026-06-02', 'sell', 1 * Q, 50 * PP, 0, 'USD', 4500)]);
+    eq(lg.costNative, 5000); eq(lg.costTL, 200000); eq(lg.realizedNative, 0); eq(lg.realizedTL, 25000);
+  });
+  test('pozisyon: piyasa değeri, gerçekleşmemiş kâr, kur yoksa maliyete düşer', function () {
+    var s = S.emptyState(); s.rates = { USD: { rate: 5000, date: '2026-11-10' } };
+    s.assets = [{ id: 'x', name: 'X', cls: 'halal_etf', risk: 'risky', emergency: false, value: 0, tracking: 'trades', currency: 'USD', lot: 'whole', priceKey: 'td:X', halal: { status: 'uygun' } }];
+    s.trades = [tr('1', 'x', '2026-01-02', 'buy', 10 * Q, 20 * PP, 100, 'USD', 4000)];
+    PF.addPricePoint(s.prices, 'td:X', 'USD', { d: '2026-11-10', p: 25 * PP, src: 'test' });
+    var p = PF.position(s, s.assets[0], '2026-11-13'); eq(p.mvNative, 25000); eq(p.mvTL, 1250000); eq(p.ledger.costTL, 804000); eq(p.unrealizedTL, 446000);
+    PF.sync(s, '2026-11-13'); eq(s.assets[0].value, 1250000); eq(s.assets[0].valueBasis, 'market');
+    delete s.rates.USD; PF.sync(s, '2026-11-13'); eq(s.assets[0].value, 804000); eq(s.assets[0].valueBasis, 'cost');
+  });
+  test('XIRR bilinen değerler', function () {
+    near(PF.xirr([{ date: '2025-01-01', amount: -100000 }, { date: '2026-01-01', amount: 110000 }]), 0.10, 1e-9);
+    var r2 = PF.xirr([{ date: '2024-01-01', amount: -100000 }, { date: '2025-01-01', amount: -100000 }, { date: '2026-01-01', amount: 230000 }]); near(-100000 * Math.pow(1 + r2, 731 / 365) - 100000 * (1 + r2) + 230000, 0, 1e-6, 'NPV sıfır'); near(r2, 0.0968, 0.0001);
+    eq(PF.xirr([{ date: '2025-01-01', amount: -100 }]), null); eq(PF.xirr([{ date: '2025-01-01', amount: 100 }, { date: '2025-02-01', amount: 100 }]), null);
+  });
+  test('TWR: akışlardan bağımsız, yıllıklandırma 365 gün üstü', function () {
+    var t = PF.twr([{ date: '2025-01-01', value: 1000, flow: 1000 }, { date: '2025-06-01', value: 1100, flow: 0 }, { date: '2025-07-01', value: 2200, flow: 1000 }, { date: '2025-12-31', value: 2310, flow: 0 }]);
+    near(t.period, 0.26, 1e-12); eq(t.annualized, null); eq(t.periods, 3);
+    var t2 = PF.twr([{ date: '2024-01-01', value: 100, flow: 100 }, { date: '2026-01-01', value: 121, flow: 0 }]); near(t2.annualized, 0.0997, 0.0005);
+  });
+  test('Enflasyon çarpanı: tam aylar, aradaki boşluk, son ay eksik', function () {
+    var cpi = [{ ym: '2026-01', bp: 300 }, { ym: '2026-02', bp: 200 }];
+    near(PF.inflationFactor(cpi, '2025-12-31', '2026-02-28').factor, 1.03 * 1.02, 1e-12);
+    var p = PF.inflationFactor(cpi, '2025-12-31', '2026-03-31'); near(p.factor, 1.0506, 1e-9); ok(p.partial); eq(p.missing, ['2026-03']);
+    eq(PF.inflationFactor([{ ym: '2026-02', bp: 200 }, { ym: '2026-03', bp: 100 }], '2025-12-31', '2026-03-31').factor, null);
+    near(PF.realReturn(0.5, 1.5), 0, 1e-12);
+  });
+  test('Kıyas simülasyonu: aynı paralar aynı günlerde', function () {
+    var pts = [{ d: '2026-01-01', p: 100 * PP }, { d: '2026-06-01', p: 50 * PP }, { d: '2026-11-01', p: 110 * PP }];
+    var r = PF.simulateBenchmark([{ date: '2026-01-01', amount: 100000 }, { date: '2026-06-01', amount: 100000 }, { date: '2026-06-20', amount: -50000 }], pts, '2026-11-10');
+    eq(r.ok, true); eq(r.units, 2000000000); eq(r.finalTL, 220000); ok(r.approx, '7 günden eski fiyat → yaklaşık');
+    eq(PF.simulateBenchmark([{ date: '2025-01-01', amount: 1000 }], pts, '2026-11-10').ok, false);
+  });
+  test('Süzülme yolu profilleri her satırda %100', function () {
+    Object.keys(PF.GLIDES).forEach(function (k) { PF.GLIDES[k].path.forEach(function (r) { eq(r[1] + r[2] + r[3], 10000, k); }); [0, 6, 24, 48, 120].forEach(function (m) { var a = C.targetAllocation(m, PF.GLIDES[k].path); eq(a.safe + a.medium + a.risky, 10000, k + ' ' + m); }); });
+    eq(C.targetAllocation(36), C.targetAllocation(36, PF.GLIDES.standard.path));
+  });
+  function exampleAn() { var ex = S.exampleState('2026-11', '2026-11-13'), eff = L.effectiveState(ex, '2026-11-13'), an = C.analyze(eff, '2026-11'); return { ex: ex, eff: eff, an: an }; }
+  test('Çoklu hedef raporu: paylar toplamı korur, hedef dağılımı %100', function () {
+    var x = exampleAn(), r = PF.goalsReport(x.eff, x.an);
+    eq(r.goals.length, 4); eq(M.sum(r.goals.map(function (g) { return g.fromPool; })) + r.unallocated, r.unassigned);
+    eq(M.sum(r.goals.map(function (g) { return g.monthly; })) + r.unallocatedMonthly, x.an.plan.surplus);
+    var t = r.combinedTarget; eq(t.safe + t.medium + t.risky, 10000);
+    ok(r.goals[0].assigned === 0 && r.goals[3].assigned > 0, 'atanmış varlık emeklilik hedefinde');
+  });
+  test('Tek hedef (eski düzen): patchAnalysis hiçbir şeyi değiştirmez', function () {
+    var x = exampleAn(); x.eff.goals = [{ id: 'g', name: 'Ev', target: 150000000, targetYm: '2031-11', glide: 'standard', shareBp: 10000 }]; x.eff.assets.forEach(function (a) { delete a.goalId; });
+    var an = C.analyze(x.eff, '2026-11'), before = JSON.stringify(an); ok(PF.legacyEquivalent(x.eff));
+    PF.patchAnalysis(an, x.eff, PF.goalsReport(x.eff, an)); eq(JSON.stringify(an), before);
+  });
+  function pos(id, tier, v, halal, priceTL, lot) { return { id: id, name: id, tier: tier, valueTL: v, isAccount: false, asset: { id: id }, halal: halal || 'uygun', withinBp: null, priceTL: priceTL || null, price: priceTL ? { p: priceTL } : null, lot: lot || 'fraction', currency: 'TRY', fx: 100 }; }
+  test('Dengeleme: önce yeni para, tam lot, artan nakit', function () {
+    var r = PF.rebalance([pos('A', 'safe', 60000), pos('B', 'risky', 40000, 'uygun', 3 * PP, 'whole')], { safe: 5000, medium: 0, risky: 5000 }, 20000);
+    eq(r.buys.length, 1); eq(r.buys[0].pos.id, 'B'); eq(r.buys[0].buyTL, 20000); eq(r.buys[0].units, 66 * Q); eq(r.buys[0].cashLeft, 200); eq(r.leftoverCash, 200);
+    eq(M.sum(r.rows.map(function (x) { return x.buyTL; })), 20000);
+  });
+  test('Dengeleme: satış emri yok, fazla "gözden geçir"', function () {
+    var r = PF.rebalance([pos('A', 'safe', 80000), pos('B', 'risky', 20000)], { safe: 5000, medium: 0, risky: 5000 }, 0);
+    eq(r.buys.length, 0); eq(r.reviews.length, 1); eq(r.reviews[0].pos.id, 'A'); eq(r.reviews[0].excess, 30000); ok(r.needsRebalance);
+  });
+  test('Dengeleme: helal olmayan alınmaz, hedefi 0; şüpheli de; etiketsiz sabit', function () {
+    var r = PF.rebalance([pos('A', 'risky', 10000, 'uygun'), pos('X', 'risky', 10000, 'uygun_degil'), pos('Y', 'risky', 5000, 'supheli'), pos('U', 'risky', 5000, 'bilinmiyor')], { safe: 0, medium: 0, risky: 10000 }, 10000);
+    var by = {}; r.rows.forEach(function (x) { by[x.pos.id] = x; });
+    eq(by.X.buyTL, 0); eq(by.X.target, 0); ok(by.X.review); eq(by.X.reason, 'Helal uygun değil'); eq(by.Y.buyTL, 0); ok(by.Y.review); eq(by.U.buyTL, 0); eq(by.U.target, 5000); eq(by.A.buyTL, 10000);
+  });
+  test('Dengeleme: acil fon eksikse riskli alım yok; kademe boşsa genel helal öneri', function () {
+    var r = PF.rebalance([pos('A', 'safe', 10000), pos('B', 'risky', 0)], { safe: 5000, medium: 0, risky: 5000 }, 10000, { blockRisky: true });
+    ok(r.rows.every(function (x) { return x.pos.tier !== 'risky' || x.buyTL === 0; })); ok(r.notes.length >= 1);
+    var g = PF.rebalance([pos('A', 'safe', 10000)], { safe: 5000, medium: 5000, risky: 0 }, 10000);
+    var gen = g.buys.filter(function (x) { return x.pos.generic; }); eq(gen.length, 1); eq(gen[0].pos.tier, 'medium'); eq(gen[0].buyTL, 10000);
+  });
+  test('Risk kuralları: tek varlık, riskli sınır, çeşitlendirme, helal', function () {
+    var an = { emergency: { shortfall: 0, months: 6 } };
+    var r = PF.riskReport({ settings: {} }, an, [pos('A', 'risky', 80000), pos('B', 'safe', 10000, 'uygun_degil'), pos('C', 'safe', 10000)]);
+    var by = {}; r.items.forEach(function (i) { by[i.id] = i; });
+    eq(by.maxAsset.level, 'danger'); eq(by.maxRisky.level, 'warn'); eq(by.maxRisky.valueBp, 8000); eq(by.concentration.level, 'warn'); eq(by.halal.level, 'danger'); eq(by.emergency.level, 'ok'); eq(r.worst, 'danger');
+    var r2 = PF.riskReport({ settings: { riskRules: { maxAssetBp: 9000, maxRiskyBp: 9000 } } }, { emergency: { shortfall: 500, months: 1 } }, [pos('A', 'risky', 80000), pos('C', 'safe', 20000)]);
+    eq(r2.items[0].level, 'warn'); eq(r2.items[1].level, 'ok');
+  });
+  test('Fiyat kontrolü: sıçrama onayı, gelecek tarih, eskime', function () {
+    var old = { d: '2026-11-10', p: 100 * PP };
+    eq(PF.checkPrice(105 * PP, old, 'fund', '2026-11-11', '2026-11-13').needsConfirm, false);
+    var j = PF.checkPrice(130 * PP, old, 'fund', '2026-11-11', '2026-11-13'); ok(j.needsConfirm); eq(j.jumpBp, 3000);
+    eq(PF.checkPrice(130 * PP, old, 'crypto', '2026-11-11', '2026-11-13').needsConfirm, true); eq(PF.checkPrice(120 * PP, old, 'crypto', '2026-11-11', '2026-11-13').needsConfirm, false);
+    eq(PF.checkPrice(100 * PP, old, 'fund', '2026-11-20', '2026-11-13').valid, false); eq(PF.checkPrice(0, old, 'fund').valid, false);
+    ok(PF.checkPrice(101 * PP, old, 'fund', '2026-11-01', '2026-11-13').needsConfirm, 'eski tarihli');
+    eq(PF.staleness({ d: '2026-11-12', p: 1 }, 'crypto', '2026-11-13').level, 'ok'); eq(PF.staleness({ d: '2026-11-09', p: 1 }, 'crypto', '2026-11-13').level, 'warn');
+    eq(PF.staleness({ d: '2026-10-01', p: 1 }, 'fx', '2026-11-13').level, 'old'); eq(PF.staleness(null, 'fx', '2026-11-13').level, 'none');
+  });
+  test('Ons → gram altın ve çapraz kontrol', function () {
+    var g = PF.gramFromOunce(3887600098, 50368000); near(g / PP, 3887.600098 * 50.368 / 31.1034768, 0.000001);
+    eq(PF.crossCheck(6279530000, g, 200).ok, true); eq(PF.crossCheck(100, 110, 150).ok, false);
+  });
+  test('Fiyat geçmişi: tarih başına tek nokta, sıralı, priceAt', function () {
+    var pr = {}; PF.addPricePoint(pr, 'fx:USD', 'TRY', { d: '2026-02-01', p: 2 }); PF.addPricePoint(pr, 'fx:USD', 'TRY', { d: '2026-01-01', p: 1 }); PF.addPricePoint(pr, 'fx:USD', 'TRY', { d: '2026-02-01', p: 3 });
+    eq(pr['fx:USD'].points.map(function (x) { return x.p; }), [1, 3]); eq(PF.priceAt(pr['fx:USD'].points, '2026-01-15').p, 1); eq(PF.priceAt(pr['fx:USD'].points, '2025-12-01'), null);
+  });
+  test('Örnek portföy tutarlı: hesaplar kuruşu kuruşuna, getiri raporu hesaplanır', function () {
+    var x = exampleAn(), sm = PF.summary(x.ex, '2026-11-13');
+    sm.rows.forEach(function (r) { eq(r.ledger.errors, []); eq(r.asset.value, r.mvTL); });
+    eq(sm.totalPLTL, M.add(sm.unrealizedTL, sm.realizedTL));
+    var rr = PF.returnsReport(x.ex, '2026-11-13'); ok(rr.twr && rr.xirr != null && rr.inflation.partial); ok(rr.benchmarks.every(function (b) { return b.sim.ok; }), 'kıyaslar hesaplanır');
+    var p = PF.positions(x.ex, x.eff, x.an, '2026-11-13'); eq(M.sum(p.map(function (q) { return q.valueTL; })), M.sub(x.an.assets.total, x.an.emergency.current));
+  });
+  test('Göç v2 → v3: kurlardan fiyat noktası, varsayılan hedef, eski veri korunur', function () {
+    var v2 = S.exampleState('2026-11', '2026-11-13'); v2.schema = 2; delete v2.trades; delete v2.prices; delete v2.cpi; delete v2.goals; v2.assets = v2.assets.filter(function (a) { return a.tracking !== 'trades'; }).map(function (a) { return { id: a.id, name: a.name, cls: a.cls === 'crypto' ? 'other' : a.cls, risk: a.risk, emergency: a.emergency, value: a.value }; }); v2.accounts.forEach(function (a) { delete a.halal; }); delete v2.settings.riskRules; delete v2.settings.rebalance;
+    var m = S.validateState(S.migrate(clone(v2)));
+    eq(m.schema, 3); eq(m.goals.length, 1); eq(m.goals[0].target, v2.goal.target); eq(m.trades, []); eq(m.cpi, []);
+    eq(m.prices['fx:USD'].points[0].p, v2.rates.USD.rate * 10000); eq(m.assets.length, v2.assets.length); eq(m.settings.riskRules.maxAssetBp, 3000);
+  });
+  test('v3 doğrulaması: işlem, hedef, fiyat alanlarındaki hataları yakalar', function () {
+    var base = S.exampleState('2026-11', '2026-11-13');
+    function bad(fn, re) { var s = clone(base); fn(s); var m = ''; try { S.validateState(s); } catch (e) { m = e.message; } ok(re.test(m), 'beklenen hata: ' + re + ' gelen: ' + m); }
+    bad(function (s) { s.trades[0].assetId = 'yok'; }, /varlık/i);
+    bad(function (s) { s.trades[0].qty = 1.5; }, /adet/i);
+    bad(function (s) { s.trades.push(tr('zz', s.trades[0].assetId, '2026-11-12', 'sell', 1e6 * Q, PP)); }, /fazla/);
+    bad(function (s) { s.goals[1].shareBp = 9000; }, /pay/i);
+    bad(function (s) { s.goals[1].glide = 'uçuk'; }, /profil|süzülme/i);
+    bad(function (s) { s.prices['fx:USD'].points.push({ d: '2020-01-01', p: 1, src: 'x' }); }, /sıra/i);
+    bad(function (s) { s.assets[0].halal.status = 'belki'; }, /helal/i);
+    var ok2 = clone(base); S.validateState(ok2);
+  });
+  test('Aracı kurum tablosu: sütun tanıma, satırlar, toplam kontrolü', function () {
+    var rows = [['Hesap ekstresi'], ['İşlem Tarihi', 'Menkul', 'İşlem Türü', 'Adet', 'Fiyat', 'Komisyon', 'Tutar'], ['12.11.2026', 'ASELS', 'Alış', '10', '145,20', '2,18', '1.452,00'], ['13.11.2026', 'TUPRS', 'Satış', '5', '200,00', '1,00', '1.000,00'], ['', 'Toplam', '', '', '', '', '2.452,00']];
+    var map = PF.detectTradeColumns(rows); eq(map.headerRow, 1); eq([map.date, map.symbol, map.side, map.qty, map.price, map.fee, map.total], [0, 1, 2, 3, 4, 5, 6]);
+    var t = PF.tradeRowsFromTable(rows, map, P.parseDate); eq(t.length, 2); eq(t[0].date, '2026-11-12'); eq(t[0].side, 'buy'); eq(t[0].qty, 10 * Q); eq(t[0].price, 145200000); eq(t[0].fee, 218); eq(t[1].side, 'sell');
+    t.forEach(function (r) { r.currency = 'TRY'; r.include = true; PF.validateTradeRow(r, '2026-11-13'); }); eq(t[0].errors, []); eq(t[0].calc.writtenOk, true); eq(t[0].calc.cash, 145418); eq(t[1].calc.cash, 99900);
+    var c = PF.tradeTotalsCheck([t[0]], 145418); ok(c.match); eq(c.by, 'buys'); var cg = PF.tradeTotalsCheck([t[0]], 145200); ok(cg.match); eq(cg.by, 'grossBuys'); var cn = PF.tradeTotalsCheck(t, 45200); ok(cn.match); eq(cn.by, 'grossNet'); var c2 = PF.tradeTotalsCheck(t, 1); ok(!c2.match); eq(c2.computed, 45200); eq(c2.diff, 45199);
+  });
+  test('Metin ve yapay zekâ çıktısından alım-satım okuma', function () {
+    var r = PF.parseTradeText('12.11.2026 ASELS ALIŞ 10 145,20 1.452,00\nboş satır\n13.11.2026 SPUS SATIŞ 2 USD 45,50 91,00', P.parseDate);
+    eq(r.length, 2); eq(r[0].symbol, 'ASELS'); eq(r[0].qty, 10 * Q); eq(r[0].written, 145200); eq(r[1].side, 'sell'); eq(r[1].currency, 'USD');
+    var sw = PF.parseTradeText('12.11.2026 ASELS ALIŞ 10 145,2 1.500,00', P.parseDate); eq(sw[0].qty, 10 * Q); eq(PF.validateTradeRow(Object.assign(sw[0], { currency: 'TRY' }), '2026-11-13').warnings.length, 1, 'tutmayan tutar uyarılır');
+    var ai = PF.rowsFromAiTrades('```json\n{"trades":[{"date":"2026-11-12","symbol":"KTV","side":"alış","qty":"1000","price":"3,18","fee":"0","total":"3180"}],"total":"3.180,00"}\n```', P.parseDate);
+    eq(ai.rows.length, 1); eq(ai.rows[0].side, 'buy'); eq(ai.rows[0].price, 3180000); eq(ai.docTotal, 318000);
+    eq(PF.normSide('Alış'), 'buy'); eq(PF.normSide('SATIŞ'), 'sell'); eq(PF.normSide('?'), null); eq(PF.normCur('TL'), 'TRY');
+  });
+  test('Fiyat listesi içe aktarma ve varlık eşleme', function () {
+    var rows = [['Fon Kodu', 'Fiyat', 'Tarih'], ['KTV', '3,25', '13.11.2026'], ['ASELS', '102,00', '13.11.2026']];
+    var m = PF.detectPriceColumns(rows), p = PF.priceRowsFromTable(rows, m, P.parseDate); eq(p.length, 2); eq(p[0].price, 3250000); eq(p[0].date, '2026-11-13');
+    var ex = S.exampleState('2026-11', '2026-11-13'); ok(PF.matchAsset(ex, 'ktv')); ok(PF.matchAsset(ex, 'ASELS')); eq(PF.matchAsset(ex, 'YOKBÖYLE'), null);
+  });
+  test('Fiyat kaynağı ayrıştırıcıları (gerçek yanıt örnekleri)', function () {
+    var fr = PR.parseFrankfurter({ amount: 1, base: 'USD', date: '2026-11-13', rates: { EUR: 0.90481, TRY: 50.368 } }); eq(fr.USD, 50368000); eq(fr.EUR, Math.round(50.368 / 0.90481 * 1e6)); eq(fr.date, '2026-11-13');
+    var tg = PR.parseTruncgil({ Update_Date: '2026-11-14 16:20:01', USD: { Buying: 50.3596, Selling: 50.3716 }, GRA: { Buying: 6279.53, Selling: 6280.54 }, GUMUS: { Buying: 79.1 }, XU100: { Selling: 11842.82 } });
+    eq(tg.XAU, 6279530000); eq(tg.USD, 50359600); eq(tg.XU100, 11842820000); eq(tg.date, '2026-11-14'); eq(tg.EUR, null);
+    var g = PR.parseGoldApi({ currency: 'USD', price: 3887.600098, symbol: 'XAU', updatedAt: '2026-11-14T22:20:25Z' }); eq(g.usdPerOz, 3887600098); eq(g.date, '2026-11-15');
+    var cg = PR.parseCoinGecko({ bitcoin: { 'try': 3359200, last_updated_at: 1794662429 } }, ['bitcoin', 'ethereum']); eq(cg.bitcoin.p, 3359200 * PP); eq(cg.ethereum, undefined);
+    var td = PR.parseTwelve({ symbol: 'SPUS', currency: 'USD', datetime: '2026-11-13', close: '45.12000' }); eq(td.p, 45120000);
+    var threw = false; try { PR.parseTwelve({ code: 401, message: 'apikey', status: 'error' }); } catch (e) { threw = true; } ok(threw);
+    eq(PR.parseFawazGold({ date: '2025-06-30', xau: { 'try': 130846.95975494 } }).p, Math.round(130846.959755 / 31.1034768 * 1e6));
+    eq(PR.parseFxSeries({ rates: { '2026-01-02': { TRY: 43.1 }, '2026-01-01': { TRY: 43 } } }).map(function (x) { return x.d; }), ['2026-01-01', '2026-01-02']);
+    threw = false; try { PR.parseFrankfurter({ rates: {} }); } catch (e) { threw = true; } ok(threw, 'bozuk yanıt reddedilir');
   });
 
   var passed = results.filter(function (r) { return r.ok; }).length;

@@ -1,11 +1,13 @@
-# Finans Pusulası — v2.0
+# Finans Pusulası — v3.0
 
 Bütçe, birikim ve **helal (faizsiz)** yatırım planı için kişisel finans uygulaması.
 Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir, tek klasör hâlinde her yere taşınabilir.
 
+Üç alan: **Bütçe** (gelir, gider, ödemeler, hesaplar), **Portföy Yönetimi** (alım-satım, dengeleme, getiri, hedefler, risk, fiyatlar) ve **Portföy Analizi** (yakında). **Ana sayfa** üçünün sade özetini gösterir.
+
 - **Sade görünüm:** finans bilmeyen biri de anlar.
 - **Detaylı görünüm:** formüller, oranlar, enflasyonlu/enflasyonsuz değerler, varsayımlar.
-- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 63 otomatik birim testi + tarayıcıda uçtan uca testler var.
+- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 99 otomatik birim testi + tarayıcıda uçtan uca testler var.
 
 ## 1. Nasıl açılır?
 
@@ -19,20 +21,28 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 
 | Bölüm | Ne işe yarar |
 |---|---|
-| Özet | Net varlık, aylık artan para, acil durum fonu, hedef ilerlemesi, "Bu ay ne yapmalıyım?", risk dağılımı (hedef ve şu an), aylık yatırım planı, 3 senaryolu gelecek tahmini |
-| Bütçe › Plan | Gelirler, sabit/değişken giderler, bu ay gerçekleşen harcamalar (kumbara payı ve bu ayın taksitleri otomatik satır olarak eklenir) |
+| Ana sayfa | Üç alan kartı (Bütçe / Portföy Yönetimi / Portföy Analizi), portföy uyarıları, bütçe özeti: net varlık, aylık artan para, acil fon, hedefler, "Bu ay ne yapmalıyım?", aylık yatırım planı, 3 senaryolu gelecek tahmini |
+| **Bütçe** › Plan | Gelirler, sabit/değişken giderler, bu ay gerçekleşen harcamalar (kumbara payı ve bu ayın taksitleri otomatik satır olarak eklenir) |
 | Bütçe › Harcama sınırları | Kategori başına aylık sınır, ilerleme çubuğu, %80'de uyarı, %100'ü aşınca alarm, ay sonu tahmini |
-| Bütçe › Aylık karşılaştırma | Bu ay ↔ geçen ayın aynı dönemi ↔ geçen ay tamamı ↔ son 3 ay ortalaması; kategori bazında 6 aylık eğilim grafiği ve kısa yorumlar |
-| Bütçe › Yıllık giderler (kumbara) | Kasko, MTV, bayram, tatil gibi yıllık giderler için "her ay ne kadar ayırmalıyım" ve ilerleme |
-| Ödemeler › Yaklaşanlar | Önümüzdeki 30 gün (ve gecikmiş) düzenli ödemeler, kart son ödeme günleri, yıllık giderler; sekmede rozet; isteğe bağlı tarayıcı bildirimi |
-| Ödemeler › Düzenli ödemeler | Kira, fatura, abonelik: aylık / yıllık / her N ayda bir; beklenen kayıtlar **onayla** oluşturulur |
-| Ödemeler › Kartlar ve taksitler | Kesim ve son ödeme günü, ekstre borcu, ödeme (transfer olarak), limit kullanımı, taksit planları, gelecek 12 ayın taksit yükü |
-| Hesaplar | Banka, katılım, nakit, kredi kartı, altın hesapları; TL/USD/EUR/gram altın; hesaplar arası transfer; kurlar ve kur tarihi; TL cinsinden net varlık |
-| Varlıklar ve hedef | Birikimler (nakit/katılım hesabı, altın, katılım fonu, sukuk, helal ETF, katılım hissesi), borçlar, hedef (tutar + tarih) |
-| İşlemler | Tüm harcama/gelir kayıtları, elle ekleme, arama, kategori düzeltme |
-| Veri ekle | Excel/CSV, PDF ekstre, fotoğraf/fiş/ekran görüntüsü (sürükle-bırak veya Ctrl+V ile yapıştır) |
-| Yapay zekâ asistanı | İstediğin yapay zekâyı seç, verilerine göre Türkçe soru sor |
+| Bütçe › Aylık karşılaştırma | Bu ay ↔ geçen ayın aynı dönemi ↔ geçen ay tamamı ↔ son 3 ay ortalaması; 6 aylık eğilim |
+| Bütçe › Yıllık giderler (kumbara) | Kasko, MTV, bayram, tatil gibi yıllık giderler için "her ay ne kadar ayırmalıyım" |
+| Bütçe › Ödemeler | Yaklaşanlar, düzenli ödemeler, kartlar ve taksitler (rozet Bütçe sekmesinde) |
+| Bütçe › Hesaplar | Banka, katılım, nakit, kart, altın hesapları; TL/USD/EUR/gram altın; transfer; kurlar |
+| Bütçe › İşlemler | Tüm harcama/gelir kayıtları, elle ekleme, arama, kategori düzeltme |
+| **Portföy** › Genel bakış | Toplam birikim, kâr/zarar, risk kuralları durumu, hedefler, "Bu ay yeni parayla ne almalı?", risk ve helal kontrolü, varlık tablosu |
+| Portföy › Varlıklar | Varlık kartları (risk seviyesi, helal etiketi, hedefe bağlama, adet/fiyatla veya tutar olarak izleme), hesapların helal etiketi, borçlar |
+| Portföy › Alım-satım | Alış/satış kaydı (komisyonla), kaydetmeden önce önizleme, eldekinden fazla satış reddi, pozisyon tablosu (adet, ortalama maliyet, gerçekleşen/gerçekleşmemiş K/Z) |
+| Portföy › Dengeleme | Hedef dağılıma dönmek için önce **yeni parayla** alım önerisi; satış yalnızca "gözden geçir" olarak gösterilir |
+| Portföy › Getiri | Para ağırlıklı yıllık getiri (XIRR), zaman ağırlıklı getiri (TWR), reel (TÜFE'den arındırılmış) getiri, değer grafiği, altın / dolar / BIST 100 kıyası, aylık TÜFE tablosu |
+| Portföy › Hedefler | Birden fazla hedef (tutar, tarih, birikimden pay, süzülme yolu profili: Temkinli / Dengeli / Büyüme), her hedefe ayrı ilerleme ve aylık ihtiyaç |
+| Portföy › Risk ve helal | Kurallar (tek varlık üst sınırı, riskli toplam üst sınırı, önce acil fon, en az varlık sayısı) ve uyarılar; varlık başına helal etiketi tablosu |
+| Portföy › Fiyatlar | Ücretsiz kaynaklardan "Fiyatları güncelle" (kontrol tablosuyla), elle fiyat, toplu fiyat yapıştırma, kaydedilmiş fiyat geçmişi, isteğe bağlı Twelve Data anahtarı |
+| Portföy Analizi | Yakında |
+| Veri ekle | Üç tür: harcama/gelir kayıtları, **aracı kurum alım-satım dökümü**, **fiyat listesi**. Excel/CSV, PDF, fotoğraf (OCR veya yapay zekâ) |
+| Yapay zekâ asistanı | İstediğin yapay zekâyı seç, verilerine (portföy dahil) göre Türkçe soru sor |
 | Ayarlar ve yedek | Yedek al/geri yükle, CSV indir, acil fon süresi, enflasyon ve senaryo varsayımları |
+
+Eski `#varliklar` bağlantısı otomatik olarak Portföy › Varlıklar'a yönlenir.
 
 ### Hesap mantığı (özet)
 - **Aylık artan para** = gelir − sabit gider − değişken gider.
@@ -49,6 +59,18 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 - **Döviz ve altın:** tutarlar en küçük birimde tutulur (sent, 0,01 gram). TL karşılığı = miktar × senin girdiğin kur. Kur girilmemişse TL karşılığı "kur yok" görünür, uydurulmaz. Kurun kaç gün önce girildiği gösterilir.
 - **Transfer:** hesaplar arası para geçişi (kart ödemesi dahil) gelir/gider sayılmaz; iki hesabın bakiyesini değiştirir. Silinince bakiyeler geri alınır.
 - **Helal kuralı:** Yalnızca katılım hesabı, kira sertifikası (sukuk), altın, katılım fonları, katılım endeksi hisseleri ve SPUS/HLAL gibi helal ETF'ler önerilir. Faizli ürün önerilmez. Ürünün danışma kurulu onayını ayrıca kontrol et.
+
+### Portföy hesap mantığı (v3)
+- **Hassasiyet:** para kuruş (tam sayı), adet 10⁻⁸, birim fiyat 10⁻⁶ ölçekli tam sayı; çarpma/bölme BigInt ile, yarım değerler sıfırdan uzağa yuvarlanır. Oranlar baz puan (10000 = %100).
+- **Maliyet:** ağırlıklı ortalama maliyet. Alışta maliyet = adet × fiyat + komisyon; satışta satılan adedin ortalama maliyeti düşülür, gerçekleşen K/Z = satış tutarı − komisyon − düşülen maliyet. Eldekinden fazla satış kaydedilmez. Döviz cinsinden varlıklar işlem günündeki kurla TL'ye çevrilir (kur yoksa uyarı).
+- **Varlık değeri** = adet × son kaydedilmiş fiyat (ve gerekirse son kur). Fiyat yoksa değer uydurulmaz, "fiyat yok" görünür.
+- **XIRR:** tüm alış (−) ve satış (+) nakit akışları ile bugünkü değerin (+) gün bazlı iç verim oranı (Newton + ikiye bölme yedeği). **TWR:** her nakit akışı gününde dönem getirileri zincirlenir (fiyat geçmişi kullanılır); 1 yıldan kısa dönem yıllıklaştırılmaz.
+- **Reel getiri** = (1 + nominal) ÷ (1 + aynı dönem TÜFE) − 1. TÜFE aylık % olarak elle girilir (TÜİK bülteni); eksik ay varsa hangi aya kadar hesaplandığı yazılır.
+- **Kıyas:** her alım/satımda aynı TL tutarı aynı gün altına / dolara / BIST 100'e koysaydın bugünkü değer. O güne en yakın fiyat (en fazla 35 gün fark) kullanılır; 7 günden fazla boşluk varsa "yaklaşık" etiketi çıkar. Fiyat geçmişi yoksa satır "geçmiş yok" der.
+- **Dengeleme:** hedef dağılım (süzülme yolundan) − bugünkü dağılım; yeni para önce en çok eksik olan risk grubuna, kuruşu kuruşuna dağıtılır. Fazla olan gruplar için satış önerilmez, yalnızca "gözden geçir" denir.
+- **Çoklu hedef:** her hedefe birikimden pay (toplam %100'ü geçemez) veya doğrudan varlık bağlanır; her hedefin kendi süzülme yolu vardır. Tek hedefli eski veri aynen eski sonucu verir.
+- **Fiyat kontrolü:** bir önceki fiyata göre sıçrama sınırı: döviz/altın %8, endeks %12, fon %10, hisse/ETF %15, kripto %25. Sınırı aşan fiyat varsayılan olarak seçilmez ve onay ister. Eskime: kripto 2, döviz/altın 3, endeks 4, hisse/ETF/fon 5 gün sonra uyarı. Gelecek tarihli, sıfır veya negatif fiyat reddedilir.
+- **Aracı kurum dökümü:** satırlar (tarih, sembol, ALIŞ/SATIŞ, adet, fiyat, komisyon) okunur; belgedeki toplam, okunan satırların alış/satış/net toplamlarıyla (komisyonlu ve brüt) kuruşu kuruşuna karşılaştırılır. Mükerrer işlemler seçilmez; bilinmeyen semboller için onayla yeni varlık açılır.
 
 ## 3. Belgeden veri aktarma — hiçbir şey onaysız kaydedilmez
 
@@ -70,6 +92,22 @@ Kredi kartı ekstrelerinde harcamalar artı yazılır: "Kredi kartı ekstresi" k
 Kart borcu ödemesi gibi **Transfer** kategorisindeki işlemler, çift sayılmasın diye aylık gelir/gider toplamlarına katılmaz.
 Ekstreyi aktarırken **"Bu belge hangi karta ait?"** seçilirse işlemler karta bağlanır, taksitli satırlardan taksit planı oluşturulabilir (toplam = taksit × taksit sayısı, tahmini) ve kartın ekstre borcu belgedeki dönem borcuyla güncellenir. Belge toplamı, ödemeler düşülmüş net tutarla da kontrol edilir.
 Denemek için `ornek-dosyalar/` klasöründe örnek CSV, Excel, PDF (taksitli ekstre dahil) ve fiş görseli var.
+
+## 3b. Piyasa fiyatları — yalnızca ücretsiz kaynaklar, hiçbir fiyat uydurulmaz
+
+**Portföy › Fiyatlar › Fiyatları güncelle** tarayıcıdan doğrudan (sunucusuz) şu ücretsiz kaynakları sorar. Her fiyatın yanında **kaynak ve saat** gösterilir; sonuç önce kontrol tablosuna gelir, sen onaylamadan kaydedilmez. Kaynak yanıt vermezse fiyat boş kalır, eski fiyat "eski" uyarısıyla durur.
+
+| Fiyat | Birinci kaynak | Çapraz kontrol / yedek | Canlı durum (14.11.2026) |
+|---|---|---|---|
+| USD/TL, EUR/TL | Frankfurter (Avrupa Merkez Bankası referans kurları, iş günü) | Truncgil Finans alış | ✓ çalışıyor |
+| Gram altın | Truncgil Finans (Türkiye piyasası, gram altın alış) | gold-api.com ons × USD/TL ÷ 31,1035 | ✓ çalışıyor (Truncgil ara sıra yanıt vermezse yedek devreye girer) |
+| Gümüş (gram) | Truncgil Finans | — | ✓ |
+| BIST 100 (XU100) | Truncgil Finans | — | ✓ (yalnızca güncel değer) |
+| Kripto (BTC, ETH…) | CoinGecko | Binance | ✓ |
+| ABD ETF'leri (SPUS, HLAL…) | Twelve Data — **senin ücretsiz anahtarınla** (anahtar yalnızca bu cihazda saklanır, yedeğe girmez) | — | Anahtar yoksa açık mesaj; anahtar girilince çalışır |
+| Fiyat geçmişi (kıyas, TWR için) | Frankfurter zaman serisi (dolar), Currency API (tarihli ons altın → gram), CoinGecko (kripto) | — | ✓ |
+
+**Ücretsiz tarayıcı kaynağı olmayanlar:** TEFAS fon fiyatları, Borsa İstanbul hisseleri (ASELS, THYAO…), TCMB kurları ve Yahoo Finance tarayıcıdan erişime (CORS) kapalı olduğu için çekilmez. Bunları **elle** gir veya Veri ekle › **Fiyat listesi** ile CSV/Excel olarak yapıştır (ör. `KTV;3,301234`). BIST 100 geçmişi de elle/CSV ile girilir.
 
 ## 4. Yapay zekâ anahtarı ekleme
 
@@ -96,11 +134,11 @@ Denemek için `ornek-dosyalar/` klasöründe örnek CSV, Excel, PDF (taksitli ek
 - **Yedekten geri yükle:** dosya önce sıkı kontrol edilir; bozuksa hiçbir şey değişmez. Geçerliyse ne yükleneceği gösterilir ve onay istenir.
 - Tarayıcı verilerini (çerez/site verisi) silersen uygulama verisi de silinir. Yedek bu yüzden önemli.
 - İşlemleri Excel'de açmak için **İşlemleri Excel/CSV olarak indir**.
-- Yedek; hesaplar, transferler, kurlar, sınırlar, düzenli ödemeler, taksitler ve yıllık giderleri de içerir. Her alan sıkı kontrol edilir (ör. silinmiş hesaba transfer, aynı ay için iki kez oluşturulmuş düzenli kayıt, geçersiz kur tarihi reddedilir).
+- Yedek; alım-satım kayıtları, hedefler, risk kuralları, fiyat geçmişi, TÜFE, hesaplar, transferler, kurlar, sınırlar, düzenli ödemeler, taksitler ve yıllık giderleri de içerir. Her alan sıkı kontrol edilir (ör. silinmiş hesaba transfer, aynı ay için iki kez oluşturulmuş düzenli kayıt, geçersiz kur tarihi reddedilir).
 
 ### Veri sürümü (şema) ve eski veriler
-- Veri biçimi sürümü: **şema 2**. v1.0'dan kalan veri ilk açılışta otomatik ve güvenle dönüştürülür; dönüştürmeden önceki hâli tarayıcıda `finans-pusulasi:v1-oncesi-yedek` adıyla saklanır.
-- Eski (v1) yedek dosyaları geri yüklenebilir; yüklenirken dönüştürülür. Uygulamanın bilmediği daha yeni bir şemadaki yedek, veri bozulmasın diye reddedilir.
+- Veri biçimi sürümü: **şema 3**. v1.0 ve v2 verisi ilk açılışta otomatik ve güvenle dönüştürülür; dönüştürmeden önceki hâli tarayıcıda yedek olarak saklanır (`finans-pusulasi:v1-oncesi-yedek`, `finans-pusulasi:v2-oncesi-yedek`). v2→v3'te mevcut varlıklar, hedef ve kurlar aynen korunur; kurlar fiyat geçmişine ilk nokta olarak eklenir, alım-satım defteri boş başlar.
+- Eski (v1, v2) yedek dosyaları geri yüklenebilir; yüklenirken dönüştürülür. Uygulamanın bilmediği daha yeni bir şemadaki yedek, veri bozulmasın diye reddedilir.
 
 ## 6. İnternete ücretsiz koyma (telefondan da aç)
 
@@ -121,8 +159,8 @@ Uygulama derleme gerektirmez; klasör olduğu gibi yayınlanır. Verilerin yine 
 ## 7. Testler
 
 - Tarayıcıda: `tests/tests.html` dosyasını aç (veya Ayarlar > Detaylı görünüm > "Hesap testlerini çalıştır").
-- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 63 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme eşleştirme ve çift sayım, kumbara, karşılaştırma, v1→v2 dönüştürme, yedek doğrulama).
-- Uçtan uca testler (Chrome, dosyadan ve http'den, 390 px mobil) ayrı bir klasörde Playwright ile çalıştırıldı; konsol hatası yok.
+- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 99 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme, kumbara, karşılaştırma, v1→v2→v3 dönüştürme, yedek doğrulama; v3: ortalama maliyet ve K/Z, fazla satış reddi, XIRR, TWR, reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat sıçrama/eskime kontrolü, aracı kurum dökümü ve toplam kontrolü, fiyat kaynağı ayrıştırıcıları).
+- Uçtan uca testler (Chrome, dosyadan ve http'den, 390 px mobil, canlı fiyat kaynaklarıyla ve onlarsız) ayrı bir klasörde Playwright ile çalıştırıldı: 62 kontrol (canlıda 68), konsol hatası yok.
 
 ## 8. Klasör yapısı
 
@@ -133,7 +171,10 @@ js/money.js           Kuruş hassasiyetinde para işlemleri, TR/EN sayı okuma
 js/calc.js            Bütçe, acil fon, süzülme yolu, aylık plan, projeksiyon
 js/ledger.js          Hesaplar, döviz/altın, transfer, sınırlar, düzenli ödemeler, kart ve taksit, kumbara, aylık karşılaştırma
 js/importparse.js     Tarih/tutar ayrıştırma, sütun tespiti, PDF/OCR satırları, kategori, mükerrer
-js/sample.js          Örnek veri, boş durum, şema dönüştürme (v1→v2), yedek doğrulama
+js/portfolio.js       Alım-satım defteri, maliyet, XIRR/TWR/reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat kontrolü, döküm ayrıştırma
+js/prices.js          Ücretsiz fiyat kaynakları (Frankfurter, Truncgil, gold-api, CoinGecko, Binance, Twelve Data, Currency API) ve ayrıştırıcılar
+js/portfolio-ui.js    Ana sayfa kartları, Portföy Yönetimi ve Portföy Analizi ekranları
+js/sample.js          Örnek veri, boş durum, şema dönüştürme (v1→v2→v3), yedek doğrulama
 js/store.js           IndexedDB + localStorage saklama
 js/ai.js              Yapay zekâ sağlayıcıları (resmi REST API'ler)
 js/app.js             Arayüz
@@ -142,8 +183,14 @@ tests/                Otomatik testler (fixture-v1.js: dönüştürme testi içi
 ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek veri)
 ```
 
-## Sınırlamalar (v2)
-- Piyasa fiyatı ve döviz/altın kuru otomatik çekilmez; kurları sen girersin (örnek verideki kurlar örnektir). Kur eskidikçe uyarı gösterilir.
+## Sınırlamalar (v3)
+- Fiyatlar yalnızca sen "Fiyatları güncelle" dediğinde ve onayladığında kaydedilir; arka planda otomatik güncelleme yok. Örnek verideki tüm fiyatlar **ÖRNEK** etiketlidir.
+- TEFAS fonları, BIST hisseleri ve TCMB kurları ücretsiz tarayıcı kaynağı olmadığı için elle veya fiyat listesiyle girilir. BIST 100 geçmişi elle girilir. ABD ETF fiyatı için ücretsiz Twelve Data anahtarı gerekir.
+- Frankfurter kurları Avrupa Merkez Bankası referansıdır (iş günü, TCMB/piyasa kurundan biraz farklı olabilir). Uluslararası ons fiyatından hesaplanan gram altın kuyumcu alışından farklı olabilir.
+- TÜFE otomatik çekilmez; aylık değeri TÜİK bülteninden girersin. Girilmeyen aylar reel getiriye katılmaz (hangi aya kadar hesaplandığı yazılır).
+- Kıyas ve TWR, fiyat geçmişindeki boşluklarda en yakın fiyatı kullanır ("yaklaşık" etiketi). Getiri hesabına yalnızca alım-satım kaydı olan varlıklar girer.
+- Aracı kurum dökümü okuma, belgenin yazım biçimine bağlıdır; her satır kontrol tablosundan geçer. Temettü (kâr payı), bölünme (split) ve bedelsiz sermaye artırımı için ayrı işlem türü yok; temettü getiriye katılmaz, bölünme/bedelsiz adet düzeltmesi elle yapılır.
+- Portföy Analizi alanı henüz yapım aşamasındadır.
 - Hesap bakiyeleri elle girilir; transferler bakiyeyi değiştirir, sıradan harcama kayıtları değiştirmez (bankayla mutabakat yapılmaz).
 - Hatırlatma bildirimleri yalnızca uygulama açıkken (günde en fazla bir kez) gösterilir; arka planda push bildirimi yoktur.
 - Ekstreden oluşturulan taksit planının toplamı tahminidir (taksit × sayı); gerekirse Kartlar sekmesinde düzelt. Taksit tanıma, ekstredeki yazım biçimine bağlıdır.

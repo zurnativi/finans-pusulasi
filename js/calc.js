@@ -13,6 +13,7 @@
     sukuk: { label: 'Kira sertifikası (sukuk) fonu', risk: 'safe', emergency: false },
     halal_etf: { label: 'Helal ETF (ör. SPUS, HLAL)', risk: 'risky', emergency: false },
     katilim_stock: { label: 'Katılım endeksi hissesi', risk: 'risky', emergency: false },
+    crypto: { label: 'Kripto para', risk: 'risky', emergency: false },
     other: { label: 'Diğer', risk: 'medium', emergency: false }
   };
 
@@ -76,11 +77,12 @@
     [36, 5500, 3000, 1500],
     [60, 4000, 3500, 2500]
   ];
-  function targetAllocation(monthsLeft) {
+  function targetAllocation(monthsLeft, glide) {
+    var G = glide || GLIDE; // isteğe bağlı farklı süzülme yolu (hedef başına profil)
     var m = Math.max(0, monthsLeft);
-    if (m >= GLIDE[GLIDE.length - 1][0]) { var l = GLIDE[GLIDE.length - 1]; return { safe: l[1], medium: l[2], risky: l[3] }; }
-    for (var i = 1; i < GLIDE.length; i++) {
-      var lo = GLIDE[i - 1], hi = GLIDE[i];
+    if (m >= G[G.length - 1][0]) { var l = G[G.length - 1]; return { safe: l[1], medium: l[2], risky: l[3] }; }
+    for (var i = 1; i < G.length; i++) {
+      var lo = G[i - 1], hi = G[i];
       if (m <= hi[0]) {
         var t = (m - lo[0]) / (hi[0] - lo[0]);
         var risky = Math.round(lo[3] + (hi[3] - lo[3]) * t);
@@ -136,7 +138,7 @@
       ['safe', 'medium', 'risky'].forEach(function (k) { bal[k] = M.add(bal[k], M.mulFloat(bal[k], r[k])); });
       var c = opts.monthlyContribution;
       var em = Math.min(emLeft, c); emLeft = M.sub(emLeft, em); reserve = M.add(reserve, em); c = M.sub(c, em);
-      var al = targetAllocation(opts.monthsToGoal - m);
+      var al = targetAllocation(opts.monthsToGoal - m, opts.glide);
       var parts = M.allocate(c, [al.safe, al.medium, al.risky]);
       bal.safe = M.add(bal.safe, parts[0]); bal.medium = M.add(bal.medium, parts[1]); bal.risky = M.add(bal.risky, parts[2]);
       infFactor *= (1 + infM);

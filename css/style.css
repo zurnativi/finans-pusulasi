@@ -140,3 +140,53 @@ details>summary{cursor:pointer}
 .rv-status-box.miss{background:var(--warn-bg);color:var(--warn)}
 .review tr.from-doc{background:var(--warn-bg)}
 @media (max-width:640px){.rv-kpi .value{font-size:1.4rem}.rv-status-box .value{font-size:1.25rem}}
+
+/* ---------- v3: alanlar ve portföy ---------- */
+.soon-tag{font-size:.68rem;background:var(--info-bg);color:var(--info);border-radius:999px;padding:1px 6px;margin-left:4px;vertical-align:middle}
+.sec-h{font-size:1.05rem;margin:18px 0 10px}
+.areas{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-bottom:14px}
+.area{display:block;text-decoration:none;color:inherit;transition:transform .12s,box-shadow .12s;border:1px solid var(--line)}
+.area:hover,.area:focus-visible{transform:translateY(-2px);box-shadow:0 4px 14px rgba(16,24,40,.12)}
+.area-h{display:flex;align-items:center;gap:8px;font-size:1.02rem}
+.area-ic{font-size:1.3rem}
+.area-v{font-size:1.5rem;font-weight:750;margin:6px 0 0;font-variant-numeric:tabular-nums}
+.area-f{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+.area.soon{opacity:.8}
+.simple-risk{margin-bottom:14px}
+.areanav{display:flex;gap:4px;overflow-x:auto;margin:0 0 12px;border-bottom:1px solid var(--line)}
+.areanav a{padding:8px 12px;text-decoration:none;color:var(--muted);white-space:nowrap;font-weight:550;border-bottom:2px solid transparent;margin-bottom:-1px}
+.areanav a[aria-current=page]{color:var(--brand);border-color:var(--brand)}
+.grid.three{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.dotc{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:baseline}
+.acard{border:1px solid var(--line);border-radius:12px;margin:0 0 8px;background:var(--card)}
+.acard>summary{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;list-style:none;flex-wrap:wrap}
+.acard>summary::-webkit-details-marker{display:none}
+.acard>summary::before{content:'▸';color:var(--muted);transition:transform .15s}
+.acard[open]>summary::before{transform:rotate(90deg)}
+.acard-n{flex:1 1 180px;font-weight:600}
+.acard-v{font-weight:650}
+.acard-b{padding:4px 12px 4px}
+.acard>.hint,.acard>.row{padding:0 12px 10px}
+ul.rules{list-style:none;padding:0;margin:0}
+ul.rules li{padding:8px 0;border-bottom:1px solid var(--line)}
+ul.rules li:last-child{border-bottom:0}
+.goals{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-bottom:12px}
+.goal details{margin-top:6px}
+.cpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.cpi-cell{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted);gap:3px}
+.cpi-cell input{max-width:100%}
+.warn-t{color:var(--warn);font-size:.85rem}
+.seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:6px}
+.seg-b{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);cursor:pointer;font:inherit}
+.seg-b[aria-checked=true]{border-color:var(--brand);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 25%,transparent)}
+.label-like{display:block;margin-bottom:2px}
+table.prun td,table.trades-rv td{vertical-align:top}
+.trades-rv input,.trades-rv select{min-width:0}
+@media (max-width:640px){
+  .areas{grid-template-columns:1fr}
+  .area-v{font-size:1.3rem}
+  .goals{grid-template-columns:1fr}
+  .seg{grid-template-columns:1fr}
+  nav.tabs a{padding:10px 9px}
+  .soon-tag{display:none}
+}

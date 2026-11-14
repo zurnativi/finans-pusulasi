@@ -1,16 +1,19 @@
 /* sample.js — Boş durum, ÖRNEK veri, şema sürümleri (göç) ve yedek dosyası doğrulama. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./calc.js'), require('./ledger.js'), require('./money.js'));
-  else root.Sample = factory(root.Calc, root.Ledger, root.Money);
-})(typeof self !== 'undefined' ? self : this, function (C, L, M) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./calc.js'), require('./ledger.js'), require('./money.js'), require('./portfolio.js'));
+  else root.Sample = factory(root.Calc, root.Ledger, root.Money, root.Portfolio);
+})(typeof self !== 'undefined' ? self : this, function (C, L, M, PF) {
   'use strict';
-  var SCHEMA_VERSION = 2;
+  var SCHEMA_VERSION = 3;
   /* v1 → v2: hesaplar, transferler, kurlar, kategori sınırları, düzenli ödemeler, taksitler, yıllık giderler eklendi. */
   var V2_DEFAULTS = { accounts: [], transfers: [], rates: {}, limits: {}, recurring: [], installments: [], sinkingFunds: [] };
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  /* v2 → v3: alım-satım işlemleri, fiyat geçmişi, TÜFE serisi, çoklu hedef, risk kuralları, dengeleme bantları, helal etiketi (varlık/hesap alanı). */
+  function goalsFrom(goal) { return [{ id: 'g-ana', name: goal.name, target: goal.target, targetYm: goal.targetYm, glide: 'standard', shareBp: 10000 }]; }
   function defaultSettings() {
     return { emergencyMonths: 6, emergencyShareBp: 5000, inflationBp: 2500, view: 'simple',
-      scenarios: JSON.parse(JSON.stringify(C.DEFAULT_SCENARIOS)) };
+      scenarios: JSON.parse(JSON.stringify(C.DEFAULT_SCENARIOS)),
+      riskRules: JSON.parse(JSON.stringify(PF.DEFAULT_RULES)), rebalance: { tierBandBp: 500, assetBandBp: 300 } };
   }
   function addMonths(ym, n) { return C.ymFromIndex(C.monthIndex(ym) + n); }
   function todayYmd(d) { d = d || new Date(); var mo = d.getMonth() + 1, da = d.getDate(); return d.getFullYear() + '-' + (mo < 10 ? '0' : '') + mo + '-' + (da < 10 ? '0' : '') + da; }
@@ -19,6 +22,7 @@
     var s = { schema: SCHEMA_VERSION, isExample: false, updatedAt: null, incomes: [], expenses: [], assets: [], debts: [], transactions: [],
       goal: { name: 'Ev peşinatı', target: 0, targetYm: addMonths(nowYm, 60) }, settings: defaultSettings() };
     Object.keys(V2_DEFAULTS).forEach(function (k) { s[k] = JSON.parse(JSON.stringify(V2_DEFAULTS[k])); });
+    s.trades = []; s.prices = {}; s.cpi = []; s.goals = goalsFrom(s.goal);
     return s;
   }
 
@@ -46,6 +50,7 @@
     ];
     s.goal = { name: 'Ev peşinatı', target: 150000000, targetYm: addMonths(nowYm, 60) };
     s.rates = { USD: { rate: 4250, date: today }, EUR: { rate: 4900, date: today }, XAU: { rate: 540000, date: today } };
+    s.goals = goalsFrom(s.goal);
 
     // Hesaplar
     var stmtYm = tDay >= 5 ? nowYm : addMonths(nowYm, -1);
@@ -134,7 +139,69 @@
     tx(nowYm, 8, 'Manav', -115000, 'Market');
     tx(nowYm, 9, 'Restoran', -85000, 'Yeme-içme');
     s.transactions = T;
+    examplePortfolio(s, acc, nowYm, today);
     return s;
+  }
+
+  /* ---------- ÖRNEK portföy: alım-satım geçmişi, fiyat geçmişi, TÜFE, 4 hedef, helal etiketleri ----------
+   * Tüm fiyatlar ve oranlar UYDURMADIR (kaynak alanında "ÖRNEK" yazar); yalnızca özellikleri göstermek içindir. */
+  function addDays(ymd, n) { var d = new Date((L.dayIndex(ymd) + n) * 86400000); return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); }
+  function examplePortfolio(s, acc, nowYm, today) {
+    var EX = 'ÖRNEK (gerçek fiyat değil)', H = function (st, note) { return { status: st, note: note + ' (örnek etiket — kendin doğrula)', source: 'Örnek veri', date: today }; };
+    var gEv = { id: uid(), name: 'Ev peşinatı', target: 150000000, targetYm: addMonths(nowYm, 60), glide: 'standard', shareBp: 6000 };
+    var gAraba = { id: uid(), name: 'Araba peşinatı', target: 9500000, targetYm: addMonths(nowYm, 24), glide: 'conservative', shareBp: 2500 };
+    var gEgitim = { id: uid(), name: 'Çocuğun eğitimi', target: 40000000, targetYm: addMonths(nowYm, 96), glide: 'standard', shareBp: 1000 };
+    var gEmek = { id: uid(), name: 'Emeklilik', target: 500000000, targetYm: addMonths(nowYm, 300), glide: 'aggressive', shareBp: 500 };
+    s.goals = [gEv, gAraba, gEgitim, gEmek];
+    s.goal = { name: gEv.name, target: gEv.target, targetYm: gEv.targetYm };
+    function A(o) { var a = { id: uid(), emergency: false, value: 0, tracking: 'trades', currency: 'TRY', lot: 'fraction', priceKey: null, withinTierBp: null, goalId: null }; Object.keys(o).forEach(function (k) { a[k] = o[k]; }); return a; }
+    var fund = A({ name: 'Katılım fonu (örnek: KTV)', symbol: 'KTV', cls: 'katilim_fund', risk: 'medium', halal: H('uygun', 'Katılım fonu, danışma kurulu onaylı') });
+    var spus = A({ name: 'SPUS — helal ETF (örnek)', symbol: 'SPUS', cls: 'halal_etf', risk: 'risky', currency: 'USD', lot: 'whole', priceKey: 'td:SPUS', goalId: gEmek.id, withinTierBp: 6000, halal: H('uygun', 'S&P 500 Shariah endeksini izler') });
+    var gold = A({ name: 'Fiziki gram altın (örnek)', symbol: 'ALTIN', cls: 'gold', risk: 'medium', priceKey: 'metal:XAU', halal: H('uygun', 'Fiziki altın, peşin alım') });
+    var stock = A({ name: 'Katılım endeksi hissesi (örnek: ASELS)', symbol: 'ASELS', cls: 'katilim_stock', risk: 'risky', lot: 'whole', withinTierBp: 4000, halal: H('uygun', 'Katılım endeksinde') });
+    var sukuk = A({ name: 'Kira sertifikası fonu (örnek)', cls: 'sukuk', risk: 'safe', tracking: 'manual', value: 4000000, halal: H('uygun', 'Kira sertifikası (sukuk) fonu') });
+    var mmf = A({ name: 'Para piyasası fonu — faizli (örnek)', cls: 'other', risk: 'safe', tracking: 'manual', value: 1000000, halal: H('uygun_degil', 'Faiz geliri içerir') });
+    var btc = A({ name: 'Bitcoin (örnek)', symbol: 'BTC', cls: 'crypto', risk: 'risky', priceKey: 'cg:bitcoin', halal: H('supheli', 'Âlimler arasında görüş ayrılığı var') });
+    s.assets = [fund, spus, gold, stock, sukuk, mmf, btc];
+    var q = function (x) { return PF.parseScaled(x, 8); }, pr = function (x) { return PF.parseScaled(x, 6); };
+    function T(a, mBack, day, side, qty, price, fee, fx) {
+      var d = L.ymdOf(addMonths(nowYm, -mBack), day); if (d > today) d = today;
+      var t = { id: uid(), assetId: a.id, date: d, side: side, qty: q(qty), price: pr(price), fee: fee, currency: a.currency, fxRate: a.currency === 'TRY' ? null : fx, note: '', source: 'örnek' };
+      s.trades.push(t); return t;
+    }
+    s.trades = [];
+    T(fund, 18, 10, 'buy', '30000', '2,50', 0); T(fund, 10, 12, 'buy', '8000', '2,85', 0); T(fund, 4, 8, 'sell', '5000', '3,10', 0);
+    T(spus, 20, 15, 'buy', '20', '38,50', 100, 3350); T(spus, 8, 14, 'buy', '15', '42,10', 100, 3900); T(spus, 2, 6, 'buy', '10', '44,80', 100, 4150);
+    T(gold, 14, 20, 'buy', '10', '3050', 0); T(gold, 6, 18, 'buy', '5', '4200', 0);
+    T(stock, 12, 5, 'buy', '200', '62,40', 1248); T(stock, 3, 11, 'sell', '50', '95,00', 475);
+    T(btc, 7, 3, 'buy', '0,005', '2400000', 3000);
+    // Aylık fiyat geçmişi (ay sonları) + bugün: doğrusal örnek seri
+    s.prices = {};
+    function series(key, cur, fromVal, toVal, months) {
+      var a = pr(fromVal), b = pr(toVal);
+      for (var i = months; i >= 1; i--) {
+        var ym = addMonths(nowYm, -i), v = a + Math.round((b - a) * (months - i) / months);
+        PF.addPricePoint(s.prices, key, cur, { d: L.ymdOf(ym, 31), p: v, src: EX, at: null });
+      }
+      PF.addPricePoint(s.prices, key, cur, { d: addDays(today, -1), p: b, src: EX, at: null });
+    }
+    series('m:' + fund.id, 'TRY', '2,40', '3,18', 24);
+    series('td:SPUS', 'USD', '36,00', '46,20', 24);
+    series('metal:XAU', 'TRY', '2600', '5400', 24);
+    series('m:' + stock.id, 'TRY', '55,00', '101,50', 24);
+    series('cg:bitcoin', 'TRY', '1500000', '3000000', 24);
+    series('fx:USD', 'TRY', '32,00', '42,50', 24);
+    series('fx:EUR', 'TRY', '35,00', '49,00', 24);
+    series('idx:XU100', 'PT', '9000', '11500', 24);
+    // TÜFE (aylık % değişim) — son 24 ay, bu ay henüz açıklanmamış gibi
+    s.cpi = [];
+    for (var i = 24; i >= 1; i--) s.cpi.push({ ym: addMonths(nowYm, -i), bp: 150 + ((i * 37) % 120) });
+    // Hesaplara helal etiketi
+    acc.katilim.halal = H('uygun', 'Katılım bankası, kâr payı'); acc.bank.halal = H('uygun', 'Vadesiz hesap, faiz işlemiyor');
+    acc.gold.halal = H('uygun', 'Katılım bankası altın hesabı'); acc.usd.halal = H('uygun', 'Nakit döviz');
+    s.settings.riskRules = JSON.parse(JSON.stringify(PF.DEFAULT_RULES));
+    s.settings.rebalance = { tierBandBp: 500, assetBandBp: 300 };
+    PF.sync(s, today);
   }
 
   /* ---------- Şema göçü (eski sürüm verisi ve yedekleri) ----------
@@ -149,6 +216,16 @@
       Object.keys(V2_DEFAULTS).forEach(function (k) { if (s[k] == null) s[k] = JSON.parse(JSON.stringify(V2_DEFAULTS[k])); });
       s.schema = 2;
     }
+    if (s.schema === 2) {
+      if (!Array.isArray(s.trades)) s.trades = [];
+      if (!s.prices || typeof s.prices !== 'object' || Array.isArray(s.prices)) s.prices = {};
+      if (!Array.isArray(s.cpi)) s.cpi = [];
+      if (!Array.isArray(s.goals) || !s.goals.length) s.goals = s.goal ? goalsFrom(s.goal) : [];
+      // Eski kurlardan fiyat geçmişine ilk nokta (kaynak: kullanıcı girişi) — kıyas ve varlık fiyatları için
+      if (s.rates && typeof s.rates === 'object') ['USD', 'EUR'].forEach(function (c) { var r = s.rates[c]; if (r && Number.isInteger(r.rate) && r.rate > 0 && L.isYmd(r.date)) PF.addPricePoint(s.prices, 'fx:' + c, 'TRY', { d: r.date, p: PF.fxPriceFromKurus(r.rate), src: 'Kullanıcı girişi (kur)', at: null }); });
+      if (s.rates && s.rates.XAU && Number.isInteger(s.rates.XAU.rate) && s.rates.XAU.rate > 0 && L.isYmd(s.rates.XAU.date)) PF.addPricePoint(s.prices, 'metal:XAU', 'TRY', { d: s.rates.XAU.date, p: PF.fxPriceFromKurus(s.rates.XAU.rate), src: 'Kullanıcı girişi (kur)', at: null });
+      s.schema = 3;
+    }
     if (from !== s.schema) s.migratedFrom = from;
     return s;
   }
@@ -160,8 +237,8 @@
     function isPosInt(v, lo, hi) { return Number.isInteger(v) && v >= lo && v <= hi; }
     function isStr(v, max) { return typeof v === 'string' && v.trim().length > 0 && v.length <= (max || 200); }
     migrate(s);
-    ['incomes', 'expenses', 'assets', 'debts', 'transactions', 'accounts', 'transfers', 'recurring', 'installments', 'sinkingFunds'].forEach(function (k) { if (!Array.isArray(s[k])) errs.push(k + ' listesi eksik'); });
-    ['rates', 'limits'].forEach(function (k) { if (!s[k] || typeof s[k] !== 'object' || Array.isArray(s[k])) errs.push(k + ' bilgisi eksik'); });
+    ['incomes', 'expenses', 'assets', 'debts', 'transactions', 'accounts', 'transfers', 'recurring', 'installments', 'sinkingFunds', 'trades', 'cpi', 'goals'].forEach(function (k) { if (!Array.isArray(s[k])) errs.push(k + ' listesi eksik'); });
+    ['rates', 'limits', 'prices'].forEach(function (k) { if (!s[k] || typeof s[k] !== 'object' || Array.isArray(s[k])) errs.push(k + ' bilgisi eksik'); });
     if (!errs.length) {
       s.incomes.forEach(function (x, i) { if (!isK(x.amount) || x.amount < 0) errs.push('Gelir ' + (i + 1) + ': tutar hatalı'); });
       s.expenses.forEach(function (x, i) { if (!isK(x.amount) || x.amount < 0) errs.push('Gider ' + (i + 1) + ': tutar hatalı'); if (x.type !== 'fixed' && x.type !== 'variable') errs.push('Gider ' + (i + 1) + ': tür hatalı'); });
@@ -266,14 +343,83 @@
         if (!isPosInt(f.everyMonths, 1, 120)) errs.push(n + ': tekrar süresi hatalı (1–120 ay)');
         if (f.setAsideYm != null && (!L.isYm(f.setAsideYm) || !isK(f.setAsideAmount) || f.setAsideAmount < 0)) errs.push(n + ': bu ay ayrılan bilgisi hatalı');
       });
+      // ---- v3: portföy ----
+      var HS = PF.HALAL;
+      function badHalal(h) { return h != null && (typeof h !== 'object' || !HS[h.status] || (h.note != null && (typeof h.note !== 'string' || h.note.length > 300)) || (h.source != null && (typeof h.source !== 'string' || h.source.length > 300)) || (h.date != null && !L.isYmd(h.date))); }
+      s.accounts.forEach(function (a, i) { if (badHalal(a.halal)) errs.push('Hesap ' + (i + 1) + ': helal etiketi hatalı'); });
+      var goalIds = {}, shareSum = 0;
+      if (!s.goals.length) errs.push('En az bir hedef olmalı');
+      s.goals.forEach(function (g, i) {
+        var n = 'Hedef ' + (i + 1);
+        if (!isStr(g.id, 64) || goalIds[g.id]) errs.push(n + ': kimlik hatalı/tekrarlı'); goalIds[g.id] = true;
+        if (!isStr(g.name, 60)) errs.push(n + ': ad hatalı');
+        if (!isK(g.target) || g.target < 0) errs.push(n + ': tutar hatalı');
+        if (!L.isYm(g.targetYm)) errs.push(n + ': tarih hatalı');
+        if (!PF.GLIDES[g.glide]) errs.push(n + ': risk profili hatalı');
+        if (!isPosInt(g.shareBp, 0, 10000)) errs.push(n + ': pay hatalı (%0–100)'); else shareSum += g.shareBp;
+      });
+      if (shareSum > 10000) errs.push('Hedeflerin aylık birikimden aldığı payların toplamı %100\'ü geçemez (şu an %' + (shareSum / 100) + ')');
+      var assetIds = {};
+      s.assets.forEach(function (a, i) {
+        var n = 'Varlık ' + (i + 1);
+        if (a.id != null) { if (assetIds[a.id]) errs.push(n + ': kimlik tekrarlı'); assetIds[a.id] = a; }
+        if (a.cls != null && !C.ASSET_CLASSES[a.cls]) errs.push(n + ': tür hatalı');
+        if (a.tracking != null && a.tracking !== 'manual' && a.tracking !== 'trades') errs.push(n + ': izleme biçimi hatalı');
+        if (a.tracking === 'trades' && !isStr(a.id, 64)) errs.push(n + ': kimlik gerekli');
+        if (a.currency != null && ['TRY', 'USD', 'EUR'].indexOf(a.currency) < 0) errs.push(n + ': para birimi hatalı');
+        if (a.symbol != null && a.symbol !== '' && !isStr(a.symbol, 30)) errs.push(n + ': sembol hatalı');
+        if (a.lot != null && !PF.LOTS[a.lot]) errs.push(n + ': adet türü hatalı');
+        if (a.priceKey != null) { var ki = PF.keyInfo(a.priceKey); if (!ki || ki.kind === 'manual') errs.push(n + ': fiyat kaynağı hatalı'); else if (ki.cur !== (a.currency || 'TRY')) errs.push(n + ': fiyat kaynağının para birimi (' + ki.cur + ') varlığınkiyle aynı olmalı'); }
+        if (a.withinTierBp != null && !isPosInt(a.withinTierBp, 0, 10000)) errs.push(n + ': hedef payı hatalı (%0–100)');
+        if (a.goalId != null && !goalIds[a.goalId]) errs.push(n + ': bağlı hedef bulunamadı');
+        if (badHalal(a.halal)) errs.push(n + ': helal etiketi hatalı');
+      });
+      var tradeIds = {}, byAsset = {};
+      s.trades.forEach(function (t, i) {
+        var n = 'Alım-satım ' + (i + 1), a = assetIds[t.assetId];
+        if (!isStr(t.id, 64) || tradeIds[t.id]) errs.push(n + ': kimlik hatalı/tekrarlı'); tradeIds[t.id] = true;
+        if (!a) { errs.push(n + ': varlık bulunamadı'); return; }
+        if (a.tracking !== 'trades') errs.push(n + ': varlık alım-satımla izlenmiyor');
+        if (!L.isYmd(t.date)) errs.push(n + ': tarih hatalı');
+        if (t.side !== 'buy' && t.side !== 'sell') errs.push(n + ': alış/satış hatalı');
+        if (!isK(t.qty) || t.qty <= 0) errs.push(n + ': adet hatalı');
+        if (!isK(t.price) || t.price <= 0) errs.push(n + ': fiyat hatalı');
+        if (!isK(t.fee) || t.fee < 0) errs.push(n + ': komisyon hatalı');
+        if (t.currency !== (a.currency || 'TRY')) errs.push(n + ': para birimi varlığınkiyle aynı olmalı');
+        else if (t.currency !== 'TRY' && (!isK(t.fxRate) || t.fxRate <= 0)) errs.push(n + ': işlem günündeki kur gerekli');
+        if (t.currency === 'TRY' && t.fxRate != null) errs.push(n + ': TL işlemde kur olmaz');
+        if (t.note != null && (typeof t.note !== 'string' || t.note.length > 200)) errs.push(n + ': not hatalı');
+        (byAsset[t.assetId] = byAsset[t.assetId] || []).push(t);
+      });
+      if (!errs.length) Object.keys(byAsset).forEach(function (id) { var lg = PF.ledger(byAsset[id]); lg.errors.forEach(function (e) { errs.push(assetIds[id].name + ': ' + e); }); });
+      Object.keys(s.prices).forEach(function (k) {
+        var h = s.prices[k], ki = PF.keyInfo(k);
+        if (!ki) { errs.push('Fiyat: bilinmeyen kaynak ' + k); return; }
+        if (!h || !Array.isArray(h.points)) { errs.push('Fiyat ' + k + ': liste eksik'); return; }
+        var prev = '';
+        h.points.forEach(function (pt) {
+          if (!pt || !L.isYmd(pt.d) || !isK(pt.p) || pt.p <= 0) errs.push('Fiyat ' + k + ': nokta hatalı');
+          else if (pt.d <= prev) errs.push('Fiyat ' + k + ': tarihler sıralı ve tekil olmalı');
+          else prev = pt.d;
+          if (pt && pt.src != null && (typeof pt.src !== 'string' || pt.src.length > 160)) errs.push('Fiyat ' + k + ': kaynak hatalı');
+        });
+      });
+      var cpiSeen = {};
+      s.cpi.forEach(function (c, i) { if (!c || !L.isYm(c.ym) || cpiSeen[c.ym] || !Number.isInteger(c.bp) || c.bp < -5000 || c.bp > 20000) errs.push('TÜFE ' + (i + 1) + ': ay veya oran hatalı'); else cpiSeen[c.ym] = true; });
+      var rr = s.settings && s.settings.riskRules;
+      if (rr != null && (typeof rr !== 'object' || (rr.maxAssetBp != null && !isPosInt(rr.maxAssetBp, 500, 10000)) || (rr.maxRiskyBp != null && !isPosInt(rr.maxRiskyBp, 0, 10000)) || (rr.minPositions != null && !isPosInt(rr.minPositions, 1, 20)) || (rr.emergencyFirst != null && typeof rr.emergencyFirst !== 'boolean'))) errs.push('Risk kuralları hatalı');
+      var rb = s.settings && s.settings.rebalance;
+      if (rb != null && (typeof rb !== 'object' || !isPosInt(rb.tierBandBp, 0, 5000) || !isPosInt(rb.assetBandBp, 0, 5000))) errs.push('Dengeleme ayarı hatalı');
       if (!s.goal || !isK(s.goal.target) || !/^\d{4}-\d{2}$/.test(s.goal.targetYm || '')) errs.push('Hedef bilgisi hatalı');
       if (!s.settings || !Number.isInteger(s.settings.emergencyMonths)) errs.push('Ayarlar hatalı');
     }
     if (errs.length) throw new Error(errs.slice(0, 8).join('; ') + (errs.length > 8 ? ' …' : ''));
     var d = defaultSettings();
     Object.keys(d).forEach(function (k) { if (s.settings[k] == null) s.settings[k] = d[k]; });
+    Object.keys(d.riskRules).forEach(function (k) { if (s.settings.riskRules[k] == null) s.settings.riskRules[k] = d.riskRules[k]; });
+    PF.sync(s);
     return s;
   }
-  return { SCHEMA_VERSION: SCHEMA_VERSION, uid: uid, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
+  return { SCHEMA_VERSION: SCHEMA_VERSION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
     defaultSettings: defaultSettings, addMonths: addMonths, todayYmd: todayYmd };
 });
