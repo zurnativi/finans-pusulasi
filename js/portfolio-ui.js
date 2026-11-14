@@ -110,7 +110,7 @@
     function pOverview(c) {
       var s = c.s, an = c.an, sm = c.sm, CH = window.Charts, h = pVisuals(c) + '<div class="grid kpis">';
       h += X.kpi('Toplam birikim', CH ? CH.counter('p-tot', an.assets.total) : tl(an.assets.total), 'Acil fon dahil; hesaplar ve varlıklar.', 'Hesaplar (kurla TL\'ye çevrilmiş) ve varlıkların bugünkü toplam değeri. Alım-satımla izlenen varlıklar son fiyat × adetle hesaplanır.');
-      h += X.kpi('Toplam kâr / zarar', sm.rows.length ? '<span class="' + plCls(sm.totalPLTL) + '">' + (sm.totalPLTL > 0 ? '+' : '') + (CH ? CH.counter('p-pl', sm.totalPLTL) : tl(sm.totalPLTL)) + '</span>' : '<span class="muted">—</span>', sm.rows.length ? 'Yatırılana göre ' + sbp1(sm.totalPLBp) + ' (gerçekleşen ' + tl(sm.realizedTL) + ')' : 'Alım-satım girince hesaplanır.', 'Alım-satımla izlenen varlıklarda: (bugünkü değer − kalan maliyet) + satışlardan gerçekleşen kâr. Komisyonlar maliyete dahildir.');
+      h += X.kpi('Toplam kâr / zarar', sm.rows.length ? '<span class="' + plCls(sm.totalPLTL) + '">' + (sm.totalPLTL > 0 ? '+' : '') + (CH ? CH.counter('p-pl', sm.totalPLTL) : tl(sm.totalPLTL)) + '</span>' : '<span class="muted">—</span>', sm.rows.length ? 'Yatırılana göre ' + sbp1(sm.totalPLBp) + ' (gerçekleşen ' + tl(sm.realizedTL) + (sm.divTL ? ', temettü dahil ' + tl(sm.divTL) : '') + ')' : 'Alım-satım girince hesaplanır.', 'Alım-satımla izlenen varlıklarda: (bugünkü değer − kalan maliyet) + satışlardan gerçekleşen kâr. Komisyonlar maliyete dahildir.');
       h += X.kpi('Risk kuralları', c.risk.ok + '/' + c.risk.total + ' tamam', pill(c.risk.worst, c.risk.worst === 'ok' ? 'Sorun yok' : c.risk.worst === 'danger' ? 'Önemli uyarı var' : 'Dikkat'), 'Tek varlık sınırı, riskli varlık sınırı, önce acil fon, çeşitlendirme ve helal uygunluk kuralları.');
       var on = c.rep.goals.filter(function (g) { return g.onTrack; }).length;
       h += X.kpi('Hedefler', on + '/' + c.rep.goals.length + ' yolunda', c.rep.goals.map(function (g) { return esc(g.goal.name); }).join(' · '), 'Temel senaryoda hedef tarihine kadar hedef tutara ulaşan hedef sayısı.');
@@ -141,7 +141,9 @@
     }
 
     /* ---------- VARLIKLAR ---------- */
-    function pkType(k) { if (!k) return ''; if (/^cg:/.test(k)) return 'cg'; if (/^td:/.test(k)) return 'td'; return k; }
+    function pkType(k) { if (!k) return ''; if (/^cg:/.test(k)) return 'cg'; if (/^td:/.test(k)) return 'td'; if (/^tefas:/.test(k)) return 'tefas'; if (/^bist:/.test(k)) return 'bist'; return k; }
+    var PK_PH = { cg: 'CoinGecko kimliği, ör. bitcoin', td: 'Sembol, ör. SPUS', tefas: 'Fon kodu, ör. KTV', bist: 'Hisse kodu, ör. ASELS' };
+    function codeOf(a, re, len, dflt) { var c = String(a.symbol || '').toUpperCase().replace(re, ''); return c.length >= 2 && c.length <= len ? c : dflt; }
     function pAssets(c) {
       var s = c.s, h = '<p class="hint">Her varlık için <b>değeri elle yaz</b> ya da <b>alım-satımla izle</b> (adet ve fiyattan otomatik hesaplanır). Banka/katılım hesapları, nakit, döviz ve altın hesabı <a href="#hesaplar">Hesaplar</a>\'da tutulur; burada tekrar yazma.</p>';
       h += '<section class="card"><h2>Varlıklarım ' + tip('Bir satıra dokununca ayrıntılar açılır. "Acil fon" işaretliler acil durum fonuna sayılır. Risk seviyesi dağılım hesabında kullanılır.') + '</h2>';
@@ -160,10 +162,10 @@
         else {
           h += fieldRow('Para birimi', '<select data-pfa="currency" data-id="' + id + '">' + ['TRY', 'USD', 'EUR'].map(function (k) { return opt(k, k === 'TRY' ? 'TL' : k, a.currency || 'TRY'); }).join('') + '</select>');
           h += fieldRow('Adet türü', '<select data-pfa="lot" data-id="' + id + '">' + Object.keys(PF.LOTS).map(function (k) { return opt(k, PF.LOTS[k], a.lot || 'fraction'); }).join('') + '</select>', 'Hisse ve ETF tam adet alınır; dengeleme önerisi aşağı yuvarlar.');
-          h += fieldRow('Fiyat kaynağı', '<select data-pfa="pktype" data-id="' + id + '">' + opt('', 'Elle girerim (fon, BIST hissesi)', pk) + opt('metal:XAU', 'Gram altın (otomatik)', pk) + opt('metal:XAG', 'Gram gümüş (otomatik)', pk) + opt('fx:USD', 'ABD doları (otomatik)', pk) + opt('fx:EUR', 'Euro (otomatik)', pk) +
+          h += fieldRow('Fiyat kaynağı', '<select data-pfa="pktype" data-id="' + id + '">' + opt('', 'Elle girerim', pk) + opt('tefas', 'TEFAS fonu (otomatik, günde bir)', pk) + opt('bist', 'BIST hissesi (otomatik, 15 dk gecikmeli)', pk) + opt('metal:XAU', 'Gram altın (otomatik)', pk) + opt('metal:XAG', 'Gram gümüş (otomatik)', pk) + opt('fx:USD', 'ABD doları (otomatik)', pk) + opt('fx:EUR', 'Euro (otomatik)', pk) +
             opt('cg', 'Kripto — CoinGecko (otomatik)', pk) + opt('td', 'ABD ETF/hisse — Twelve Data (ücretsiz anahtar)', pk) + '</select>' +
-            (pk === 'cg' || pk === 'td' ? '<input type="text" style="margin-top:4px" data-pfa="pkcode" data-id="' + id + '" value="' + esc(a.priceKey.slice(3)) + '" placeholder="' + (pk === 'cg' ? 'CoinGecko kimliği, ör. bitcoin' : 'Sembol, ör. SPUS') + '">' : ''),
-            'Otomatik kaynaklar ücretsizdir ve tarayıcıdan doğrudan çekilir. TEFAS fonları ve BIST hisseleri için ücretsiz tarayıcı kaynağı bulunamadı: fiyatı elle gir veya fiyat listesi aktar.');
+            (PK_PH[pk] ? '<input type="text" style="margin-top:4px" data-pfa="pkcode" data-id="' + id + '" value="' + esc(a.priceKey.slice(a.priceKey.indexOf(':') + 1)) + '" placeholder="' + PK_PH[pk] + '" aria-label="Fiyat kodu">' : ''),
+            'Otomatik kaynaklar ücretsizdir ve tarayıcıdan doğrudan çekilir. TEFAS fonu: fon kodu (ör. KTV) — resmi olmayan ara servis, günde bir. BIST hissesi: hisse kodu (ör. ASELS) — TradingView, resmi değil, 15 dk gecikmeli. Kaynak çalışmazsa fiyatı elle gir veya liste yapıştır.');
         }
         h += fieldRow('Acil fona say', '<label class="row"><input type="checkbox" data-pfa="emergency" data-id="' + id + '"' + (a.emergency ? ' checked' : '') + '> Evet</label>');
         h += fieldRow('Bağlı hedef', '<select data-pfa="goalId" data-id="' + id + '">' + opt('', '— Ortak havuz', a.goalId || '') + (s.goals || []).map(function (g) { return opt(g.id, g.name, a.goalId || ''); }).join('') + '</select>', 'Bir hedefe bağlanan varlığın tamamı o hedefe sayılır. Bağlanmayanlar ortak havuzda; hedeflere paylarına göre dağılır.');
@@ -200,18 +202,21 @@
     function fxAt(s, cur, d) { if (cur === 'TRY') return null; var pts = PF.fxPoints(s, cur), p = PF.priceAt(pts, d); return p ? PF.fxKurusFromPrice(p.p) : null; }
     function pTrades(c) {
       var s = c.s, tracked = s.assets.filter(function (a) { return a.tracking === 'trades'; }), h = '';
-      h += '<section class="card"><h2>Alım veya satım ekle ' + tip('Her alım ve satımı gir; ortalama maliyet, kâr/zarar ve getiri otomatik hesaplanır. Komisyon maliyete eklenir, satışta gelirden düşülür.') + '</h2>';
+      h += '<section class="card"><h2>İşlem ekle: alım, satım, temettü, bedelsiz ' + tip('Her alım ve satımı gir; ortalama maliyet, kâr/zarar ve getiri otomatik hesaplanır. Komisyon maliyete eklenir, satışta gelirden düşülür. Temettü (net) gerçekleşen kâra eklenir; bedelsiz/bölünme adedi artırır, toplam maliyeti değiştirmez (ortalama maliyet düşer); bedelli yeni pay alımıdır.') + '</h2>';
       if (!tracked.length) h += '<p>Önce <a href="#portfoy/varliklar">Varlıklar</a>\'da "Alım-satımla izlenen varlık" ekle ya da aracı kurum dökümünü aktar.</p>';
       else {
         var sel = tracked.find(function (a) { return a.id === tradeFor; }) || tracked[0], cur = sel.currency || 'TRY';
-        h += '<form id="pf-trade-form" class="grid three" autocomplete="off">' +
+        h += '<form id="pf-trade-form" class="grid three tradef" data-side="buy" autocomplete="off">' +
           fieldRow('Varlık', '<select id="pt-asset">' + tracked.map(function (a) { return opt(a.id, a.name + (a.currency && a.currency !== 'TRY' ? ' (' + a.currency + ')' : ''), sel.id); }).join('') + '</select>') +
-          fieldRow('İşlem', '<select id="pt-side"><option value="buy">Alış</option><option value="sell">Satış</option></select>') +
+          fieldRow('İşlem', '<select id="pt-side">' + Object.keys(PF.SIDES).map(function (k) { return opt(k, PF.SIDES[k], 'buy'); }).join('') + '</select>') +
           fieldRow('Tarih', '<input id="pt-date" type="date" required max="' + c.today + '" value="' + c.today + '">') +
-          fieldRow('Adet', '<input id="pt-qty" type="text" inputmode="decimal" placeholder="ör. 10 veya 0,5" required>', 'Küsurat için virgül kullan (8 haneye kadar).') +
-          fieldRow('Birim fiyat (' + curSym(cur) + ')', '<input id="pt-price" type="text" inputmode="decimal" placeholder="ör. 145,20" required>', 'Fon fiyatları için 6 haneye kadar ondalık.') +
-          fieldRow('Komisyon (' + curSym(cur) + ')', '<input id="pt-fee" class="money" type="text" inputmode="decimal" placeholder="0,00">') +
-          (cur !== 'TRY' ? fieldRow('O günkü kur (1 ' + cur + ' = ? TL)', '<input id="pt-fx" class="money" type="text" inputmode="decimal" value="' + esc(fxAt(s, cur, c.today) ? M.format(fxAt(s, cur, c.today), { symbol: false }) : '') + '">', 'TL maliyet ve kur farkı için gerekli. Aracı kurum dökümündeki kuru yaz.') : '') +
+          '<div class="tf tf-ratio">' + fieldRow('Oran (%)', '<input id="pt-ratio" type="text" inputmode="decimal" placeholder="ör. 100">', 'Bedelsiz: %100 = her 1 paya 1 yeni pay; %50 = her 2 paya 1. Hisse birleşmesi için eksi yaz (ör. −50 = 2 pay 1 pay olur). Bedellide yazarsan yeni pay adedi eldeki adetten hesaplanır.') + '</div>' +
+          '<div class="tf tf-qp">' + fieldRow('Adet', '<input id="pt-qty" type="text" inputmode="decimal" placeholder="ör. 10 veya 0,5">', 'Küsurat için virgül kullan (8 haneye kadar). Bedellide alınan yeni pay adedi.') + '</div>' +
+          '<div class="tf tf-qp">' + fieldRow('<span class="lbl-buy">Birim fiyat</span><span class="lbl-rights">Bedelli fiyatı</span> (' + curSym(cur) + ')', '<input id="pt-price" type="text" inputmode="decimal" placeholder="ör. 145,20">', 'Fon fiyatları için 6 haneye kadar ondalık. Bedelli fiyatı genelde 1 TL\'dir.') + '</div>' +
+          '<div class="tf tf-div">' + fieldRow('Brüt temettü tutarı (' + curSym(cur) + ')', '<input id="pt-amount" class="money" type="text" inputmode="decimal" placeholder="ör. 240,00">', 'Kesintiden önceki toplam tutar (pay başına temettü × adet).') + '</div>' +
+          '<div class="tf tf-div">' + fieldRow('Stopaj / vergi kesintisi (' + curSym(cur) + ')', '<input id="pt-wht" class="money" type="text" inputmode="decimal" placeholder="0,00">', 'Kesinti yoksa boş bırak. Hesabına geçen = brüt − stopaj.') + '</div>' +
+          '<div class="tf tf-fee">' + fieldRow('Komisyon / masraf (' + curSym(cur) + ')', '<input id="pt-fee" class="money" type="text" inputmode="decimal" placeholder="0,00">') + '</div>' +
+          (cur !== 'TRY' ? '<div class="tf tf-fx">' + fieldRow('O günkü kur (1 ' + cur + ' = ? TL)', '<input id="pt-fx" class="money" type="text" inputmode="decimal" value="' + esc(fxAt(s, cur, c.today) ? M.format(fxAt(s, cur, c.today), { symbol: false }) : '') + '">', 'TL maliyet ve kur farkı için gerekli. Aracı kurum dökümündeki kuru yaz.') + '</div>' : '') +
           fieldRow('Not', '<input id="pt-note" type="text" maxlength="200" placeholder="isteğe bağlı">') +
           '<div class="field"><button class="btn primary" type="submit">Kaydet</button></div></form><div id="pt-preview" class="hint" aria-live="polite"></div>';
         h += '<p class="hint">Daha hızlısı: <a href="#veri" data-act="pf-import-mode" data-mode="trades">aracı kurum dökümünü (Excel/CSV/PDF/ekran görüntüsü) aktar</a>.</p>';
@@ -219,59 +224,95 @@
       h += '</section>';
       // Pozisyon özeti
       var sm = c.sm;
+      var dRows = sm.rows.filter(function (r) { return r.ledger.divTL || r.ledger.splits; }), dMax = Math.max.apply(null, dRows.map(function (r) { return r.ledger.divTL || 0; }).concat([1]));
+      if (dRows.length) {
+        h += '<section class="card div-card" style="margin-top:14px"><h2>💰 Temettü ve bedelsiz ' + tip('Net temettü = brüt − stopaj; gerçekleşen kâra ve getiri hesabına (XIRR/TWR) nakit girişi olarak eklenir. Bedelsiz/bölünme adedi artırır, toplam maliyeti değiştirmez.') + '</h2><div class="grid kpis">' +
+          X.kpi('Net temettü', '<span class="pos">+' + tl2(sm.divTL) + '</span>', 'Stopaj: ' + tl2(sm.withholdingTL), 'Hesabına geçen toplam temettü (TL).') +
+          X.kpi('Bedelsiz / bölünme', String(dRows.reduce(function (n, r) { return n + (r.ledger.splits || 0); }, 0)) + ' kez', 'Adet arttı, maliyet aynı kaldı', 'Bedelsiz sermaye artırımı veya hisse bölünmesi sayısı.') + '</div>';
+        h += '<div class="div-bars">' + dRows.map(function (r) { var v = r.ledger.divTL || 0; return '<div class="div-bar"><span class="db-name" title="' + esc(r.asset.name) + '"><b>' + esc(r.asset.symbol || r.asset.name) + '</b></span><span class="db-track"><span class="db-fill" style="width:' + Math.max(2, Math.round(v * 100 / dMax)) + '%"></span></span><span class="db-val num">' + (v ? '+' + tl2(v) : '—') + (r.ledger.splits ? ' · ' + r.ledger.splits + '× bedelsiz' : '') + '</span></div>'; }).join('') + '</div></section>';
+      }
       if (sm.rows.length) {
         h += '<section class="card" style="margin-top:14px"><h2>Pozisyonlar ve kâr/zarar ' + tip('Ağırlıklı ortalama maliyet yöntemi: her alımda maliyet eklenir; satışta, satılan adet oranında maliyet düşülür ve aradaki fark gerçekleşen kâr/zarardır. Yabancı para varlıkta TL maliyet işlem günündeki kurla hesaplanır (kur farkı dahil).') + '</h2><div class="tablewrap"><table><thead><tr><th>Varlık</th><th class="r">Adet</th><th class="r">Ort. maliyet</th><th class="r">Son fiyat</th><th class="r">Değer (TL)</th><th class="r">Gerçekleşmemiş</th><th class="r detail-only">Gerçekleşen</th><th class="r">Toplam</th></tr></thead><tbody>';
         sm.rows.forEach(function (r) {
           var lg = r.ledger, totBp = lg.boughtTL && r.totalPLTL != null ? M.ratioBp(r.totalPLTL, lg.boughtTL) : null;
-          h += '<tr><td>' + esc(r.asset.name) + (lg.errors.length ? '<div class="neg hint">' + esc(lg.errors[0]) + '</div>' : '') + '</td><td class="r num">' + PF.fmtQty(lg.units) + '</td><td class="r num">' + priceTxt(lg.avgPrice, r.currency) + '</td>' +
-            '<td class="r num">' + (r.price ? priceTxt(r.price.p, r.currency) + '<div class="hint">' + X.dateLabel(r.price.d) + ' ' + staleTxt(r.stale) + '</div>' : pill('warn', 'fiyat yok')) + '</td>' +
+          h += '<tr><td>' + esc(r.asset.name) + (lg.divTL ? '<div class="hint pos">+' + tl2(lg.divTL) + ' net temettü</div>' : '') + (lg.splits ? '<div class="hint">' + lg.splits + ' bedelsiz/bölünme</div>' : '') + (lg.errors.length ? '<div class="neg hint">' + esc(lg.errors[0]) + '</div>' : '') + '</td><td class="r num">' + PF.fmtQty(lg.units) + '</td><td class="r num">' + priceTxt(lg.avgPrice, r.currency) + '</td>' +
+            '<td class="r num">' + (r.price ? priceTxt(r.price.p, r.currency) + qpBtn(PF.assetKey(r.asset)) + '<div class="hint">' + X.dateLabel(r.price.d) + ' ' + staleTxt(r.stale) + '</div>' : pill('warn', 'fiyat yok') + qpBtn(PF.assetKey(r.asset))) + '</td>' +
             '<td class="r num">' + (r.mvTL != null ? tl2(r.mvTL) : '<span class="muted">' + tl2(lg.costTL) + ' (maliyet)</span>') + '</td>' +
             '<td class="r num ' + plCls(r.unrealizedTL) + '">' + (r.unrealizedTL != null ? signTl(r.unrealizedTL) : '—') + '</td><td class="r num detail-only ' + plCls(lg.realizedTL) + '">' + signTl(lg.realizedTL) + '</td>' +
-            '<td class="r num ' + plCls(r.totalPLTL) + '">' + (r.totalPLTL != null ? signTl(r.totalPLTL) + (totBp != null ? '<div class="hint">' + sbp1(totBp) + '</div>' : '') : '—') + '</td></tr>';
+            '<td class="r num ' + plCls(r.totalPLTL) + '">' + (r.totalPLTL != null ? signTl(r.totalPLTL) + (totBp != null ? '<div class="hint">' + sbp1(totBp) + '</div>' : '') : '—') + '</td></tr>' + qpRow(PF.assetKey(r.asset), 8, X.today());
         });
         h += '</tbody><tfoot><tr><th colspan="4">Toplam</th><th class="r num">' + tl2(sm.mvTL) + '</th><th class="r num ' + plCls(sm.unrealizedTL) + '">' + signTl(sm.unrealizedTL) + '</th><th class="r num detail-only ' + plCls(sm.realizedTL) + '">' + signTl(sm.realizedTL) + '</th><th class="r num ' + plCls(sm.totalPLTL) + '">' + signTl(sm.totalPLTL) + '<div class="hint">' + sbp1(sm.totalPLBp) + '</div></th></tr></tfoot></table></div>';
-        h += '<p class="hint detail-only">Formüller: Ortalama maliyet = kalan maliyet ÷ kalan adet. Gerçekleşmemiş = adet × son fiyat (× bugünkü kur) − kalan TL maliyet. Gerçekleşen = satış geliri (− komisyon) × o günkü kur − satılan adedin TL maliyeti. Toplam yüzde, toplam alım tutarına göredir. Ödenen toplam komisyon: ' + tl2(sm.feesTL) + '.</p></section>';
+        h += '<p class="hint detail-only">Formüller: Ortalama maliyet = kalan maliyet ÷ kalan adet. Gerçekleşmemiş = adet × son fiyat (× bugünkü kur) − kalan TL maliyet. Gerçekleşen = satış geliri (− komisyon) × o günkü kur − satılan adedin TL maliyeti + net temettüler (brüt − stopaj). Bedelsiz/bölünme toplam maliyeti değiştirmez, adedi artırır. Toplam yüzde, toplam alım tutarına göredir. Ödenen toplam komisyon: ' + tl2(sm.feesTL) + '. Net temettü: ' + tl2(sm.divTL) + ' (stopaj ' + tl2(sm.withholdingTL) + ').</p></section>';
       }
       // İşlem listesi
       if ((s.trades || []).length) {
         var list = s.trades.slice().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; }), byA = {};
         s.assets.forEach(function (a) { byA[a.id] = a; });
         h += '<section class="card" style="margin-top:14px"><h2>Tüm alım-satımlar <span class="muted" style="font-size:.9rem;font-weight:400">(' + list.length + ')</span></h2><div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Varlık</th><th>İşlem</th><th class="r">Adet</th><th class="r">Fiyat</th><th class="r detail-only">Komisyon</th><th class="r">Tutar</th><th class="r detail-only">Kur</th><th></th></tr></thead><tbody>';
+        var added = {}; s.assets.forEach(function (a) { if (a.tracking === 'trades') PF.ledger(PF.tradesOf(s, a.id)).rows.forEach(function (r) { if (r.unitsAdded != null) added[r.trade.id] = r.unitsAdded; }); });
         list.slice(0, 300).forEach(function (t) {
-          var a = byA[t.assetId] || { name: '?' }, cash = PF.tradeCash(t);
-          h += '<tr><td class="num">' + X.dateLabel(t.date) + '</td><td>' + esc(a.name) + (t.note ? '<div class="hint">' + esc(t.note) + '</div>' : '') + '</td><td>' + (t.side === 'buy' ? pill('info', 'Alış') : pill('warn', 'Satış')) + '</td><td class="r num">' + PF.fmtQty(t.qty) + '</td><td class="r num">' + priceTxt(t.price, t.currency) + '</td>' +
-            '<td class="r num detail-only">' + money(t.fee, t.currency) + '</td><td class="r num">' + money(cash, t.currency) + (t.currency !== 'TRY' ? '<div class="hint">≈ ' + tl2(PF.tradeTL(t, cash)) + '</div>' : '') + '</td><td class="r num detail-only">' + (t.fxRate ? tl2(t.fxRate) : '—') + '</td>' +
+          var a = byA[t.assetId] || { name: '?' }, cash = PF.tradeCash(t), sd = t.side;
+          var pl = sd === 'buy' ? pill('info', 'Alış') : sd === 'sell' ? pill('warn', 'Satış') : sd === 'div' ? '<span class="pill div">💰 Temettü</span>' : sd === 'split' ? '<span class="pill split">✚ Bedelsiz</span>' : '<span class="pill rights">Bedelli</span>';
+          var qtyTd = sd === 'div' ? '—' : sd === 'split' ? (added[t.id] != null ? (added[t.id] >= 0 ? '+' : '−') + PF.fmtQty(Math.abs(added[t.id])) : '?') + '<div class="hint">%' + String(t.ratioBp / 100).replace('.', ',') + '</div>' : PF.fmtQty(t.qty);
+          var priceTd = sd === 'div' || sd === 'split' ? '—' : priceTxt(t.price, t.currency);
+          var cashTd = sd === 'split' ? '<span class="muted">nakit yok</span>' : (sd === 'div' ? '<span class="pos">+' + money(cash, t.currency) + '</span><div class="hint">brüt ' + money(t.amount, t.currency) + (t.withholding ? ' − stopaj ' + money(t.withholding, t.currency) : '') + '</div>' : money(cash, t.currency)) + (t.currency !== 'TRY' && sd !== 'split' ? '<div class="hint">≈ ' + tl2(PF.tradeTL(t, cash)) + '</div>' : '');
+          h += '<tr><td class="num">' + X.dateLabel(t.date) + '</td><td>' + esc(a.name) + (t.note ? '<div class="hint">' + esc(t.note) + '</div>' : '') + '</td><td>' + pl + '</td><td class="r num">' + qtyTd + '</td><td class="r num">' + priceTd + '</td>' +
+            '<td class="r num detail-only">' + money(t.fee || 0, t.currency) + '</td><td class="r num">' + cashTd + '</td><td class="r num detail-only">' + (t.fxRate ? tl2(t.fxRate) : '—') + '</td>' +
             '<td><button class="btn small danger" data-act="pf-del-trade" data-id="' + esc(t.id) + '" aria-label="İşlemi sil">Sil</button></td></tr>';
         });
         h += '</tbody></table></div>' + (list.length > 300 ? '<p class="hint">Son 300 işlem gösteriliyor.</p>' : '') + '</section>';
       }
       return h;
     }
+    function tradeVals() {
+      var $ = function (i) { return document.getElementById(i); }, s = st(), a = s.assets.find(function (x) { return x.id === $('pt-asset').value; });
+      var side = $('pt-side').value, feeRaw = $('pt-fee').value.trim(), whtRaw = ($('pt-wht') || {}).value || '', ratioRaw = String(($('pt-ratio') || {}).value || '').trim().replace('−', '-');
+      var v = { s: s, a: a, side: side, date: P.parseDate($('pt-date').value), q: PF.parseScaled($('pt-qty').value, 8), p: PF.parseScaled($('pt-price').value, 6), fee: feeRaw ? M.parse(feeRaw) : 0,
+        amount: M.parse(($('pt-amount') || {}).value || ''), wht: whtRaw.trim() ? M.parse(whtRaw) : 0, ratioBp: ratioRaw ? PF.parseScaled(ratioRaw, 2) : null, cur: a ? a.currency || 'TRY' : 'TRY' };
+      v.lg = a ? PF.ledger(PF.tradesOf(s, a.id).filter(function (t) { return !v.date || t.date <= v.date; })) : null;
+      if (side === 'rights' && (!v.q || v.q <= 0) && v.ratioBp > 0 && v.lg) v.q = PF.splitAdded(v.lg.units, v.ratioBp); // oran yazıldıysa yeni pay adedi
+      return v;
+    }
     function tradePreview() {
       var el = document.getElementById('pt-preview'); if (!el) return;
-      var s = st(), a = s.assets.find(function (x) { return x.id === document.getElementById('pt-asset').value; }); if (!a) return;
-      var q = PF.parseScaled(document.getElementById('pt-qty').value, 8), p = PF.parseScaled(document.getElementById('pt-price').value, 6), feeRaw = document.getElementById('pt-fee').value.trim(), fee = feeRaw ? M.parse(feeRaw) : 0, side = document.getElementById('pt-side').value;
-      if (!q || !p || q <= 0 || p <= 0 || fee == null) { el.textContent = ''; return; }
-      var t = { side: side, qty: q, price: p, fee: Math.abs(fee), currency: a.currency || 'TRY' }, g = PF.tradeGross(t), cash = PF.tradeCash(t), cur = t.currency;
-      var lg = PF.ledger(PF.tradesOf(s, a.id)), msg = 'Adet × fiyat = <b>' + money(g, cur) + '</b> · ' + (side === 'buy' ? 'ödenecek' : 'eline geçecek') + ' (komisyon dahil): <b>' + money(cash, cur) + '</b>';
-      if (side === 'buy') { var nu = lg.units + q, nc = lg.costNative + cash; msg += ' · yeni ortalama maliyet ≈ ' + priceTxt(PF.mulDiv(nc, 1000000000000, nu), cur); }
-      else if (q > lg.units) msg += ' · <b class="neg">Eldeki adet (' + PF.fmtQty(lg.units) + ') yetmiyor</b>';
-      else { var out = PF.mulDiv(lg.costNative, q, lg.units); msg += ' · tahmini gerçekleşen kâr/zarar: <b class="' + plCls(cash - out) + '">' + money(cash - out, cur) + '</b>' + (cur !== 'TRY' ? ' (' + cur + ' cinsinden, kur farkı hariç)' : ''); }
+      var form = document.getElementById('pf-trade-form'), side = document.getElementById('pt-side').value; if (form) form.dataset.side = side;
+      var v = tradeVals(), a = v.a, cur = v.cur, lg = v.lg; if (!a) return;
+      var msg = '';
+      if (side === 'div') {
+        if (!v.amount || v.amount <= 0 || v.wht == null || v.fee == null) { el.textContent = ''; return; }
+        var net = v.amount - Math.abs(v.wht) - Math.abs(v.fee);
+        msg = 'Hesabına geçen net temettü = brüt ' + money(v.amount, cur) + (v.wht ? ' − stopaj ' + money(Math.abs(v.wht), cur) : '') + (v.fee ? ' − masraf ' + money(Math.abs(v.fee), cur) : '') + ' = <b class="pos">' + money(net, cur) + '</b> · gerçekleşen kâra ve getiriye eklenir; maliyet ve adet değişmez.';
+        if (lg && lg.units <= 0) msg += ' · <b class="neg">O tarihte eldeki adet yok</b>';
+      } else if (side === 'split') {
+        if (!v.ratioBp || v.ratioBp <= -10000) { el.textContent = ''; return; }
+        if (!lg || lg.units <= 0) { el.innerHTML = '<b class="neg">O tarihte eldeki adet yok</b>'; return; }
+        var add = PF.splitAdded(lg.units, v.ratioBp), nu = lg.units + add;
+        msg = 'Eldeki ' + PF.fmtQty(lg.units) + ' adet → <b>' + PF.fmtQty(nu) + ' adet</b> (' + (add >= 0 ? '+' : '−') + PF.fmtQty(Math.abs(add)) + ') · toplam maliyet aynı (' + money(lg.costNative, cur) + ') · ortalama maliyet ' + priceTxt(lg.avgPrice, cur) + ' → <b>' + (nu > 0 ? priceTxt(PF.mulDiv(lg.costNative, 1000000000000, nu), cur) : '—') + '</b>';
+      } else {
+        var q = v.q, p = v.p, fee = v.fee;
+        if (!q || !p || q <= 0 || p <= 0 || fee == null) { el.textContent = side === 'rights' && v.ratioBp ? 'Eldeki adet yok; oran uygulanamadı.' : ''; return; }
+        var t = { side: side, qty: q, price: p, fee: Math.abs(fee), currency: cur }, g = PF.tradeGross(t), cash = PF.tradeCash(t);
+        msg = (side === 'rights' ? 'Yeni pay: <b>' + PF.fmtQty(q) + '</b> · ' : '') + 'Adet × fiyat = <b>' + money(g, cur) + '</b> · ' + (side !== 'sell' ? 'ödenecek' : 'eline geçecek') + ' (komisyon dahil): <b>' + money(cash, cur) + '</b>';
+        if (side !== 'sell') { var nu2 = lg.units + q, nc = lg.costNative + cash; msg += ' · yeni ortalama maliyet ≈ ' + priceTxt(PF.mulDiv(nc, 1000000000000, nu2), cur); }
+        else if (q > lg.units) msg += ' · <b class="neg">Eldeki adet (' + PF.fmtQty(lg.units) + ') yetmiyor</b>';
+        else { var out = PF.mulDiv(lg.costNative, q, lg.units); msg += ' · tahmini gerçekleşen kâr/zarar: <b class="' + plCls(cash - out) + '">' + money(cash - out, cur) + '</b>' + (cur !== 'TRY' ? ' (' + cur + ' cinsinden, kur farkı hariç)' : ''); }
+      }
       el.innerHTML = msg;
     }
     function submitTrade() {
-      var s = st(), $ = function (i) { return document.getElementById(i); };
-      var a = s.assets.find(function (x) { return x.id === $('pt-asset').value; }); if (!a) return X.toast('Varlık seç');
-      var date = P.parseDate($('pt-date').value), q = PF.parseScaled($('pt-qty').value, 8), p = PF.parseScaled($('pt-price').value, 6), feeRaw = $('pt-fee').value.trim(), fee = feeRaw ? M.parse(feeRaw) : 0;
-      var cur = a.currency || 'TRY', fx = cur !== 'TRY' ? M.parse(($('pt-fx') || {}).value || '') : null, errs = [];
-      if (!date) errs.push('tarih'); else if (date > X.today()) errs.push('tarih gelecekte olamaz');
-      if (!q || q <= 0) errs.push('adet'); if (!p || p <= 0) errs.push('fiyat'); if (fee == null || fee < 0) errs.push('komisyon'); if (cur !== 'TRY' && (!fx || fx <= 0)) errs.push('kur');
-      ['pt-qty', 'pt-price'].forEach(function (i) { var bad = PF.parseScaled($(i).value, i === 'pt-qty' ? 8 : 6); $(i).setAttribute('aria-invalid', String(!bad || bad <= 0)); });
+      var $ = function (i) { return document.getElementById(i); }, v = tradeVals(), s = v.s, a = v.a; if (!a) return X.toast('Varlık seç');
+      var side = v.side, cur = v.cur, fx = cur !== 'TRY' && side !== 'split' ? M.parse(($('pt-fx') || {}).value || '') : null, errs = [];
+      if (!v.date) errs.push('tarih'); else if (v.date > X.today()) errs.push('tarih gelecekte olamaz');
+      if (v.fee == null || v.fee < 0) errs.push('komisyon'); if (cur !== 'TRY' && side !== 'split' && (!fx || fx <= 0)) errs.push('kur');
+      var t = { id: S.uid(), assetId: a.id, date: v.date, side: side, qty: 0, price: 0, fee: side === 'split' ? 0 : Math.abs(v.fee || 0), currency: cur, fxRate: cur === 'TRY' || side === 'split' ? null : fx, note: $('pt-note').value.trim(), source: 'elle' };
+      if (side === 'div') { if (!v.amount || v.amount <= 0) errs.push('brüt temettü tutarı'); if (v.wht == null || v.wht < 0 || (v.amount && v.wht > v.amount)) errs.push('stopaj (0 ile brüt arası)'); t.amount = v.amount; t.withholding = Math.abs(v.wht || 0); }
+      else if (side === 'split') { if (!v.ratioBp || v.ratioBp <= -10000) errs.push('oran (ör. 100)'); else if (!v.lg || v.lg.units <= 0) errs.push('o tarihte eldeki adet yok'); t.ratioBp = v.ratioBp; }
+      else { if (!v.q || v.q <= 0) errs.push('adet'); if (!v.p || v.p <= 0) errs.push('fiyat'); t.qty = v.q; t.price = v.p; if (side === 'rights' && v.ratioBp) t.ratioBp = v.ratioBp; }
       if (errs.length) return X.toast('Kontrol et: ' + errs.join(', '));
-      var t = { id: S.uid(), assetId: a.id, date: date, side: $('pt-side').value, qty: q, price: p, fee: fee, currency: cur, fxRate: cur === 'TRY' ? null : fx, note: $('pt-note').value.trim(), source: 'elle' };
-      if (s.trades.some(function (x) { return PF.tradeKey(x) === PF.tradeKey(t); }) && !confirm('Aynı tarih, adet ve fiyatla bir işlem zaten var. Yine de eklensin mi?')) return;
+      if ((side === 'buy' || side === 'sell') && s.trades.some(function (x) { return PF.tradeKey(x) === PF.tradeKey(t); }) && !confirm('Aynı tarih, adet ve fiyatla bir işlem zaten var. Yine de eklensin mi?')) return;
       tradeFor = a.id;
-      X.mutate(function (s2) { s2.trades.push(t); }, (t.side === 'buy' ? 'Alış' : 'Satış') + ' kaydedildi: ' + a.name + ' ' + PF.fmtQty(q) + ' adet');
+      var lbl = side === 'div' ? 'Temettü kaydedildi: ' + a.name + ' net ' + money(PF.tradeCash(t), cur) : side === 'split' ? 'Bedelsiz/bölünme kaydedildi: ' + a.name + ' %' + String(t.ratioBp / 100).replace('.', ',') : PF.SIDES[side] + ' kaydedildi: ' + a.name + ' ' + PF.fmtQty(t.qty) + ' adet';
+      X.mutate(function (s2) { s2.trades.push(t); }, lbl);
     }
 
     /* ---------- DENGELEME ---------- */
@@ -431,24 +472,24 @@
       if (priceRun) h += priceRunTable(s, c.today);
       h += '</section>';
       // Elle fiyat
-      h += '<section class="card" style="margin-top:14px"><h2>Elle fiyat gir ' + tip('TEFAS fonları ve BIST hisseleri için ücretsiz tarayıcı kaynağı yok: fiyatı aracı kurum uygulamandan veya tefas.gov.tr\'den bakıp yaz. Otomatik kaynakları da elle düzeltebilirsin.') + '</h2>';
+      h += '<section class="card" style="margin-top:14px"><h2>Elle fiyat gir ' + tip('Otomatik kaynak çalışmazsa (TEFAS ara servisi, TradingView resmi değildir) fiyatı aracı kurum uygulamandan veya tefas.gov.tr\'den bakıp yaz. Otomatik kaynakları da elle düzeltebilirsin. Tablodaki ✎ ile tek dokunuşta düzeltebilirsin.') + '</h2>';
       h += '<form id="pf-price-form" class="grid three">' + fieldRow('Ne için?', '<select id="pp-key">' + keys.map(function (k) { return opt(k, keyLabel(k, assetByKey(k)) + ' — ' + curSym(keyCur(k)), ''); }).join('') + '</select>') +
         fieldRow('Tarih', '<input id="pp-date" type="date" max="' + c.today + '" value="' + c.today + '">') + fieldRow('Fiyat', '<input id="pp-price" type="text" inputmode="decimal" placeholder="ör. 3,251234">') +
         '<div class="field"><button class="btn primary" type="submit">Kaydet</button></div></form>';
-      h += '<p class="hint">Çok sayıda fiyat için: <a href="#veri" data-act="pf-import-mode" data-mode="prices">fiyat listesi (Excel/CSV) aktar</a>.</p></section>';
+      h += '<p class="hint">Çok sayıda fiyat için: <a href="#veri" data-act="pf-import-mode" data-mode="prices">fiyat listesi aktar — Excel/CSV, yapıştır veya ekran görüntüsü</a>.</p></section>';
       // Kayıtlı fiyatlar
       h += '<section class="card" style="margin-top:14px"><h2>Kayıtlı fiyatlar</h2><div class="tablewrap"><table><thead><tr><th>Ne</th><th class="r">Son fiyat</th><th>Tarih</th><th>Kaynak</th><th class="r detail-only">Kayıt</th><th class="detail-only"></th></tr></thead><tbody>';
       keys.forEach(function (k) {
         var a = assetByKey(k), lp = PF.lastPoint(s, k), kind = PF.kindFor(k, a), sl = PF.staleness(lp, kind, c.today), n = PF.points(s, k).length;
-        h += '<tr><td>' + esc(keyLabel(k, a)) + '</td><td class="r num">' + (lp ? priceTxt(lp.p, keyCur(k)) : '—') + '</td><td>' + (lp ? X.dateLabel(lp.d) + ' ' : '') + staleTxt(sl) + '</td><td class="hint">' + esc(lp ? lp.src || '' : '') + (lp && lp.at ? '<div>alındı: ' + esc(fmtAt(lp.at)) + '</div>' : '') + '</td><td class="r num detail-only">' + n + '</td>' +
-          '<td class="detail-only">' + (lp ? '<button class="btn small danger" data-act="pf-del-pt" data-key="' + esc(k) + '" data-d="' + lp.d + '">Son fiyatı sil</button>' : '') + '</td></tr>';
+        h += '<tr><td>' + esc(keyLabel(k, a)) + '</td><td class="r num">' + (lp ? priceTxt(lp.p, keyCur(k)) : '—') + qpBtn(k) + '</td><td>' + (lp ? X.dateLabel(lp.d) + ' ' : '') + staleTxt(sl) + '</td><td class="hint">' + esc(lp ? lp.src || '' : '') + (lp && lp.at ? '<div>alındı: ' + esc(fmtAt(lp.at)) + '</div>' : '') + '</td><td class="r num detail-only">' + n + '</td>' +
+          '<td class="detail-only">' + (lp ? '<button class="btn small danger" data-act="pf-del-pt" data-key="' + esc(k) + '" data-d="' + lp.d + '">Son fiyatı sil</button>' : '') + '</td></tr>' + qpRow(k, 6, c.today);
       });
       h += '</tbody></table></div><p class="hint">Eskime sınırı: kripto 2 gün, döviz/altın 3 gün, endeks 4 gün, ETF/hisse/fon 5 gün, diğer 31 gün. Eski fiyat uyarı verir ama silinmez.</p>';
       h += '<details class="detail-only"><summary>Geçmiş fiyatları toplu yapıştır (ör. BIST 100)</summary><p class="hint">Her satıra "tarih fiyat" yaz (ör. <code>31.10.2026 11.250,40</code>). Kıyas ve getiri grafiği için kullanılır.</p><div class="grid two">' + fieldRow('Ne için?', '<select id="pp-bulk-key">' + keys.map(function (k) { return opt(k, keyLabel(k, assetByKey(k)), 'idx:XU100'); }).join('') + '</select>') + '</div><textarea id="pp-bulk" rows="5" style="width:100%"></textarea><button class="btn small" data-act="pf-bulk-prices">Kaydet</button></details></section>';
       // Ayar ve kaynaklar
       h += '<section class="card" style="margin-top:14px"><h2>Kaynaklar ve ayarlar</h2><div class="field"><label for="td-key">Twelve Data API anahtarı (ABD ETF/hisse için, isteğe bağlı) ' + tip('twelvedata.com\'dan ücretsiz hesapla alınır (günde 800 istek). Anahtar yalnızca bu cihazda saklanır, yedeğe girmez.') + '</label><div class="row"><input id="td-key" type="password" autocomplete="off" value="' + esc(cfg.twelveKey || '') + '" style="max-width:340px" placeholder="anahtar yoksa ETF fiyatını elle gir"><button class="btn small" data-act="pf-td-save">Kaydet</button>' + (cfg.twelveKey ? '<button class="btn small danger" data-act="pf-td-del">Sil</button>' : '') + '</div></div>';
       h += '<div class="tablewrap"><table><thead><tr><th>Kaynak</th><th>Ne için</th></tr></thead><tbody>' + Object.keys(PR.SOURCES).map(function (k) { var x = PR.SOURCES[k]; return '<tr><td>' + esc(x.label) + '<div class="hint">' + esc(x.site) + '</div></td><td class="hint">' + esc(x.what) + '</td></tr>'; }).join('') + '</tbody></table></div>';
-      h += '<p class="hint">Hepsi ücretsizdir ve tarayıcıdan doğrudan erişilir (Kasım 2026\'da test edildi). TCMB, TEFAS, Borsa İstanbul ve Yahoo tarayıcı erişimini (CORS) engellediği için kullanılamıyor. Bir kaynak çalışmazsa eski fiyat aynen kalır; uygulama hiçbir zaman fiyat uydurmaz.</p></section>';
+      h += '<p class="hint">Hepsi ücretsizdir ve tarayıcıdan doğrudan erişilir (Kasım 2026\'da test edildi). TCMB, tefas.gov.tr, Borsa İstanbul, İş Yatırım ve Yahoo tarayıcı erişimini (CORS) engellediği için doğrudan kullanılamıyor; TEFAS fonları TEFAS verisini yayınlayan ücretsiz bir ara servisten, BIST hisseleri TradingView\'in herkese açık tarayıcısından (resmi değil, 15 dk gecikmeli) alınır. Bir kaynak çalışmazsa eski fiyat aynen kalır; uygulama hiçbir zaman fiyat uydurmaz.</p></section>';
       return h;
     }
     function fmtAt(iso) { var d = new Date(iso); if (isNaN(d)) return iso; return d.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (TSİ)'; }
@@ -507,13 +548,31 @@
       }
     }
     function rateEdited(s, cur, kurus, d) { var key = cur === 'XAU' ? 'metal:XAU' : (cur === 'USD' || cur === 'EUR') ? 'fx:' + cur : null; if (key) PF.addPricePoint(s.prices, key, 'TRY', { d: d, p: PF.fxPriceFromKurus(kurus), src: 'Kullanıcı girişi (Hesaplar → kur)' }); }
+    /* Hızlı fiyat düzeltme (✎) */
+    var qpKey = null;
+    function qpBtn(k) { return ' <button type="button" class="linkbtn qp-btn" data-act="pf-qp" data-key="' + esc(k) + '" aria-label="Fiyatı hızlı düzenle" title="Fiyatı hızlı düzenle">✎</button>'; }
+    function plainPrice(p) { return p ? String(p / 1e6).replace('.', ',') : ''; }
+    function qpRow(k, cols, today) {
+      if (qpKey !== k) return '';
+      var lp = PF.lastPoint(st(), k);
+      return '<tr class="qp-row"><td colspan="' + cols + '"><form class="qp-form" data-qpkey="' + esc(k) + '"><b>' + esc(keyLabel(k, assetByKey(k))) + '</b> <input class="qp-d" type="date" max="' + today + '" value="' + today + '" aria-label="Tarih"> <input class="qp-p" type="text" inputmode="decimal" value="' + plainPrice(lp && lp.p) + '" aria-label="Yeni fiyat" placeholder="fiyat"> <button class="btn small primary" type="submit">Kaydet</button> <button class="btn small" type="button" data-act="pf-qp" data-key="' + esc(k) + '">Vazgeç</button></form></td></tr>';
+    }
+    function submitQuick(form) {
+      var s = st(), k = form.dataset.qpkey, d = P.parseDate(form.querySelector('.qp-d').value), pi = form.querySelector('.qp-p'), p = PF.parseScaled(pi.value, 6);
+      if (!d || d > X.today()) return X.toast('Geçerli bir tarih seç (gelecek olamaz)');
+      if (!p || p <= 0) { pi.setAttribute('aria-invalid', 'true'); return X.toast('Geçersiz fiyat. Örnek: 3,251234'); }
+      var a = assetByKey(k), chk = PF.checkPrice(p, PF.priceAt(PF.points(s, k), d), PF.kindFor(k, a), d, X.today());
+      if (chk.needsConfirm && !confirm('Dikkat: ' + chk.reasons.join('; ') + '. Fiyat doğru mu?')) return;
+      qpKey = null;
+      X.mutate(function (s2) { setPrice(s2, k, d, p, 'Elle düzeltildi', new Date().toISOString()); }, keyLabel(k, a) + ' fiyatı güncellendi.');
+    }
     function submitPrice() {
       var s = st(), k = document.getElementById('pp-key').value, d = P.parseDate(document.getElementById('pp-date').value), p = PF.parseScaled(document.getElementById('pp-price').value, 6);
       if (!d || d > X.today()) return X.toast('Geçerli bir tarih seç (gelecek olamaz)');
       if (!p || p <= 0) { document.getElementById('pp-price').setAttribute('aria-invalid', 'true'); return X.toast('Geçersiz fiyat. Örnek: 3,251234'); }
       var a = assetByKey(k), chk = PF.checkPrice(p, PF.priceAt(PF.points(s, k), d), PF.kindFor(k, a), d, X.today());
       if (chk.needsConfirm && !confirm('Dikkat: ' + chk.reasons.join('; ') + '. Fiyat doğru mu?')) return;
-      X.mutate(function (s2) { setPrice(s2, k, d, p, 'Elle girildi'); }, keyLabel(k, a) + ' fiyatı kaydedildi.');
+      X.mutate(function (s2) { setPrice(s2, k, d, p, 'Elle girildi', new Date().toISOString()); }, keyLabel(k, a) + ' fiyatı kaydedildi.');
     }
     function bulkPrices() {
       var k = document.getElementById('pp-bulk-key').value, lines = document.getElementById('pp-bulk').value.split(/\r?\n/), pts = [], bad = 0;
@@ -528,12 +587,13 @@
       var ym = rr.first.slice(0, 7); while (ym < X.nowYm()) { monthly.push(L.ymdOf(ym, 31)); ym = L.addMonthsYm(ym, 1); }
       var gold = dates.concat(monthly).filter(function (d, i, a) { return a.indexOf(d) === i && d < X.today(); }).sort();
       var crypto = s.assets.filter(function (a) { return a.tracking === 'trades' && /^cg:/.test(a.priceKey || ''); }).map(function (a) { return a.priceKey.slice(3); });
+      var funds = s.assets.filter(function (a) { return a.tracking === 'trades' && /^tefas:/.test(a.priceKey || ''); }).map(function (a) { return a.priceKey.slice(6); });
       fetching = true; histMsg = '<span class="spinner"></span> Geçmiş fiyatlar indiriliyor…'; X.render();
-      PR.fetchHistory({ fxFrom: L.addDays ? rr.first : rr.first, to: X.today(), goldDates: gold, cryptoIds: crypto }).then(function (out) {
+      PR.fetchHistory({ fxFrom: L.addDays ? rr.first : rr.first, to: X.today(), goldDates: gold, cryptoIds: crypto, tefasCodes: funds }).then(function (out) {
         fetching = false; var n = 0;
         var ok = X.mutate(function (s2) {
           Object.keys(out.series).forEach(function (k) {
-            var src = k === 'fx:USD' ? 'Frankfurter (AMB) geçmiş kur' : k === 'metal:XAU' ? 'Currency API geçmiş ons altın ÷ 31,1035' : 'CoinGecko geçmiş (günlük)';
+            var src = k === 'fx:USD' ? 'Frankfurter (AMB) geçmiş kur' : k === 'metal:XAU' ? 'Currency API geçmiş ons altın ÷ 31,1035' : /^tefas:/.test(k) ? 'TEFAS Fon Analiz geçmiş (günlük)' : 'CoinGecko geçmiş (günlük)';
             out.series[k].forEach(function (x) { var ex = PF.points(s2, k).find(function (q) { return q.d === x.d; }); if (ex && !/geçmiş/.test(ex.src || '')) return; PF.addPricePoint(s2.prices, k, 'TRY', { d: x.d, p: x.p, src: src }); n++; });
           });
         });
@@ -551,7 +611,8 @@
       });
       h += '</div></div>';
       if (importKind === 'trades') h += '<div class="notice info">Aracı kurum dökümünü (Excel/CSV, PDF veya ekran görüntüsü) seç. Tarih, sembol, alış/satış, adet, fiyat, komisyon ve tutar okunur; satır satır <b>adet × fiyat</b> hesaplanıp belgedeki tutarla karşılaştırılır.</div>';
-      if (importKind === 'prices') h += '<div class="notice info">İçinde <b>sembol/kod</b> ve <b>fiyat</b> sütunu olan bir Excel/CSV seç (ör. TEFAS\'tan indirdiğin fon fiyatları). Varlıklarınla sembolden eşleşir; büyük sıçramalar işaretlenir.</div>';
+      if (importKind === 'prices') h += '<div class="notice info">İçinde <b>sembol/kod</b> ve <b>fiyat</b> olan bir Excel/CSV, PDF veya <b>ekran görüntüsü</b> seç (ücretsiz OCR ile okunur) ya da listeyi aşağıya yapıştır. Varlıklarınla koddan eşleşir; kaynak ve okunma saati kaydedilir, büyük sıçramalar işaretlenir.</div>' +
+        '<div class="card paste-prices" style="margin-bottom:12px"><label for="pp-paste"><b>📋 Listeyi yapıştır</b> <span class="hint">her satır: KOD fiyat (tarih isteğe bağlı)</span></label><textarea id="pp-paste" rows="4" style="width:100%" placeholder="KTV 8,326309&#10;ASELS 345,50&#10;13.11.2026 KTN 3,2514"></textarea><button class="btn small primary" data-act="pf-paste-prices">Listeyi oku ve kontrol et</button></div>';
       return h;
     }
     function readTable(file) {
@@ -571,7 +632,21 @@
     function handleFile(file) {
       var name = file.name || 'dosya', ext = (name.split('.').pop() || '').toLowerCase();
       if (importKind === 'prices') {
-        if (!/^(xlsx|xls|csv|ods|txt|tsv)$/.test(ext)) return Promise.reject(new Error('Fiyat listesi için Excel veya CSV dosyası seç'));
+        if (/^image\//.test(file.type) || /^(jpe?g|png|webp|gif|bmp|heic|heif|avif)$/.test(ext)) {
+          X.busy('Ücretsiz OCR ile okunuyor… (ilk seferde biraz sürer)');
+          return X.readImage(file).then(function (img) { return X.getOcrWorker().then(function (w) { return X.ocrRecognize(w, img.ocrPlain || img.dataUrl, 'ham'); }).then(function (r) {
+            var rows = PF.parsePriceText(r.text, P.parseDate); if (!rows.length) throw new Error('Görselde "KOD fiyat" satırı okunamadı. Listeyi yapıştırmayı veya elle girmeyi dene.');
+            startPriceReview(name + ' (ekran görüntüsü OCR)', rows, { text: r.text, preview: img.dataUrl, warn: ['OCR sonucu: her fiyatı görselle karşılaştır.'] });
+          }); });
+        }
+        if (ext === 'pdf' || file.type === 'application/pdf') {
+          X.busy('PDF okunuyor…');
+          return X.loadPdfLib().then(function (lib) { return file.arrayBuffer().then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; }); }).then(function (pdf) { return X.pdfText(pdf); }).then(function (text) {
+            var rows = PF.parsePriceText(text, P.parseDate); if (!rows.length) throw new Error('PDF\'te "KOD fiyat" satırı bulunamadı');
+            startPriceReview(name, rows, { text: text });
+          });
+        }
+        if (!/^(xlsx|xls|csv|ods|txt|tsv)$/.test(ext)) return Promise.reject(new Error('Fiyat listesi için Excel/CSV, PDF veya ekran görüntüsü seç'));
         X.busy('Fiyat listesi okunuyor…');
         return readTable(file).then(function (t) { var map = PF.detectPriceColumns(t.best.rows); startPriceReview(name, PF.priceRowsFromTable(t.best.rows, map, P.parseDate)); });
       }
@@ -738,9 +813,9 @@
       if (ok) { pReview = null; location.hash = '#portfoy/islemler'; }
     }
     /* Fiyat listesi */
-    function startPriceReview(name, rows) {
-      var s = st(), today = X.today();
-      pReview = { kind: 'prices', source: name, rows: rows.map(function (r, i) {
+    function startPriceReview(name, rows, extra) {
+      var s = st(), today = X.today(); extra = extra || {};
+      pReview = { kind: 'prices', source: name, at: new Date().toISOString(), text: extra.text || null, preview: extra.preview || null, warn: extra.warn || [], rows: rows.map(function (r, i) {
         var a = PF.matchAsset(s, r.symbol), key = a ? PF.assetKey(a) : '', x = { key: i, symbol: r.symbol, price: r.price, date: r.date || today, currency: r.currency, pkey: key, asset: a };
         priceRowCheck(x, s, today); x.include = !!(key && x.chk.valid && !x.chk.needsConfirm); return x;
       }) };
@@ -751,14 +826,17 @@
       if (x.pkey && x.currency && x.currency !== keyCur(x.pkey)) { x.chk.valid = false; x.chk.reasons.push('Para birimi ' + x.currency + ', varlığınki ' + keyCur(x.pkey)); }
     }
     function renderPriceReview() {
-      var r = pReview, s = st(), h = '<h1>Kontrol et ve onayla — fiyat listesi</h1><p>Kaynak: <b>' + esc(r.source) + '</b>. Varlıklarınla sembolden eşleşen fiyatlar işaretli gelir. Büyük sıçramalar <b>onay</b> ister.</p>';
+      var r = pReview, s = st(), h = '<h1>Kontrol et ve onayla — fiyat listesi</h1><p>Kaynak: <b>' + esc(r.source) + '</b> · okundu ' + esc(fmtAt(r.at)) + '. Varlıklarınla koddan eşleşen fiyatlar işaretli gelir. Büyük sıçramalar <b>onay</b> ister. Satırdaki fiyatı düzeltebilirsin.</p>';
+      (r.warn || []).forEach(function (w) { h += '<div class="notice warn">' + esc(w) + '</div>'; });
+      if (r.preview) h += '<details class="card"><summary>Görseli göster</summary><img src="' + esc(r.preview) + '" alt="Okunan görsel" style="max-width:100%"></details>';
+      if (r.text) h += '<details class="card detail-only"><summary>Okunan ham metin</summary><pre class="rawtext">' + esc(String(r.text).slice(0, 4000)) + '</pre></details>';
       var opts = s.assets.filter(function (a) { return a.tracking === 'trades'; });
       h += '<section class="card"><div class="tablewrap"><table class="review"><thead><tr><th>✓</th><th>Listede</th><th>Varlık</th><th class="r">Fiyat</th><th>Tarih</th><th class="r">Önceki</th><th>Kontrol</th></tr></thead><tbody>';
       r.rows.forEach(function (x) {
         var old = x.pkey ? PF.priceAt(PF.points(s, x.pkey), x.date) : null;
         h += '<tr data-prkey="' + x.key + '" class="' + (x.include ? '' : 'excluded') + '"><td><input type="checkbox" data-ppr="include"' + (x.include ? ' checked' : '') + (x.chk.valid ? '' : ' disabled') + ' aria-label="Dahil et"></td><td>' + esc(x.symbol) + '</td>' +
           '<td><select data-ppr="asset" aria-label="Varlık">' + opt('', '— eşleşmedi —', x.asset ? x.asset.id : '') + opts.map(function (a) { return opt(a.id, a.name, x.asset ? x.asset.id : ''); }).join('') + '</select></td>' +
-          '<td class="r num">' + (x.price ? priceTxt(x.price, x.pkey ? keyCur(x.pkey) : (x.currency || 'TRY')) : '<span class="neg">okunamadı</span>') + '</td><td>' + X.dateLabel(x.date) + '</td><td class="r num">' + (old ? priceTxt(old.p, keyCur(x.pkey)) + '<div class="hint">' + X.dateLabel(old.d) + '</div>' : '—') + '</td>' +
+          '<td class="r num"><input class="num" type="text" inputmode="decimal" data-ppr="price" style="width:8.5em" value="' + plainPrice(x.price) + '" aria-label="Fiyat"' + (x.price ? '' : ' aria-invalid="true"') + '><div class="hint">' + (x.price ? priceTxt(x.price, x.pkey ? keyCur(x.pkey) : (x.currency || 'TRY')) : '<span class="neg">okunamadı</span>') + '</div></td><td>' + X.dateLabel(x.date) + '</td><td class="r num">' + (old ? priceTxt(old.p, keyCur(x.pkey)) + '<div class="hint">' + X.dateLabel(old.d) + '</div>' : '—') + '</td>' +
           '<td>' + (x.chk.reasons.length ? x.chk.reasons.map(function (q) { return '<div class="' + (x.chk.valid ? 'warn-t' : 'neg') + '">⚠ ' + esc(q) + '</div>'; }).join('') : pill('ok', 'Makul')) + '</td></tr>';
       });
       h += '</tbody></table></div></section><div class="row savebar"><button class="btn primary" data-act="ppr-save">Seçilileri kaydet</button><button class="btn" data-act="ptr-cancel">Vazgeç</button></div>';
@@ -768,11 +846,18 @@
       var sel = pReview.rows.filter(function (x) { return x.include && x.chk.valid && x.price > 0; }); if (!sel.length) return X.toast('Seçili fiyat yok.');
       var conf = sel.filter(function (x) { return x.chk.needsConfirm; });
       if (conf.length && !confirm(conf.length + ' fiyatta büyük değişim var: ' + conf.map(function (x) { return x.symbol; }).join(', ') + '. Kaydedilsin mi?')) return;
-      var src = 'Fiyat listesi: ' + pReview.source;
-      if (X.mutate(function (s) { sel.forEach(function (x) { setPrice(s, x.pkey, x.date, x.price, src); }); }, sel.length + ' fiyat kaydedildi.')) { pReview = null; location.hash = '#portfoy/fiyatlar'; }
+      var src = 'Fiyat listesi: ' + pReview.source, at = pReview.at || new Date().toISOString();
+      if (X.mutate(function (s) { sel.forEach(function (x) { setPrice(s, x.pkey, x.date, x.price, src, at); }); }, sel.length + ' fiyat kaydedildi.')) { pReview = null; location.hash = '#portfoy/fiyatlar'; }
     }
 
     /* ---------- Olaylar ---------- */
+    /* Elle girilen fiyat serisi otomatik kaynağa geçince kaybolmasın: yeni seri boşsa eski noktalar taşınır */
+    function carryPoints(s, from, to, cur) {
+      if (!from || !to || from === to || !/^m:/.test(from)) return;
+      var src = s.prices && s.prices[from]; if (!src || !src.points || !src.points.length || (s.prices[to] && s.prices[to].points.length)) return;
+      if ((src.cur || 'TRY') !== cur) return;
+      src.points.forEach(function (pt) { PF.addPricePoint(s.prices, to, cur, JSON.parse(JSON.stringify(pt))); });
+    }
     function findAsset(s, id) { return s.assets.find(function (a) { return a.id === id; }); }
     function onAssetField(el) {
       var s = st(), id = el.dataset.id, f = el.dataset.pfa, a = findAsset(s, id); if (!a) return;
@@ -791,13 +876,14 @@
       }
       if (f === 'currency') return X.mutate(function (s2) { var x = findAsset(s2, id); x.currency = v; if (x.priceKey && PF.keyInfo(x.priceKey).cur !== v) x.priceKey = null; });
       if (f === 'pktype') {
-        var key = v === 'cg' ? 'cg:' + (a.priceKey && /^cg:/.test(a.priceKey) ? a.priceKey.slice(3) : (PF.fold(a.symbol || a.name).replace(/[^a-z0-9-]/g, '') || 'bitcoin')) : v === 'td' ? 'td:' + ((a.symbol || 'SPUS').toUpperCase().replace(/[^A-Z0-9.:-]/g, '') || 'SPUS') : v || null;
-        var cur = key ? PF.keyInfo(key).cur : (a.currency || 'TRY');
-        return X.mutate(function (s2) { var x = findAsset(s2, id); x.priceKey = key; x.currency = cur; }, key ? 'Fiyat kaynağı: ' + keyLabel(key) : 'Fiyat elle girilecek');
+        var key = v === 'cg' ? 'cg:' + (a.priceKey && /^cg:/.test(a.priceKey) ? a.priceKey.slice(3) : (PF.fold(a.symbol || a.name).replace(/[^a-z0-9-]/g, '') || 'bitcoin')) : v === 'td' ? 'td:' + ((a.symbol || 'SPUS').toUpperCase().replace(/[^A-Z0-9.:-]/g, '') || 'SPUS') :
+          v === 'tefas' ? 'tefas:' + codeOf(a, /[^A-Z0-9]/g, 6, 'KTV') : v === 'bist' ? 'bist:' + codeOf(a, /[^A-Z0-9]/g, 8, 'ASELS') : v || null;
+        var cur = key ? PF.keyInfo(key).cur : (a.currency || 'TRY'), oldKey = PF.assetKey(a);
+        return X.mutate(function (s2) { var x = findAsset(s2, id); x.priceKey = key; x.currency = cur; carryPoints(s2, oldKey, PF.assetKey(x), cur); }, key ? 'Fiyat kaynağı: ' + keyLabel(key) : 'Fiyat elle girilecek');
       }
       if (f === 'pkcode') {
-        var pre = /^cg:/.test(a.priceKey) ? 'cg:' : 'td:', code = pre === 'cg:' ? v.trim().toLowerCase() : v.trim().toUpperCase(), nk = pre + code;
-        if (!PF.keyInfo(nk)) { el.setAttribute('aria-invalid', 'true'); return X.toast(pre === 'cg:' ? 'CoinGecko kimliği küçük harf ve tire olmalı (ör. bitcoin, avalanche-2)' : 'Sembol harf/rakam olmalı (ör. SPUS)'); }
+        var pre = a.priceKey.slice(0, a.priceKey.indexOf(':') + 1), code = pre === 'cg:' ? v.trim().toLowerCase() : v.trim().toUpperCase(), nk = pre + code;
+        if (!PF.keyInfo(nk)) { el.setAttribute('aria-invalid', 'true'); return X.toast(pre === 'cg:' ? 'CoinGecko kimliği küçük harf ve tire olmalı (ör. bitcoin, avalanche-2)' : pre === 'tefas:' ? 'Fon kodu 2-6 harf/rakam olmalı (ör. KTV)' : pre === 'bist:' ? 'Hisse kodu 2-8 harf/rakam olmalı (ör. ASELS)' : 'Sembol harf/rakam olmalı (ör. SPUS)'); }
         return X.mutate(function (s2) { findAsset(s2, id).priceKey = nk; });
       }
       if (f === 'goalId') return X.mutate(function (s2) { findAsset(s2, id).goalId = v || null; });
@@ -845,15 +931,17 @@
       if (el.dataset.ppr && pReview) {
         var tr = el.closest('tr'), x = pReview.rows.find(function (q) { return String(q.key) === tr.dataset.prkey; });
         if (el.dataset.ppr === 'include') x.include = el.checked;
+        else if (el.dataset.ppr === 'price') { var np = PF.parseScaled(el.value, 6); if (!np || np <= 0) { el.setAttribute('aria-invalid', 'true'); X.toast('Geçersiz fiyat. Örnek: 3,251234'); return true; } x.price = np; priceRowCheck(x, st(), X.today()); x.include = !!(x.pkey && x.chk.valid && !x.chk.needsConfirm); X.render(); }
         else { var a = findAsset(st(), el.value); x.asset = a || null; x.pkey = a ? PF.assetKey(a) : ''; priceRowCheck(x, st(), X.today()); x.include = !!(x.pkey && x.chk.valid && !x.chk.needsConfirm); X.render(); }
         return true;
       }
       return false;
     }
-    function onInput(el) { if (/^pt-(qty|price|fee|side|asset)$/.test(el.id)) tradePreview(); }
+    function onInput(el) { if (/^pt-(qty|price|fee|side|asset|amount|wht|ratio|date)$/.test(el.id)) tradePreview(); }
     function onSubmit(e) {
       if (e.target.id === 'pf-trade-form') { e.preventDefault(); submitTrade(); return true; }
       if (e.target.id === 'pf-price-form') { e.preventDefault(); submitPrice(); return true; }
+      if (e.target.classList && e.target.classList.contains('qp-form')) { e.preventDefault(); submitQuick(e.target); return true; }
       return false;
     }
     function actions(t) {
@@ -884,6 +972,12 @@
         'ptr-add': function () { var key = pReview.rows.reduce(function (m, x) { return Math.max(m, x.key); }, -1) + 1; var x = { key: key, include: true, date: X.today(), symbol: '', side: 'buy', qty: null, price: null, fee: 0, written: null, currency: 'TRY', assetId: '', fxRate: null, manual: true }; pReview.rows.push(x); revalidateTrades(); x.include = true; X.render(); },
         'ptr-save': saveTrades,
         'ppr-save': savePriceList,
+        'pf-qp': function () { qpKey = qpKey === t.dataset.key ? null : t.dataset.key; X.render(); if (qpKey) setTimeout(function () { var i = document.querySelector('.qp-form .qp-p'); if (i) { i.focus(); i.select(); } }, 0); },
+        'pf-paste-prices': function () {
+          var ta = document.getElementById('pp-paste'), txt = ta ? ta.value : '', rows = PF.parsePriceText(txt, P.parseDate);
+          if (!rows.length) return X.toast('Listede "KOD fiyat" satırı bulunamadı. Örnek: KTV 8,326309');
+          startPriceReview('Yapıştırılan liste', rows, { text: txt });
+        },
         'ptr-cancel': function () { if (confirm('Kontrol tablosu kapatılsın mı? Hiçbir şey kaydedilmeyecek.')) { pReview = null; X.render(); } }
       };
     }

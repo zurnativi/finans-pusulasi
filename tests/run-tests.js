@@ -411,13 +411,13 @@
   test('göç: v1 yedeği eksiksiz yüklenir ve sonuçlar değişmez', function () {
     var v1 = clone(V1), before = C.analyze(clone(V1), '2026-11');
     var m = S.validateState(v1);
-    eq(m.schema, 3); eq(m.migratedFrom, 1); eq(m.trades, []); eq(m.goals.length, 1); eq(m.goals[0].shareBp, 10000); eq(m.accounts, []); eq(m.recurring, []); eq(m.rates, {}); eq(m.limits, {});
+    eq(m.schema, S.SCHEMA_VERSION); eq(m._sync, { stamps: {}, tomb: {} }); eq(m.settings.backupReminderDays, 7); eq(m.migratedFrom, 1); eq(m.trades, []); eq(m.goals.length, 1); eq(m.goals[0].shareBp, 10000); eq(m.accounts, []); eq(m.recurring, []); eq(m.rates, {}); eq(m.limits, {});
     eq(m.transactions.length, V1.transactions.length); eq(m.incomes, V1.incomes); eq(m.assets, V1.assets); eq(m.goal, V1.goal);
     var after = C.analyze(L.effectiveState(m, '2026-11-13'), '2026-11');
     eq(after.budget, before.budget); eq(after.assets.netWorth, before.assets.netWorth); eq(after.plan, before.plan);
   });
   test('göç: yeni sürüm ve bozuk sürüm reddedilir', function () {
-    var threw = ''; try { var x = clone(V1); x.schema = 4; S.validateState(x); } catch (e) { threw = e.message; } ok(/daha yeni/.test(threw), threw);
+    var threw = ''; try { var x = clone(V1); x.schema = S.SCHEMA_VERSION + 1; S.validateState(x); } catch (e) { threw = e.message; } ok(/daha yeni/.test(threw), threw);
     threw = ''; try { var y = clone(V1); delete y.schema; S.validateState(y); } catch (e) { threw = e.message; } ok(/Sürüm/.test(threw), threw);
   });
   test('örnek veri (v2) doğrulamadan geçer ve yedek gidiş-dönüşü aynı', function () {
@@ -618,7 +618,7 @@
   test('Göç v2 → v3: kurlardan fiyat noktası, varsayılan hedef, eski veri korunur', function () {
     var v2 = S.exampleState('2026-11', '2026-11-13'); v2.schema = 2; delete v2.trades; delete v2.prices; delete v2.cpi; delete v2.goals; v2.assets = v2.assets.filter(function (a) { return a.tracking !== 'trades'; }).map(function (a) { return { id: a.id, name: a.name, cls: a.cls === 'crypto' ? 'other' : a.cls, risk: a.risk, emergency: a.emergency, value: a.value }; }); v2.accounts.forEach(function (a) { delete a.halal; }); delete v2.settings.riskRules; delete v2.settings.rebalance;
     var m = S.validateState(S.migrate(clone(v2)));
-    eq(m.schema, 3); eq(m.goals.length, 1); eq(m.goals[0].target, v2.goal.target); eq(m.trades, []); eq(m.cpi, []);
+    eq(m.schema, S.SCHEMA_VERSION); eq(m.migratedFrom, 2); eq(m.goals.length, 1); eq(m.goals[0].target, v2.goal.target); eq(m.trades, []); eq(m.cpi, []);
     eq(m.prices['fx:USD'].points[0].p, v2.rates.USD.rate * 10000); eq(m.assets.length, v2.assets.length); eq(m.settings.riskRules.maxAssetBp, 3000);
   });
   test('v3 doğrulaması: işlem, hedef, fiyat alanlarındaki hataları yakalar', function () {
@@ -705,5 +705,12 @@
     results.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
     console.log('\n' + passed + '/' + results.length + ' test geçti');
     if (passed !== results.length) process.exit(1);
+    console.log('\n— v5 (şifreleme, eşitleme, kilit, temettü/bedelsiz, fiyat kaynakları) —');
+    require('./run-tests-v5.js').run().then(function (r5) {
+      var p5 = r5.filter(function (r) { return r.ok; }).length;
+      r5.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+      console.log('\n' + p5 + '/' + r5.length + ' v5 testi geçti · toplam ' + (passed + p5) + '/' + (results.length + r5.length));
+      if (p5 !== r5.length) process.exit(1);
+    });
   } else { root.TEST_RESULTS = results; }
 })(typeof self !== 'undefined' ? self : this);

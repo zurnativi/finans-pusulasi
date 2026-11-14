@@ -142,7 +142,7 @@
         series: [{ type: 'gauge', startAngle: 90, endAngle: -270, min: 0, max: 100, radius: '92%', pointer: { show: false },
           progress: { show: true, overlap: false, roundCap: true, clip: false, width: 12, itemStyle: { color: cl } },
           axisLine: { lineStyle: { width: 12, color: [[1, t.line]] } }, splitLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false },
-          title: { show: false }, detail: { valueAnimation: !reduced(), offsetCenter: [0, 0], fontSize: 20, fontWeight: 700, color: t.ink, formatter: function (x) { return '%' + Math.round(x); } },
+          title: { show: false }, detail: { valueAnimation: !reduced() && o.center == null, offsetCenter: [0, 0], fontSize: o.center != null && String(o.center).length > 4 ? 15 : 20, fontWeight: 700, color: t.ink, formatter: function (x) { return o.center != null ? o.center : '%' + Math.round(x); } },
           data: [{ value: Math.round(v * 10) / 10 }] }]
       });
     }, 'ring');

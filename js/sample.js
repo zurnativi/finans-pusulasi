@@ -4,9 +4,9 @@
   else root.Sample = factory(root.Calc, root.Ledger, root.Money, root.Portfolio);
 })(typeof self !== 'undefined' ? self : this, function (C, L, M, PF) {
   'use strict';
-  var SCHEMA_VERSION = 3;
+  var SCHEMA_VERSION = 4;
   /* Resmi örnek veri sürümü: eski ÖRNEK kayıtlar (isExample) bu sayıdan küçükse yenilenir; gerçek kullanıcı verisine dokunulmaz. */
-  var EXAMPLE_REVISION = 2;
+  var EXAMPLE_REVISION = 3;
   /* v1 → v2: hesaplar, transferler, kurlar, kategori sınırları, düzenli ödemeler, taksitler, yıllık giderler eklendi. */
   var V2_DEFAULTS = { accounts: [], transfers: [], rates: {}, limits: {}, recurring: [], installments: [], sinkingFunds: [] };
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -15,7 +15,7 @@
   function defaultSettings() {
     return { emergencyMonths: 6, emergencyShareBp: 5000, inflationBp: 2500, view: 'simple',
       scenarios: JSON.parse(JSON.stringify(C.DEFAULT_SCENARIOS)),
-      riskRules: JSON.parse(JSON.stringify(PF.DEFAULT_RULES)), rebalance: { tierBandBp: 500, assetBandBp: 300 } };
+      riskRules: JSON.parse(JSON.stringify(PF.DEFAULT_RULES)), rebalance: { tierBandBp: 500, assetBandBp: 300 }, backupReminderDays: 7 };
   }
   function addMonths(ym, n) { return C.ymFromIndex(C.monthIndex(ym) + n); }
   function todayYmd(d) { d = d || new Date(); var mo = d.getMonth() + 1, da = d.getDate(); return d.getFullYear() + '-' + (mo < 10 ? '0' : '') + mo + '-' + (da < 10 ? '0' : '') + da; }
@@ -24,7 +24,7 @@
     var s = { schema: SCHEMA_VERSION, isExample: false, updatedAt: null, incomes: [], expenses: [], assets: [], debts: [], transactions: [],
       goal: { name: 'Ev peşinatı', target: 0, targetYm: addMonths(nowYm, 60) }, settings: defaultSettings() };
     Object.keys(V2_DEFAULTS).forEach(function (k) { s[k] = JSON.parse(JSON.stringify(V2_DEFAULTS[k])); });
-    s.trades = []; s.prices = {}; s.cpi = []; s.goals = goalsFrom(s.goal);
+    s.trades = []; s.prices = {}; s.cpi = []; s.goals = goalsFrom(s.goal); s._sync = { stamps: {}, tomb: {} };
     return s;
   }
 
@@ -152,7 +152,7 @@
   function atOf(ymd) { return ymd + 'T18:00:00+03:00'; }
   /* Yalnızca resmi örnek veri (isExample) ve zaten v3 kaydı, daha eski örnek sürümü. Göç halindeki v1/v2 ve gerçek kullanıcı verisi yenilenmez. */
   function shouldRefreshExample(raw) {
-    return !!(raw && raw.isExample && raw.schema === SCHEMA_VERSION && (raw.exampleRevision || 0) < EXAMPLE_REVISION);
+    return !!(raw && raw.isExample && typeof raw.schema === 'number' && raw.schema >= 3 && raw.schema <= SCHEMA_VERSION && (raw.exampleRevision || 0) < EXAMPLE_REVISION);
   }
   function examplePortfolio(s, acc, nowYm, today) {
     var EX = 'ÖRNEK (gerçek fiyat değil)', H = function (st, note) { return { status: st, note: note + ' (örnek etiket — kendin doğrula)', source: 'Örnek veri', date: today }; };
@@ -213,6 +213,16 @@
     /* EREGL */
     T(eregl, 10, 8, 'buy', '200', '34,00', 680);
     T(eregl, 4, 10, 'buy', '150', '42,00', 630);
+    /* Şirket işlemleri (örnek): temettü (brüt, %10 stopaj) ve %100 bedelsiz */
+    function CA(a, mBack, day, extra) {
+      var d = L.ymdOf(addMonths(nowYm, -mBack), day); if (d > today) d = today;
+      var t = { id: uid(), assetId: a.id, date: d, qty: 0, price: 0, fee: 0, currency: a.currency, fxRate: null, note: '', source: 'örnek' };
+      Object.keys(extra).forEach(function (k) { t[k] = extra[k]; });
+      s.trades.push(t); return t;
+    }
+    CA(asels, 5, 20, { side: 'div', amount: 24000, withholding: 2400, note: 'Temettü: 300 pay × 0,80 TL brüt, %10 stopaj (örnek)' });
+    CA(eregl, 6, 22, { side: 'div', amount: 22000, withholding: 2200, note: 'Temettü: 200 pay × 1,10 TL brüt, %10 stopaj (örnek)' });
+    var ereglSplit = CA(eregl, 2, 15, { side: 'split', ratioBp: 10000, note: '%100 bedelsiz: her 1 paya 1 yeni pay (örnek)' });
     /* SPUS (USD, emeklilik) */
     T(spus, 18, 15, 'buy', '20', '38,50', 100, 3350);
     T(spus, 10, 14, 'buy', '15', '42,10', 100, 3780);
@@ -246,6 +256,8 @@
     series('metal:XAG', 'TRY', '32,00', '62,00', 24);
     series('m:' + asels.id, 'TRY', '55,00', '101,50', 24);
     series('m:' + eregl.id, 'TRY', '28,00', '48,20', 24);
+    // %100 bedelsiz sonrası fiyat yarıya iner (örnek seri tutarlı olsun)
+    s.prices['m:' + eregl.id].points.forEach(function (pt) { if (pt.d >= ereglSplit.date) pt.p = Math.round(pt.p / 2); });
     series('cg:bitcoin', 'TRY', '1500000', '3000000', 24);
     series('cg:ethereum', 'TRY', '60000', '120000', 24);
     series('fx:USD', 'TRY', '32,00', '42,50', 24);
@@ -282,6 +294,12 @@
       if (s.rates && typeof s.rates === 'object') ['USD', 'EUR'].forEach(function (c) { var r = s.rates[c]; if (r && Number.isInteger(r.rate) && r.rate > 0 && L.isYmd(r.date)) PF.addPricePoint(s.prices, 'fx:' + c, 'TRY', { d: r.date, p: PF.fxPriceFromKurus(r.rate), src: 'Kullanıcı girişi (kur)', at: null }); });
       if (s.rates && s.rates.XAU && Number.isInteger(s.rates.XAU.rate) && s.rates.XAU.rate > 0 && L.isYmd(s.rates.XAU.date)) PF.addPricePoint(s.prices, 'metal:XAU', 'TRY', { d: s.rates.XAU.date, p: PF.fxPriceFromKurus(s.rates.XAU.rate), src: 'Kullanıcı girişi (kur)', at: null });
       s.schema = 3;
+    }
+    /* v3 → v4: temettü/bedelsiz/bedelli işlem türleri, cihazlar arası eşitleme bilgisi (_sync: kayıt başına değişiklik zamanı ve silme izleri), yedek hatırlatma ayarı. Var olan kayıtlar aynen kalır. */
+    if (s.schema === 3) {
+      if (!s._sync || typeof s._sync !== 'object' || Array.isArray(s._sync)) s._sync = { stamps: {}, tomb: {} };
+      if (s.settings && typeof s.settings === 'object' && s.settings.backupReminderDays == null) s.settings.backupReminderDays = 7;
+      s.schema = 4;
     }
     if (from !== s.schema) s.migratedFrom = from;
     return s;
@@ -444,13 +462,20 @@
         if (!a) { errs.push(n + ': varlık bulunamadı'); return; }
         if (a.tracking !== 'trades') errs.push(n + ': varlık alım-satımla izlenmiyor');
         if (!L.isYmd(t.date)) errs.push(n + ': tarih hatalı');
-        if (t.side !== 'buy' && t.side !== 'sell') errs.push(n + ': alış/satış hatalı');
-        if (!isK(t.qty) || t.qty <= 0) errs.push(n + ': adet hatalı');
-        if (!isK(t.price) || t.price <= 0) errs.push(n + ': fiyat hatalı');
-        if (!isK(t.fee) || t.fee < 0) errs.push(n + ': komisyon hatalı');
+        if (!PF.SIDES[t.side]) errs.push(n + ': işlem türü hatalı');
+        else if (t.side === 'div') {
+          if (!isK(t.amount) || t.amount <= 0) errs.push(n + ': temettü tutarı hatalı');
+          if (t.withholding != null && (!isK(t.withholding) || t.withholding < 0 || t.withholding > t.amount)) errs.push(n + ': stopaj hatalı (0 ile brüt tutar arası)');
+        } else if (t.side === 'split') {
+          if (!Number.isInteger(t.ratioBp) || t.ratioBp <= -10000 || t.ratioBp === 0 || t.ratioBp > 10000000) errs.push(n + ': bedelsiz/bölünme oranı hatalı');
+        } else {
+          if (!isK(t.qty) || t.qty <= 0) errs.push(n + ': adet hatalı');
+          if (!isK(t.price) || t.price <= 0) errs.push(n + ': fiyat hatalı');
+        }
+        if (!isK(t.fee || 0) || (t.fee || 0) < 0) errs.push(n + ': komisyon hatalı');
         if (t.currency !== (a.currency || 'TRY')) errs.push(n + ': para birimi varlığınkiyle aynı olmalı');
-        else if (t.currency !== 'TRY' && (!isK(t.fxRate) || t.fxRate <= 0)) errs.push(n + ': işlem günündeki kur gerekli');
-        if (t.currency === 'TRY' && t.fxRate != null) errs.push(n + ': TL işlemde kur olmaz');
+        else if (t.currency !== 'TRY' && t.side !== 'split' && (!isK(t.fxRate) || t.fxRate <= 0)) errs.push(n + ': işlem günündeki kur gerekli');
+        if ((t.currency === 'TRY' || t.side === 'split') && t.fxRate != null) errs.push(n + ': ' + (t.side === 'split' ? 'bedelsiz/bölünmede' : 'TL işlemde') + ' kur olmaz');
         if (t.note != null && (typeof t.note !== 'string' || t.note.length > 200)) errs.push(n + ': not hatalı');
         (byAsset[t.assetId] = byAsset[t.assetId] || []).push(t);
       });
@@ -475,6 +500,8 @@
       if (rb != null && (typeof rb !== 'object' || !isPosInt(rb.tierBandBp, 0, 5000) || !isPosInt(rb.assetBandBp, 0, 5000))) errs.push('Dengeleme ayarı hatalı');
       if (!s.goal || !isK(s.goal.target) || !/^\d{4}-\d{2}$/.test(s.goal.targetYm || '')) errs.push('Hedef bilgisi hatalı');
       if (!s.settings || !Number.isInteger(s.settings.emergencyMonths)) errs.push('Ayarlar hatalı');
+      if (s.settings && s.settings.backupReminderDays != null && !isPosInt(s.settings.backupReminderDays, 0, 365)) errs.push('Yedek hatırlatma günü hatalı (0–365)');
+      if (s._sync != null && (typeof s._sync !== 'object' || Array.isArray(s._sync) || typeof s._sync.stamps !== 'object' || typeof s._sync.tomb !== 'object')) errs.push('Eşitleme bilgisi hatalı');
     }
     if (errs.length) throw new Error(errs.slice(0, 8).join('; ') + (errs.length > 8 ? ' …' : ''));
     var d = defaultSettings();

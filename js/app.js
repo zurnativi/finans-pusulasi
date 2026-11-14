@@ -1,8 +1,8 @@
 /* app.js — Arayüz. Hesaplar calc.js'te, para işlemleri money.js'te (tam sayı kuruş). */
 (function () {
   'use strict';
-  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, CD = window.ChartData, CH = window.Charts || null;
-  var state = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
+  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
+  var state = null, lastSaved = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
 
@@ -72,7 +72,18 @@
       return JSON.stringify(state.nwHistory) !== before;
     } catch (e) { console.error(e); return false; }
   }
-  function persist() { recordNw(); Store.save(state).catch(function (e) { toast('Kaydedilemedi! Tarayıcı depolaması dolu veya kapalı olabilir: ' + e.message); }); }
+  /* Kaydet: önce son kayıtlı hâlle farkı çıkar ve değişen kayıtlara eşitleme zaman damgası vur (silinene silme izi), sonra yaz.
+   * opts.noStamp: eşitlemeden gelen hâl (damgaları zaten doğru) yeniden damgalanmaz. */
+  function persist(opts) {
+    recordNw();
+    try { if (!(opts && opts.noStamp) && lastSaved && SM) SM.stamp(lastSaved, state, Date.now()); else if (SM) SM.stamp(null, state, Date.now()); } catch (e) { console.error(e); }
+    lastSaved = JSON.parse(JSON.stringify(state));
+    return Store.save(state).then(function () { if (SUI) SUI.onSaved(); }, function (e) { toast('Kaydedilemedi! Tarayıcı depolaması dolu veya kapalı olabilir: ' + e.message); });
+  }
+  /* Eşitlemeden gelen yeni hâl: olduğu gibi al, damgalama */
+  function replaceState(ns) { state = ns; persist({ noStamp: true }); setView(state.settings.view || 'simple'); render(); }
+  /* Kopya/yedek geri yükleme: tüm kayıtlar yenisiyle değişir (geri alınabilir, eşitlemede yeni değişiklik sayılır) */
+  function restoreState(obj, msg) { mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, msg || 'Geri yüklendi.'); setView(state.settings.view); }
 
   /* ---------- Görünüm (sade/detaylı) ---------- */
   function setView(v) {
@@ -91,6 +102,7 @@
         '<button class="btn small" data-act="refresh-example">Örnek veriyi yenile</button>' +
         '<button class="btn small danger" data-act="example-clear">Örnek veriyi temizle</button></div>';
     } else b.innerHTML = '';
+    if (SUI) b.innerHTML += SUI.banner();
   }
 
   /* ---------- ÖZET ---------- */
@@ -112,6 +124,7 @@
     h += homeHero(an);
     h += PUI.homeCards();
     h += homeFlow(an);
+    if (SUI) h += SUI.homeCard();
     var act = an.actuals, t0 = today(), last6 = [5, 4, 3, 2, 1, 0].map(function (k) { return S.addMonths(an.nowYm, -k); });
     var exp6 = last6.map(function (ym) { return C.monthActuals(state.transactions, ym).expense; });
     h += '<h2 class="sec-h">Bütçe özeti</h2><div class="grid kpis">';
@@ -968,7 +981,8 @@
       '<p>Son kayıt: <b>' + (state.updatedAt ? new Date(state.updatedAt).toLocaleString('tr-TR') : '—') + '</b></p>' +
       '<div class="row"><button class="btn primary" data-act="export">Yedek indir (.json)</button><button class="btn" data-act="import">Yedekten geri yükle</button><input type="file" id="backup-in" accept=".json,application/json" hidden>' +
       '<button class="btn" data-act="export-csv">İşlemleri Excel/CSV olarak indir</button></div>' +
-      '<p class="hint">Yedek dosyası API anahtarlarını içermez. Geri yüklemeden önce dosya kontrol edilir; bozuksa hiçbir şey değişmez.</p></section>';
+      '<p class="hint">Yedek dosyası API anahtarlarını içermez. Geri yüklemeden önce dosya kontrol edilir; bozuksa hiçbir şey değişmez.</p>' +
+      '<p><a class="btn" href="#guvenlik">🔐 Şifreli yedek, otomatik kopyalar, cihazlar arası eşitleme ve uygulama kilidi →</a></p></section>';
     h += '<section class="card"><h2>Plan ayarları</h2>' +
       '<div class="field"><label for="s-em">Acil durum fonu (kaç aylık gider?)</label><input id="s-em" type="number" min="1" max="24" step="1" data-set="emergencyMonths" value="' + st.emergencyMonths + '"><span class="hint">Genelde 3–6 ay önerilir; tek gelirliysen 6+.</span></div>' +
       '<div class="field"><label for="s-share">Acil fon dolana kadar aylık fazlanın yüzde kaçı acil fona gitsin?</label><input id="s-share" type="number" min="0" max="100" step="5" data-set="emergencyShareBp" value="' + st.emergencyShareBp / 100 + '"></div>' +
@@ -980,7 +994,7 @@
     h += '</tbody></table></div><button class="btn small" data-act="scen-reset">Varsayılana dön</button></section>';
     h += '<section class="card"><h2>Veri yönetimi</h2><div class="row"><button class="btn" data-act="load-example">Örnek veriyi yükle</button><button class="btn danger" data-act="clear-all">Tüm verileri sil</button></div>' +
       '<p class="hint">Örnek veriyi yüklemek mevcut verilerinin yerine geçer (önce yedek almayı unutma). Silme işlemi API anahtarlarını silmez; onlar Asistan bölümünden silinir.</p>' +
-      '<p class="hint detail-only">Uygulama sürümü 3.0 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
+      '<p class="hint detail-only">Uygulama sürümü 5.0 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
     return h;
   }
   function exportCsv() {
@@ -1526,10 +1540,11 @@
   }
 
   /* ---------- Yönlendirme ve çizim ---------- */
-  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return PUI.renderAnalysis(); }, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings };
-  var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce' };
-  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek' };
+  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return PUI.renderAnalysis(); }, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); } };
+  var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce', ayarlar: 'ayarlar', guvenlik: 'ayarlar' };
+  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit' };
   function areaNav() {
+    if (AREA[tab] === 'ayarlar') return '<nav class="areanav" aria-label="Ayar bölümleri">' + [['ayarlar', 'Genel ayarlar'], ['guvenlik', 'Yedek, eşitleme, kilit']].map(function (x) { return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
     if (AREA[tab] !== 'butce') return '';
     return '<nav class="areanav" aria-label="Bütçe bölümleri">' + [['butce', 'Plan ve sınırlar'], ['odemeler', 'Ödemeler'], ['hesaplar', 'Hesaplar'], ['islemler', 'İşlemler']].map(function (x) {
       return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
@@ -1546,6 +1561,7 @@
     if (tab === 'veri' && review) refreshReview();
     if (tab === 'hesaplar') trHint();
     if (tab === 'portfoy') PUI.afterRender();
+    if (SUI) SUI.afterRender();
     updateBadge();
   }
   function route() {
@@ -1583,6 +1599,7 @@
     if (t.dataset.pick) { var fi = $('#file-in'); fi.accept = t.dataset.pick; if (t.dataset.capture) fi.setAttribute('capture', t.dataset.capture); else fi.removeAttribute('capture'); fi.value = ''; fi.click(); return; }
     if (t.dataset.ask) { ask(t.dataset.ask); return; }
     var act = t.dataset.act;
+    if (SUI && SUI.onClick(act, t)) return;
     var A = {
       'example-clear': function () { if (confirm('Örnek verilerin tamamı silinsin mi? (Sonra kendi verilerini girersin.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); s.settings.view = document.body.classList.contains('detailed') ? 'detailed' : 'simple'; }, 'Örnek veri temizlendi.'); },
       'example-mine': function () { mutate(function (s) { s.isExample = false; s.transactions.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); if (s.trades) s.trades.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); }, 'Veriler artık senin verilerin olarak işaretlendi.'); },
@@ -1597,7 +1614,7 @@
         }
       },
       'load-example': function () { if (state.incomes.length + state.assets.length + state.transactions.length === 0 || confirm('Mevcut verilerinin yerine örnek veri yüklensin mi?')) mutate(function (s) { var view = s.settings && s.settings.view, n = S.exampleState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); if (view) s.settings.view = view; }, 'Örnek veri yüklendi.'); },
-      'clear-all': function () { if (confirm('TÜM veriler bu cihazdan silinecek. Emin misin? (Önce yedek almanı öneririz.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); }, 'Tüm veriler silindi.'); },
+      'clear-all': function () { if (confirm('TÜM veriler bu cihazdan silinecek. Emin misin? (Önce yedek almanı öneririz; ayrıca otomatik bir kopya alınır.)' + (SUI && SUI.syncEnabled() ? '\n\nDİKKAT: Eşitleme açık — silme diğer cihazlarına da yansır. Yalnızca bu cihazdan silmek için önce Yedek ve güvenlik sayfasından eşitlemeyi kapat.' : ''))) SUI.snapshot('Tümünü silmeden önce').then(function () { mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); }, 'Tüm veriler silindi.'); }); },
       'add': function () {
         var l = t.dataset.list;
         if (V2_LISTS[l]) return addV2(l, t.dataset.type);
@@ -1610,7 +1627,7 @@
         var inputs = $$('input[data-list="' + l + '"][data-field="name"]'); if (inputs.length) { inputs[inputs.length - 1].focus(); inputs[inputs.length - 1].select(); }
       },
       'del': function () { var l = t.dataset.list, id = t.dataset.id; if (V2_LISTS[l]) return deleteV2(l, id); mutate(function (s) { s[l] = s[l].filter(function (x) { return x.id !== id; }); }, 'Silindi.'); },
-      'export': function () { var copy = JSON.parse(JSON.stringify(state)); copy.exportedAt = new Date().toISOString(); copy.app = 'Finans Pusulası'; Store.download('finans-yedek-' + todayYmd() + '.json', JSON.stringify(copy, null, 2)); toast('Yedek indirildi.'); },
+      'export': function () { SUI.exportPlain(); },
       'import': function () { var b = $('#backup-in'); b.value = ''; b.click(); },
       'export-csv': exportCsv,
       'scen-reset': function () { mutate(function (s) { s.settings.scenarios = JSON.parse(JSON.stringify(C.DEFAULT_SCENARIOS)); }, 'Senaryolar varsayılana döndü.'); },
@@ -1657,6 +1674,7 @@
   }
   function onChange(e) {
     var el = e.target;
+    if (SUI && SUI.onChange(el)) return;
     if (PUI.onChange(el)) return;
     if (el.dataset.list && el.dataset.field) return onFieldChange(el);
     if (el.dataset.goal) {
@@ -1729,13 +1747,14 @@
     if (!file) return;
     file.text().then(function (txt) {
       var obj; try { obj = JSON.parse(txt); } catch (e) { throw new Error('Dosya JSON değil'); }
+      return CB && CB.isEnvelope(obj) ? SUI.decryptBackup(obj) : obj;
+    }).then(function (obj) {
       delete obj.exportedAt; delete obj.app;
       S.validateState(obj);
       var msg = 'Yedek dosyası geçerli' + (obj.migratedFrom ? ' (eski v' + obj.migratedFrom + ' yedeği; yeni sürüme dönüştürüldü, hiçbir veri silinmedi)' : '') + ': ' + obj.incomes.length + ' gelir, ' + obj.expenses.length + ' gider, ' + obj.assets.length + ' varlık, ' + obj.transactions.length + ' işlem, ' +
         obj.accounts.length + ' hesap, ' + obj.recurring.length + ' düzenli ödeme, ' + obj.installments.length + ' taksit, ' + obj.sinkingFunds.length + ' yıllık gider, ' + Object.keys(obj.limits).length + ' sınır, ' + (obj.trades || []).length + ' alım-satım, ' + (obj.goals || []).length + ' hedef, ' + Object.keys(obj.prices || {}).length + ' fiyat serisi.\nMevcut verilerin bu yedekle DEĞİŞTİRİLECEK. Devam edilsin mi?';
       if (!confirm(msg)) return;
-      mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, 'Yedek geri yüklendi.');
-      setView(state.settings.view);
+      return SUI.snapshot('Yedek geri yüklemeden önce').then(function () { restoreState(obj, 'Yedek geri yüklendi. (Önceki hâlin otomatik kopyalarda.)'); });
     }).catch(function (e) { toast('Yedek yüklenemedi, hiçbir şey değişmedi: ' + e.message); });
   }
   function onSubmit(e) {
@@ -1791,35 +1810,56 @@
     });
     $('#view-simple').onclick = function () { setView('simple'); };
     $('#view-detailed').onclick = function () { setView('detailed'); };
+    SUI = window.SecurityUI({
+      state: function () { return state; }, mutate: mutate, render: function () { if (state) render(); }, toast: toast, esc: esc, tip: tip, today: today, dateLabel: dateLabel, tab: function () { return tab; },
+      replaceState: replaceState, restoreState: restoreState, download: function (n, t) { Store.download(n, t); }, busyToast: function (m) { toast(m); }
+    });
+    // Kilit: kilit açıksa (veya veri diskte şifreliyse) önce PIN sorulur; anahtar yalnızca bellekte tutulur
+    var lockCfg = SUI.lockCfg();
+    Store.isLockedOnDisk().catch(function () { return false; }).then(function (enc) {
+      if (!lockCfg && !enc) return null;
+      $('#view').innerHTML = '';
+      return SUI.lockScreen(enc).then(function (key) { if (enc) { Store.setKey(key); return null; } Store.setKey(null); return Store.rekey(key); });
+    }).then(loadState, function (e) { console.error(e); toast('Açılamadı: ' + e.message); });
+  }
+  function loadState() {
     window.addEventListener('hashchange', route);
     Store.load().then(function (s) {
       if (s) {
         var oldSchema = s.schema;
         try {
-          if (typeof oldSchema === 'number' && oldSchema < S.SCHEMA_VERSION) { try { localStorage.setItem('finans-pusulasi:v' + oldSchema + '-oncesi-yedek', JSON.stringify(s)); } catch (e3) { /* */ } }
+          if (typeof oldSchema === 'number' && oldSchema < S.SCHEMA_VERSION) {
+            var pre = JSON.parse(JSON.stringify(s));
+            if (!Store.hasKey()) { try { localStorage.setItem('finans-pusulasi:v' + oldSchema + '-oncesi-yedek', JSON.stringify(pre)); } catch (e3) { /* */ } }
+            Store.addSnapshot(pre, 'v' + oldSchema + ' → v' + S.SCHEMA_VERSION + ' sürüm yükseltmesi öncesi', SM ? SM.counts(pre) : null).catch(function (e4) { console.error(e4); });
+          }
           var refreshExample = S.shouldRefreshExample(s);
           state = S.validateState(s);
-          if (oldSchema !== state.schema) { persist(); setTimeout(function () { toast('Verilerin yeni sürüme (v' + state.schema + ') güvenle taşındı. Hiçbir şey silinmedi; eski kopya da saklandı.'); }, 400); }
-          else if (refreshExample) {
-            var view = state.settings && state.settings.view;
+          lastSaved = JSON.parse(JSON.stringify(state));
+          if (refreshExample) {
+            var view0 = state.settings && state.settings.view;
             state = S.exampleState();
-            if (view) state.settings.view = view;
-            persist();
-            setTimeout(function () { toast('Örnek veri güncellendi — portföy yönetimi artık daha dolu. Bunlar hâlâ örnektir, gerçek verin değil. "Bunlar artık benim verilerim" dersen bir daha otomatik değişmez.'); }, 400);
+            if (view0) state.settings.view = view0;
+            lastSaved = null; persist();
+            setTimeout(function () { toast('Örnek veri güncellendi — artık temettü ve bedelsiz örnekleri de var. Bunlar hâlâ örnektir, gerçek verin değil. "Bunlar artık benim verilerim" dersen bir daha otomatik değişmez.'); }, 400);
           }
+          else if (oldSchema !== state.schema) { persist(); setTimeout(function () { toast('Verilerin yeni sürüme (v' + state.schema + ') güvenle taşındı. Hiçbir şey silinmedi; eski hâlin "Otomatik kopyalar"da saklandı.'); }, 400); }
         }
         catch (e) {
           console.error(e); state = null;
-          try { localStorage.setItem('finans-pusulasi:okunamayan-kayit-' + Date.now(), JSON.stringify(s)); } catch (e2) { /* */ }
+          if (Store.hasKey()) Store.addSnapshot(s, 'Doğrulanamayan kayıt').catch(function () { });
+          else { try { localStorage.setItem('finans-pusulasi:okunamayan-kayit-' + Date.now(), JSON.stringify(s)); } catch (e2) { /* */ } }
           toast('Kayıtlı veri doğrulanamadı; eski kayıt ayrı bir anahtara yedeklendi ve örnek veri açıldı. (Hata: ' + e.message + ')');
         }
       }
       if (!state) { state = S.exampleState(); persist(); }
-    }).catch(function (e) { console.error(e); state = S.exampleState(); }).then(function () {
+    }).catch(function (e) { console.error(e); if (e && e.code === 'LOCKED') { location.reload(); return; } state = S.exampleState(); }).then(function () {
+      if (!state) return;
       setView(state.settings.view || 'simple');
-      if (recordNw()) Store.save(state).catch(function () { /* */ });
+      if (recordNw()) persist();
       route();
       maybeNotify();
+      SUI.start();
     });
   }
   init();

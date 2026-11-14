@@ -1,4 +1,4 @@
-# Finans Pusulası — v4.0
+# Finans Pusulası — v5.0
 
 Bütçe, birikim ve **helal (faizsiz)** yatırım planı için kişisel finans uygulaması.
 Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir, tek klasör hâlinde her yere taşınabilir.
@@ -7,8 +7,11 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 
 - **Sade görünüm:** finans bilmeyen biri de anlar.
 - **Detaylı görünüm:** formüller, oranlar, enflasyonlu/enflasyonsuz değerler, varsayımlar.
-- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 105 otomatik birim testi + tarayıcıda uçtan uca testler var.
+- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 135 otomatik birim testi + tarayıcıda uçtan uca testler var.
 - **Canlı grafikler (v4):** Ana sayfa, Bütçe ve Portföy Yönetimi açılışında hareketli, dokunmatik grafikler: net varlık eğrisi (1A/3A/6A/1Y/Tümü), birikim halkası, gelir → gider → birikim akışı, hedef halkaları, 6 aylık gelir/harcama çubukları, sayılarda sayaç animasyonu. Üzerine gelince ya da dokununca kuruşu kuruşuna tutar görünür; veri değişince grafik yumuşak geçişle anında güncellenir. Sistem "hareketi azalt" ayarında animasyonlar kapanır.
+- **Yedek, eşitleme ve kilit (v5):** ana sayfada görsel "Veri güvenliği" kutuları (son yedek halkası, eşitleme, kilit, kalıcı depo) ve tek dokunuşla **💾 Yedeği indir**; haftalık (ayarlanabilir) yedek hatırlatması; otomatik kopyalar (son 10 sürüm, geri yüklenebilir); **uçtan uca şifreli cihazlar arası eşitleme** (kendi GitHub hesabındaki gizli Gist, ücretsiz); isteğe bağlı **PIN/parola kilidi** (veri cihazda şifreli, hareketsizlikte otomatik kilit, destekleyen cihazda parmak izi/yüz ile açma).
+- **Temettü, bedelsiz, bedelli (v5):** yeni işlem türleri kâr/zarara, maliyete ve getiri hesabına (XIRR/TWR) doğru girer.
+- **Otomatik TEFAS ve BIST fiyatı (v5):** TEFAS fonları ücretsiz bir TEFAS veri servisinden, BIST hisseleri TradingView'in herkese açık tarayıcısından (15 dk gecikmeli) çekilir; olmazsa liste yapıştır / ekran görüntüsünden oku / ✎ ile tek dokunuşla düzelt.
 
 ## 1. Nasıl açılır?
 
@@ -37,11 +40,12 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 | Portföy › Getiri | Para ağırlıklı yıllık getiri (XIRR), zaman ağırlıklı getiri (TWR), reel (TÜFE'den arındırılmış) getiri, değer grafiği, altın / dolar / BIST 100 kıyası, aylık TÜFE tablosu |
 | Portföy › Hedefler | Birden fazla hedef (tutar, tarih, birikimden pay, süzülme yolu profili: Temkinli / Dengeli / Büyüme), her hedefe ayrı ilerleme ve aylık ihtiyaç |
 | Portföy › Risk ve helal | Kurallar (tek varlık üst sınırı, riskli toplam üst sınırı, önce acil fon, en az varlık sayısı) ve uyarılar; varlık başına helal etiketi tablosu |
-| Portföy › Fiyatlar | Ücretsiz kaynaklardan "Fiyatları güncelle" (kontrol tablosuyla), elle fiyat, toplu fiyat yapıştırma, kaydedilmiş fiyat geçmişi, isteğe bağlı Twelve Data anahtarı |
+| Portföy › Fiyatlar | Ücretsiz kaynaklardan "Fiyatları güncelle" (kontrol tablosuyla; TEFAS fonu ve BIST hissesi dahil), elle fiyat, her satırda ✎ hızlı düzeltme, toplu fiyat yapıştırma, kaydedilmiş fiyat geçmişi (kaynak + saat), isteğe bağlı Twelve Data anahtarı |
 | Portföy Analizi | Yakında |
 | Veri ekle | Üç tür: harcama/gelir kayıtları, **aracı kurum alım-satım dökümü**, **fiyat listesi**. Excel/CSV, PDF, fotoğraf (OCR veya yapay zekâ) |
 | Yapay zekâ asistanı | İstediğin yapay zekâyı seç, verilerine (portföy dahil) göre Türkçe soru sor |
 | Ayarlar ve yedek | Yedek al/geri yükle, CSV indir, acil fon süresi, enflasyon ve senaryo varsayımları |
+| **Yedek, eşitleme, kilit** (`#guvenlik`) | Son yedek, şifreli yedek, yedek hatırlatma sıklığı, otomatik kopyalar ve geri yükleme, kalıcı depolama izni, cihazlar arası eşitleme (kurulum sihirbazı, son eşitleme zamanı, çakışmalar), uygulama kilidi |
 
 Eski `#varliklar` bağlantısı otomatik olarak Portföy › Varlıklar'a yönlenir.
 
@@ -106,9 +110,16 @@ Denemek için `ornek-dosyalar/` klasöründe örnek CSV, Excel, PDF (taksitli ek
 | BIST 100 (XU100) | Truncgil Finans | — | ✓ (yalnızca güncel değer) |
 | Kripto (BTC, ETH…) | CoinGecko | Binance | ✓ |
 | ABD ETF'leri (SPUS, HLAL…) | Twelve Data — **senin ücretsiz anahtarınla** (anahtar yalnızca bu cihazda saklanır, yedeğe girmez) | — | Anahtar yoksa açık mesaj; anahtar girilince çalışır |
-| Fiyat geçmişi (kıyas, TWR için) | Frankfurter zaman serisi (dolar), Currency API (tarihli ons altın → gram), CoinGecko (kripto) | — | ✓ |
+| **TEFAS fonları (v5)** | TEFAS Fon Analiz (`fon.yourapiservice.com`) — TEFAS'ın yayınladığı birim pay fiyatını günde bir sunan ücretsiz, anahtarsız ara servis (resmi değil) | — | ✓ https ve dosyadan test edildi (KTV 8,326309 · 13.11.2026) |
+| **BIST hisseleri (v5)** | TradingView herkese açık tarayıcısı (`scanner.tradingview.com`) — **resmi değil, 15 dk gecikmeli** | — | ✓ https ve dosyadan test edildi (ASELS 345,50 TL) |
+| Fiyat geçmişi (kıyas, TWR için) | Frankfurter zaman serisi (dolar), Currency API (tarihli ons altın → gram), CoinGecko (kripto), TEFAS Fon Analiz (fonların son 1 yılı) | — | ✓ |
 
-**Ücretsiz tarayıcı kaynağı olmayanlar:** TEFAS fon fiyatları, Borsa İstanbul hisseleri (ASELS, THYAO…), TCMB kurları ve Yahoo Finance tarayıcıdan erişime (CORS) kapalı olduğu için çekilmez. Bunları **elle** gir veya Veri ekle › **Fiyat listesi** ile CSV/Excel olarak yapıştır (ör. `KTV;3,301234`). BIST 100 geçmişi de elle/CSV ile girilir.
+Varlıklar'da fiyat kaynağını **"TEFAS fonu"** (fon kodu, ör. `KTV`) veya **"BIST hissesi"** (hisse kodu, ör. `ASELS`) seç. Elle girdiğin eski fiyatlar yeni kaynağa taşınır, kaybolmaz.
+
+**Doğrudan erişilemeyenler:** tefas.gov.tr, Borsa İstanbul, İş Yatırım, TCMB ve Yahoo Finance tarayıcı erişimine (CORS) kapalı (Kasım 2026'da yeniden denendi). Otomatik kaynak çalışmazsa:
+- Veri ekle › **Fiyat listesi**: Excel/CSV, PDF, **ekran görüntüsü** (ücretsiz OCR) veya **📋 listeyi yapıştır** (her satır `KOD fiyat`, ör. `KTV 8,326309`; tarih isteğe bağlı). Kontrol tablosunda kaynak ve okunma saati görünür, fiyatı satırda düzeltebilirsin; kaydedilen her fiyatta kaynak ve saat saklanır.
+- Portföy › Fiyatlar veya Alım-satım › Pozisyonlar'da fiyatın yanındaki **✎** ile tek dokunuşla düzelt.
+- BIST 100 geçmişi elle/CSV ile girilir.
 
 ## 4. Yapay zekâ anahtarı ekleme
 
@@ -129,7 +140,30 @@ Denemek için `ornek-dosyalar/` klasöründe örnek CSV, Excel, PDF (taksitli ek
 - Model adları zamanla değişir: "Modelleri listele" ile güncel listeyi çek, kutudan seç.
 - "Verilerimin özetini gönder" açıkken soruyla birlikte bütçe/varlık/hedef **özeti** gider (tam işlem listesi değil). Ne gönderildiğini "Gönderilecek özeti gör" ile görebilirsin.
 
-## 5. Yedekleme (önemli)
+## 5. Yedek, eşitleme ve kilit (v5)
+
+### Yedek
+- Ana sayfadaki **Veri güvenliği** kartında son yedeğin ne zaman alındığı (halka: dolu = yeni yedek) ve **💾 Yedeği indir** düğmesi var. Hatırlatma sıklığı (kapalı / 3 gün / haftada bir / 2 hafta / ayda bir) **Yedek, eşitleme, kilit** sayfasından seçilir; süre dolunca üstte bant çıkar.
+- **🔐 Şifreli yedek:** parolayla (PBKDF2-SHA256 600.000 tur + AES-256-GCM) şifrelenmiş dosya. Geri yüklerken parola sorulur. Normal (açık) yedekler de her zaman yüklenir.
+- **Otomatik kopyalar:** günün ilk açılışında, her 30 dakikalık çalışmada, sürüm yükseltmesinden, geri yüklemeden, eşitlemeden ve "tümünü sil"den önce bu cihazda (IndexedDB) kopya alınır; son N sürüm (varsayılan 10) tutulur, tek tıkla geri yüklenir (geri yükleme de önce kopya alır).
+- **Kalıcı depo:** uygulama tarayıcıdan "verimi silme" izni ister (`navigator.storage.persist()`). İzin yoksa kart sarı "korumasız" yazar: tarayıcı yer açmak için veriyi silebilir → düzenli yedek al veya eşitlemeyi aç. (Telefonda ana ekrana eklemek izni genelde sağlar.)
+
+### Cihazlar arası eşitleme — kurulum (bir kez, ~3 dakika)
+Veriler **senin GitHub hesabındaki gizli bir Gist** dosyasında, **senin eşitleme parolanla şifreli** durur. GitHub dahil kimse içeriği okuyamaz. Ücretsizdir, sunucu yoktur.
+1. GitHub hesabın yoksa <https://github.com/signup> adresinden ücretsiz aç.
+2. Uygulamada **Yedek, eşitleme, kilit › Cihazlar arası eşitleme › Eşitlemeyi kur**'a bas, **"GitHub'da anahtar sayfasını aç"** bağlantısını aç. Sayfa yalnızca **gist** izni seçili gelir. **Expiration** için "No expiration" (veya en uzun süre) seç, başka kutu işaretleme, **Generate token**'a bas, `ghp_…` anahtarını kopyala. (İstersen ince ayarlı anahtar: Account permissions → **Gists: Read and write**, depo erişimi yok.)
+3. Anahtarı yapıştır → **Bağlantıyı dene**.
+4. En az 10 karakterlik bir **eşitleme parolası** belirle (bir yere yaz; unutursan buluttaki kopya açılamaz, cihazdaki verin etkilenmez).
+5. **Bağla ve eşitle**. Diğer cihazda (telefon/bilgisayar) aynı siteyi aç, **aynı anahtar ve aynı parola** ile 2–5. adımları tekrarla. Yeni cihazda yalnızca örnek veri varsa buluttaki verin gelir; iki tarafta da veri varsa birleştirilir.
+
+Sonrası otomatik: uygulama açılınca ve her kayıttan birkaç saniye sonra eşitlenir; başlıktaki **☁ Eşitlendi · … önce** düğmesi ile elle eşitlenir. Birleştirme kayıt kayıt yapılır (her kaydın değişiklik zamanı ve silinenler için silme izi tutulur): farklı kayıtlardaki değişiklikler iki tarafa geçer; aynı kayıt iki cihazda değiştiyse yenisi kazanır, **diğeri kaybolmaz** — "Çakışmalar" listesinde durur, "Diğer sürümü kullan" ile geri alınır. Bir cihazda silinip diğerinde değiştirilen kayıt korunur. Birleşen veri doğrulanamazsa hiçbir şey değişmez. Anahtar ve parola yalnızca o cihazda saklanır (kilit açıksa şifreli); yedek dosyasına ve buluta girmez.
+
+### Uygulama kilidi
+- **Yedek, eşitleme, kilit › Uygulama kilidi**: 6–12 haneli PIN veya en az 8 karakterlik parola. Açılınca bu cihazdaki tüm veri (kayıtlar, otomatik kopyalar, eşitleme anahtarı) rastgele bir anahtarla AES-256-GCM ile şifrelenir; o anahtar PIN'den PBKDF2-SHA256 600.000 turla türetilen anahtarla kilitlenir. 5 hatalı denemeden sonra bekleme süresi artar.
+- Hareketsizlikte otomatik kilit (1, 5, 15 dk, 1 saat veya kapalı). Destekleyen telefon/bilgisayarda (https, WebAuthn PRF) **parmak izi / yüz ile aç**; PIN her zaman yedek yol olarak kalır.
+- ⚠️ **PIN'i unutursan bu cihazdaki veri açılamaz.** Kurtarma yalnızca **yedek dosyası** (normal veya şifreli) veya **bulut eşitlemesi** ile olur: kilit ekranında "PIN'imi unuttum" → bu cihazdaki veriyi sil → yedeği yükle ya da eşitlemeyi yeniden kur.
+
+### Genel
 
 - **Ayarlar ve yedek > Yedek indir** → `finans-yedek-YYYY-AA-GG.json`. Ayda en az bir kez al; Google Drive, USB vb. bir yere koy.
 - **Yedekten geri yükle:** dosya önce sıkı kontrol edilir; bozuksa hiçbir şey değişmez. Geçerliyse ne yükleneceği gösterilir ve onay istenir.
@@ -139,9 +173,11 @@ Denemek için `ornek-dosyalar/` klasöründe örnek CSV, Excel, PDF (taksitli ek
 
 ### Veri sürümü (şema) ve eski veriler
 
-v4 şemayı değiştirmez (hâlâ 3). Yalnızca isteğe bağlı `nwHistory` (net varlık geçmişi: `{ d: 'YYYY-MM-DD', v: kuruş }`) eklenir: her kayıtta bugünün değeri yazılır, son 120 gün günlük, daha eskisi ay sonu olarak tutulur. Eski yedekler aynen yüklenir; geçmiş, yükledikten sonra birikmeye başlar. Örnek veride geçmiş, bugünün gerçek hesaplanan değeriyle biten örnek bir seridir.
+**v5 → şema 4:** temettü/bedelsiz/bedelli işlem türleri, eşitleme bilgisi (`_sync`: kayıt başına değişiklik zamanı ve silme izleri) ve yedek hatırlatma ayarı eklenir; var olan hiçbir kayıt değişmez. Yükseltmeden önce eski hâl **Otomatik kopyalar**'a alınır. v1–v4'ün tüm yedek dosyaları yüklenir ve dönüştürülür.
 
-- Veri biçimi sürümü: **şema 3**. v1.0 ve v2 verisi ilk açılışta otomatik ve güvenle dönüştürülür; dönüştürmeden önceki hâli tarayıcıda yedek olarak saklanır (`finans-pusulasi:v1-oncesi-yedek`, `finans-pusulasi:v2-oncesi-yedek`). v2→v3'te mevcut varlıklar, hedef ve kurlar aynen korunur; kurlar fiyat geçmişine ilk nokta olarak eklenir, alım-satım defteri boş başlar.
+(v4 notu) v4 şemayı değiştirmemişti (3). Yalnızca isteğe bağlı `nwHistory` (net varlık geçmişi: `{ d: 'YYYY-MM-DD', v: kuruş }`) eklenir: her kayıtta bugünün değeri yazılır, son 120 gün günlük, daha eskisi ay sonu olarak tutulur. Eski yedekler aynen yüklenir; geçmiş, yükledikten sonra birikmeye başlar. Örnek veride geçmiş, bugünün gerçek hesaplanan değeriyle biten örnek bir seridir.
+
+- Veri biçimi sürümü: **şema 4**. v1.0, v2 ve v3 verisi ilk açılışta otomatik ve güvenle dönüştürülür; dönüştürmeden önceki hâli **Otomatik kopyalar**'da saklanır (eski sürümlerin bıraktığı `finans-pusulasi:v1-oncesi-yedek` / `v2-oncesi-yedek` anahtarları da durur). v2→v3'te mevcut varlıklar, hedef ve kurlar aynen korunur; kurlar fiyat geçmişine ilk nokta olarak eklenir, alım-satım defteri boş başlar.
 - Eski (v1, v2) yedek dosyaları geri yüklenebilir; yüklenirken dönüştürülür. Uygulamanın bilmediği daha yeni bir şemadaki yedek, veri bozulmasın diye reddedilir.
 
 ## 6. İnternete ücretsiz koyma (telefondan da aç)
@@ -163,7 +199,8 @@ Uygulama derleme gerektirmez; klasör olduğu gibi yayınlanır. Verilerin yine 
 ## 7. Testler
 
 - Tarayıcıda: `tests/tests.html` dosyasını aç (veya Ayarlar > Detaylı görünüm > "Hesap testlerini çalıştır").
-- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 105 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme, kumbara, karşılaştırma, v1→v2→v3 dönüştürme, yedek doğrulama; v3: ortalama maliyet ve K/Z, fazla satış reddi, XIRR, TWR, reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat sıçrama/eskime kontrolü, aracı kurum dökümü ve toplam kontrolü, fiyat kaynağı ayrıştırıcıları; v4: net varlık geçmişi kaydı, aralık ve değişim hesabı, örnek geçmişin bugünün değeriyle tam bitmesi).
+- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 135 test: 105 temel + 30 v5 (`tests/run-tests-v5.js`: şifreleme gidiş-dönüş, yanlış parola/bozuk veri reddi, rastgele tuz/IV; kilit oluştur/aç/yanlış PIN/PIN değiştir, biyometrik sarma, deneme sınırı; eşitleme damgaları, birleştirme, çakışma ve "diğer sürüm", silme izi, silme×değiştirme, fiyat serisi birleşimi, sahte Gist ile iki cihaz turu, yanlış eşitleme parolası; bedelsiz/birleşme/temettü/bedelli hesapları ve XIRR/TWR akışları; v3→v4 taşıma; TEFAS/TradingView ayrıştırıcıları; yapıştırılan fiyat listesi). Önceki 105 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme, kumbara, karşılaştırma, v1→v2→v3 dönüştürme, yedek doğrulama; v3: ortalama maliyet ve K/Z, fazla satış reddi, XIRR, TWR, reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat sıçrama/eskime kontrolü, aracı kurum dökümü ve toplam kontrolü, fiyat kaynağı ayrıştırıcıları; v4: net varlık geçmişi kaydı, aralık ve değişim hesabı, örnek geçmişin bugünün değeriyle tam bitmesi).
+- v5 uçtan uca testi (`e2e_v5.py`, 390 px mobil, dosyadan ve http'den; **GitHub API sahte** — gerçek hesaba dokunulmaz): eşitleme sihirbazı, gizli ve şifreli Gist, iki cihaz arasında birleştirme, ayar çakışması ve "diğer sürümü kullan", yedek durumu ve indirme, temettü/bedelsiz formu, fiyat listesi yapıştırma, ✎ hızlı düzeltme, kilit (uyarı onayı, diskte şifreli, kilit ekranı, yanlış/doğru PIN), konsol hatası yok: 45 kontrol.
 - Uçtan uca testler (Chrome, dosyadan ve http'den, 390 px mobil, canlı fiyat kaynaklarıyla ve onlarsız) ayrı bir klasörde Playwright ile çalıştırıldı: 62 kontrol (canlıda 68), konsol hatası yok. v4 grafik testi (`e2e_v4.py`): grafiklerin çizilmesi, sayaçların tam tutara oturması, aralık düğmeleri, ipuçları, veri değişince anında güncelleme, koyu tema, hareketi azalt, 390 px mobil ve dış ağ kapalıyken (çevrimdışı) çalışma.
 
 ## 8. Klasör yapısı
@@ -176,12 +213,17 @@ js/calc.js            Bütçe, acil fon, süzülme yolu, aylık plan, projeksiyo
 js/ledger.js          Hesaplar, döviz/altın, transfer, sınırlar, düzenli ödemeler, kart ve taksit, kumbara, aylık karşılaştırma
 js/importparse.js     Tarih/tutar ayrıştırma, sütun tespiti, PDF/OCR satırları, kategori, mükerrer
 js/portfolio.js       Alım-satım defteri, maliyet, XIRR/TWR/reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat kontrolü, döküm ayrıştırma
-js/prices.js          Ücretsiz fiyat kaynakları (Frankfurter, Truncgil, gold-api, CoinGecko, Binance, Twelve Data, Currency API) ve ayrıştırıcılar
+js/prices.js          Ücretsiz fiyat kaynakları (Frankfurter, Truncgil, gold-api, CoinGecko, Binance, Twelve Data, Currency API, TEFAS Fon Analiz, TradingView) ve ayrıştırıcılar
 js/chartdata.js      Grafik verisi (net varlık geçmişi, zaman aralığı, değişim) — saf, test edilir
 js/charts.js         Canlı grafikler (ECharts sarmalayıcı: alan, halka, çubuk, akış, ilerleme halkası, sayaçlar)
 js/portfolio-ui.js    Ana sayfa kartları, Portföy Yönetimi ve Portföy Analizi ekranları
-js/sample.js          Örnek veri, boş durum, şema dönüştürme (v1→v2→v3), yedek doğrulama
-js/store.js           IndexedDB + localStorage saklama
+js/sample.js          Örnek veri, boş durum, şema dönüştürme (v1→v2→v3→v4), yedek doğrulama
+js/store.js           IndexedDB saklama, kilitliyken şifreli kayıt, otomatik kopyalar, kalıcı depo izni
+js/cryptobox.js       Web Crypto: PBKDF2 + AES-256-GCM şifreli zarf (yedek, eşitleme)
+js/syncmerge.js       Eşitleme birleştirme/çakışma mantığı (saf, test edilir)
+js/sync.js            GitHub Gist istemcisi ve eşitleme turu
+js/lock.js            Uygulama kilidi çekirdeği (PIN/parola, biyometrik sarma)
+js/security-ui.js     Yedek, eşitleme ve kilit ekranları
 js/ai.js              Yapay zekâ sağlayıcıları (resmi REST API'ler)
 js/app.js             Arayüz
 vendor/               Apache ECharts 5.6 (Apache-2.0), SheetJS (Apache-2.0), pdf.js (Apache-2.0), Tesseract.js 5.1.1 + Türkçe dil verisi (Apache-2.0), heic2any (MIT) — yerel kopya, CDN gerekmez
@@ -189,13 +231,13 @@ tests/                Otomatik testler (fixture-v1.js: dönüştürme testi içi
 ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek veri)
 ```
 
-## Sınırlamalar (v3)
+## Sınırlamalar
 - Fiyatlar yalnızca sen "Fiyatları güncelle" dediğinde ve onayladığında kaydedilir; arka planda otomatik güncelleme yok. Örnek verideki tüm fiyatlar **ÖRNEK** etiketlidir.
-- TEFAS fonları, BIST hisseleri ve TCMB kurları ücretsiz tarayıcı kaynağı olmadığı için elle veya fiyat listesiyle girilir. BIST 100 geçmişi elle girilir. ABD ETF fiyatı için ücretsiz Twelve Data anahtarı gerekir.
+- TEFAS fon ve BIST hisse fiyatları resmi olmayan ücretsiz kaynaklardan gelir (TEFAS Fon Analiz ara servisi; TradingView 15 dk gecikmeli). Bu servisler kapanır veya değişirse fiyat "alınamadı" der, eski fiyat kalır; elle / liste / ekran görüntüsü ile girilir. TCMB kurları ve BIST 100 geçmişi elle girilir. ABD ETF fiyatı için ücretsiz Twelve Data anahtarı gerekir.
 - Frankfurter kurları Avrupa Merkez Bankası referansıdır (iş günü, TCMB/piyasa kurundan biraz farklı olabilir). Uluslararası ons fiyatından hesaplanan gram altın kuyumcu alışından farklı olabilir.
 - TÜFE otomatik çekilmez; aylık değeri TÜİK bülteninden girersin. Girilmeyen aylar reel getiriye katılmaz (hangi aya kadar hesaplandığı yazılır).
 - Kıyas ve TWR, fiyat geçmişindeki boşluklarda en yakın fiyatı kullanır ("yaklaşık" etiketi). Getiri hesabına yalnızca alım-satım kaydı olan varlıklar girer.
-- Aracı kurum dökümü okuma, belgenin yazım biçimine bağlıdır; her satır kontrol tablosundan geçer. Temettü (kâr payı), bölünme (split) ve bedelsiz sermaye artırımı için ayrı işlem türü yok; temettü getiriye katılmaz, bölünme/bedelsiz adet düzeltmesi elle yapılır.
+- Aracı kurum dökümü okuma, belgenin yazım biçimine bağlıdır; her satır kontrol tablosundan geçer. (v5) Temettü, bedelsiz/bölünme ve bedelli artık işlem türü olarak girilir; dökümden otomatik okunmaz (aktarımda yalnızca alış/satış satırları tanınır), elle eklenir. Yabancı paralı temettüde o günkü kur gerekir.
 - Portföy Analizi alanı henüz yapım aşamasındadır.
 - Hesap bakiyeleri elle girilir; transferler bakiyeyi değiştirir, sıradan harcama kayıtları değiştirmez (bankayla mutabakat yapılmaz).
 - Hatırlatma bildirimleri yalnızca uygulama açıkken (günde en fazla bir kez) gösterilir; arka planda push bildirimi yoktur.
@@ -207,6 +249,8 @@ ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek ver
 - HEIC (iPhone) fotoğrafları otomatik JPEG'e çevrilir. Fotoğraf yan yatık çekilmişse (EXIF bilgisi yoksa) OCR okuyamayabilir; fişi dik çek.
 - Fiş okunamazsa bile kontrol tablosunda düzenlenebilir bir satır ve okunan ham metin gösterilir; tutarı elle yazıp kaydedebilirsin.
 - Site dosyadan (file://) açıldığında OCR motoru jsDelivr CDN'den yüklenir (tarayıcı yerel worker'a izin vermez).
-- Cihazlar arası otomatik eşitleme yok; yedek dosyasıyla taşınır.
+- (v5) Eşitleme için GitHub hesabı ve gist izinli anahtar gerekir. Google Drive seçeneği yok: tarayıcıdan Drive'a yazmak için kayıtlı bir Google OAuth istemci kimliği gerekir (bu da ücretsiz ama Google Cloud'da proje açmayı ister). Çakışmada "yeni" kararı cihaz saatine göre verilir; cihaz saatleri çok farklıysa yanlış sürüm kazanabilir (kaybolmaz, Çakışmalar'da durur). Eşitleme iki cihaz aynı anda yazarsa bir sonraki turda düzelir.
+- (v5) Kilit, yapay zekâ anahtarlarını şifrelemez (ayrı saklanır). Biyometrik açma yalnızca https'te ve WebAuthn PRF destekleyen tarayıcılarda (güncel Chrome/Android, Safari 18+/iOS 18+, Windows Hello) görünür. Kilit tarayıcı/cihaz düzeyinde bir önlemdir; açıkken ekrana bakan biri veriyi görebilir.
+- (v5) PIN unutulursa ve yedek/eşitleme yoksa veri kurtarılamaz (tasarım gereği).
 
 Bu uygulama bir planlama aracıdır, yatırım tavsiyesi değildir.
