@@ -515,10 +515,10 @@
   function exampleAn() { var ex = S.exampleState('2026-11', '2026-11-13'), eff = L.effectiveState(ex, '2026-11-13'), an = C.analyze(eff, '2026-11'); return { ex: ex, eff: eff, an: an }; }
   test('Çoklu hedef raporu: paylar toplamı korur, hedef dağılımı %100', function () {
     var x = exampleAn(), r = PF.goalsReport(x.eff, x.an);
-    eq(r.goals.length, 4); eq(M.sum(r.goals.map(function (g) { return g.fromPool; })) + r.unallocated, r.unassigned);
+    eq(r.goals.length, 3); eq(M.sum(r.goals.map(function (g) { return g.fromPool; })) + r.unallocated, r.unassigned);
     eq(M.sum(r.goals.map(function (g) { return g.monthly; })) + r.unallocatedMonthly, x.an.plan.surplus);
     var t = r.combinedTarget; eq(t.safe + t.medium + t.risky, 10000);
-    ok(r.goals[0].assigned === 0 && r.goals[3].assigned > 0, 'atanmış varlık emeklilik hedefinde');
+    ok(r.goals[0].assigned === 0 && r.goals[2].assigned > 0, 'atanmış varlık emeklilik hedefinde');
   });
   test('Tek hedef (eski düzen): patchAnalysis hiçbir şeyi değiştirmez', function () {
     var x = exampleAn(); x.eff.goals = [{ id: 'g', name: 'Ev', target: 150000000, targetYm: '2031-11', glide: 'standard', shareBp: 10000 }]; x.eff.assets.forEach(function (a) { delete a.goalId; });
@@ -578,6 +578,42 @@
     eq(sm.totalPLTL, M.add(sm.unrealizedTL, sm.realizedTL));
     var rr = PF.returnsReport(x.ex, '2026-11-13'); ok(rr.twr && rr.xirr != null && rr.inflation.partial); ok(rr.benchmarks.every(function (b) { return b.sim.ok; }), 'kıyaslar hesaplanır');
     var p = PF.positions(x.ex, x.eff, x.an, '2026-11-13'); eq(M.sum(p.map(function (q) { return q.valueTL; })), M.sub(x.an.assets.total, x.an.emergency.current));
+  });
+  test('Örnek portföy dolu ve tutarlı: 3 hedef, zengin geçmiş, getiri bugünkü değer eşleşir, uyarı ve sapma var', function () {
+    var x = exampleAn(), ex = x.ex, sm = PF.summary(ex, '2026-11-13'), rr = PF.returnsReport(ex, '2026-11-13');
+    eq(ex.exampleRevision, S.EXAMPLE_REVISION);
+    eq(ex.goals.length, 3);
+    eq(ex.goals.map(function (g) { return g.name; }).join(','), 'Ev peşinatı,Araba peşinatı,Emeklilik');
+    eq(M.sum(ex.goals.map(function (g) { return g.shareBp; })), 10000);
+    ok(ex.assets.length >= 10 && ex.assets.length <= 12, '10–12 varlık, gelen: ' + ex.assets.length);
+    ok(ex.trades.length >= 24, '12–18 aylık geçmiş, işlem sayısı: ' + ex.trades.length);
+    ok(ex.trades.filter(function (t) { return t.side === 'sell'; }).length >= 2);
+    ok(ex.trades.some(function (t) { return t.fee > 0; }));
+    ok(ex.trades.every(function (t) { return t.source === 'örnek' && t.date <= '2026-11-13' && t.date >= '2025-05-01'; }));
+    var syms = ex.assets.map(function (a) { return a.symbol; });
+    ['KTV', 'KTN', 'ALTIN', 'GUMUS', 'ASELS', 'EREGL', 'SPUS', 'HLAL', 'BTC', 'ETH'].forEach(function (s) { ok(syms.indexOf(s) >= 0, s); });
+    sm.rows.forEach(function (r) {
+      eq(r.ledger.errors, []);
+      eq(r.asset.value, r.mvTL);
+      ok(r.price && /ÖRNEK/.test(r.price.src), r.asset.name + ' fiyat kaynağı ÖRNEK');
+      ok(r.price.at && /\+03:00$/.test(r.price.at), r.asset.name + ' saat damgası');
+    });
+    ok(sm.realizedTL > 0, 'satışlardan gerçekleşen kâr');
+    eq(rr.valueNow, sm.mvTL, 'getiri bugünkü değer = alım-satımlı portföy toplamı');
+    ok(rr.twr && rr.xirr != null && rr.realTwr != null && rr.inflation.partial);
+    ok(rr.benchmarks.every(function (b) { return b.sim.ok; }), 'altın/dolar/BIST kıyasları');
+    var pos = PF.positions(ex, x.eff, x.an, '2026-11-13');
+    var risk = PF.riskReport(ex, x.an, pos);
+    var warns = risk.items.filter(function (i) { return i.level === 'warn' || i.level === 'danger'; });
+    ok(warns.length >= 1 && warns.length <= 2, '1–2 tetiklenen uyarı, gelen: ' + warns.map(function (w) { return w.id + ':' + w.level; }).join(','));
+    ok(warns.some(function (w) { return w.id === 'halal'; }) && warns.some(function (w) { return w.id === 'emergency'; }));
+    var tgt = PF.goalsReport(x.eff, x.an).combinedTarget;
+    var rb = PF.rebalance(pos, tgt, 0, { tierBandBp: 500, assetBandBp: 300 });
+    ok(rb.needsRebalance, 'hedeften sapma var, dengeleme önerisi çıkar');
+    ok(S.shouldRefreshExample({ isExample: true, schema: 3, exampleRevision: 1 }));
+    ok(!S.shouldRefreshExample({ isExample: true, schema: 3, exampleRevision: S.EXAMPLE_REVISION }));
+    ok(!S.shouldRefreshExample({ isExample: false, schema: 3, exampleRevision: 1 }), 'gerçek veri yenilenmez');
+    ok(!S.shouldRefreshExample({ isExample: true, schema: 2 }), 'v2 göç kaydı otomatik yenilenmez');
   });
   test('Göç v2 → v3: kurlardan fiyat noktası, varsayılan hedef, eski veri korunur', function () {
     var v2 = S.exampleState('2026-11', '2026-11-13'); v2.schema = 2; delete v2.trades; delete v2.prices; delete v2.cpi; delete v2.goals; v2.assets = v2.assets.filter(function (a) { return a.tracking !== 'trades'; }).map(function (a) { return { id: a.id, name: a.name, cls: a.cls === 'crypto' ? 'other' : a.cls, risk: a.risk, emergency: a.emergency, value: a.value }; }); v2.accounts.forEach(function (a) { delete a.halal; }); delete v2.settings.riskRules; delete v2.settings.rebalance;

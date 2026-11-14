@@ -74,7 +74,9 @@
     var b = $('#banner');
     if (state.isExample) {
       b.innerHTML = '<div class="banner example" role="note"><div class="grow"><b>ÖRNEK VERİ</b> — Gördüğün rakamlar örnektir, gerçek değildir. Kendi rakamlarını girmeye hazır olduğunda temizle veya üzerine yaz.</div>' +
-        '<button class="btn small" data-act="example-mine">Bunlar artık benim verilerim</button><button class="btn small danger" data-act="example-clear">Örnek veriyi temizle</button></div>';
+        '<button class="btn small" data-act="example-mine">Bunlar artık benim verilerim</button>' +
+        '<button class="btn small" data-act="refresh-example">Örnek veriyi yenile</button>' +
+        '<button class="btn small danger" data-act="example-clear">Örnek veriyi temizle</button></div>';
     } else b.innerHTML = '';
   }
 
@@ -1498,8 +1500,18 @@
     var act = t.dataset.act;
     var A = {
       'example-clear': function () { if (confirm('Örnek verilerin tamamı silinsin mi? (Sonra kendi verilerini girersin.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); s.settings.view = document.body.classList.contains('detailed') ? 'detailed' : 'simple'; }, 'Örnek veri temizlendi.'); },
-      'example-mine': function () { mutate(function (s) { s.isExample = false; s.transactions.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); }, 'Veriler artık senin verilerin olarak işaretlendi.'); },
-      'load-example': function () { if (state.incomes.length + state.assets.length + state.transactions.length === 0 || confirm('Mevcut verilerinin yerine örnek veri yüklensin mi?')) mutate(function (s) { var n = S.exampleState(); Object.keys(n).forEach(function (k) { if (k !== 'settings') s[k] = n[k]; }); }, 'Örnek veri yüklendi.'); },
+      'example-mine': function () { mutate(function (s) { s.isExample = false; s.transactions.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); if (s.trades) s.trades.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); }, 'Veriler artık senin verilerin olarak işaretlendi.'); },
+      'refresh-example': function () {
+        if (!state.isExample) return;
+        if (confirm('Örnek veri baştan yüklensin mi? Bu sayfadaki örnek rakamlar (ve üzerlerine yazdıkların) silinir. Kendi gerçek verin varsa iptal et; gerçek veri bu düğmeyle değişmez.')) {
+          mutate(function (s) {
+            var view = s.settings && s.settings.view, n = S.exampleState();
+            Object.keys(n).forEach(function (k) { s[k] = n[k]; });
+            if (view) s.settings.view = view;
+          }, 'Örnek veri yenilendi.');
+        }
+      },
+      'load-example': function () { if (state.incomes.length + state.assets.length + state.transactions.length === 0 || confirm('Mevcut verilerinin yerine örnek veri yüklensin mi?')) mutate(function (s) { var view = s.settings && s.settings.view, n = S.exampleState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); if (view) s.settings.view = view; }, 'Örnek veri yüklendi.'); },
       'clear-all': function () { if (confirm('TÜM veriler bu cihazdan silinecek. Emin misin? (Önce yedek almanı öneririz.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); }, 'Tüm veriler silindi.'); },
       'add': function () {
         var l = t.dataset.list;
@@ -1700,8 +1712,16 @@
         var oldSchema = s.schema;
         try {
           if (typeof oldSchema === 'number' && oldSchema < S.SCHEMA_VERSION) { try { localStorage.setItem('finans-pusulasi:v' + oldSchema + '-oncesi-yedek', JSON.stringify(s)); } catch (e3) { /* */ } }
+          var refreshExample = S.shouldRefreshExample(s);
           state = S.validateState(s);
           if (oldSchema !== state.schema) { persist(); setTimeout(function () { toast('Verilerin yeni sürüme (v' + state.schema + ') güvenle taşındı. Hiçbir şey silinmedi; eski kopya da saklandı.'); }, 400); }
+          else if (refreshExample) {
+            var view = state.settings && state.settings.view;
+            state = S.exampleState();
+            if (view) state.settings.view = view;
+            persist();
+            setTimeout(function () { toast('Örnek veri güncellendi — portföy yönetimi artık daha dolu. Bunlar hâlâ örnektir, gerçek verin değil. "Bunlar artık benim verilerim" dersen bir daha otomatik değişmez.'); }, 400);
+          }
         }
         catch (e) {
           console.error(e); state = null;

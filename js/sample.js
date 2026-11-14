@@ -5,6 +5,8 @@
 })(typeof self !== 'undefined' ? self : this, function (C, L, M, PF) {
   'use strict';
   var SCHEMA_VERSION = 3;
+  /* Resmi örnek veri sürümü: eski ÖRNEK kayıtlar (isExample) bu sayıdan küçükse yenilenir; gerçek kullanıcı verisine dokunulmaz. */
+  var EXAMPLE_REVISION = 2;
   /* v1 → v2: hesaplar, transferler, kurlar, kategori sınırları, düzenli ödemeler, taksitler, yıllık giderler eklendi. */
   var V2_DEFAULTS = { accounts: [], transfers: [], rates: {}, limits: {}, recurring: [], installments: [], sinkingFunds: [] };
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -33,6 +35,7 @@
     var tDay = +today.slice(8);
     var s = emptyState(nowYm);
     s.isExample = true;
+    s.exampleRevision = EXAMPLE_REVISION;
     s.incomes = [{ id: uid(), name: 'Maaş (net)', amount: 6000000 }, { id: uid(), name: 'Ek gelir (serbest iş)', amount: 800000 }];
     s.expenses = [
       { id: uid(), name: 'Kira', type: 'fixed', amount: 2000000 },
@@ -143,60 +146,114 @@
     return s;
   }
 
-  /* ---------- ÖRNEK portföy: alım-satım geçmişi, fiyat geçmişi, TÜFE, 4 hedef, helal etiketleri ----------
-   * Tüm fiyatlar ve oranlar UYDURMADIR (kaynak alanında "ÖRNEK" yazar); yalnızca özellikleri göstermek içindir. */
+  /* ---------- ÖRNEK portföy: alım-satım geçmişi, fiyat geçmişi, TÜFE, 3 hedef, helal etiketleri ----------
+   * Tüm fiyatlar, kurlar ve TÜFE oranları UYDURMADIR (kaynak alanında "ÖRNEK" ve at damgası yazar); yalnızca özellikleri göstermek içindir. */
   function addDays(ymd, n) { var d = new Date((L.dayIndex(ymd) + n) * 86400000); return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); }
+  function atOf(ymd) { return ymd + 'T18:00:00+03:00'; }
+  /* Yalnızca resmi örnek veri (isExample) ve zaten v3 kaydı, daha eski örnek sürümü. Göç halindeki v1/v2 ve gerçek kullanıcı verisi yenilenmez. */
+  function shouldRefreshExample(raw) {
+    return !!(raw && raw.isExample && raw.schema === SCHEMA_VERSION && (raw.exampleRevision || 0) < EXAMPLE_REVISION);
+  }
   function examplePortfolio(s, acc, nowYm, today) {
     var EX = 'ÖRNEK (gerçek fiyat değil)', H = function (st, note) { return { status: st, note: note + ' (örnek etiket — kendin doğrula)', source: 'Örnek veri', date: today }; };
     var gEv = { id: uid(), name: 'Ev peşinatı', target: 150000000, targetYm: addMonths(nowYm, 60), glide: 'standard', shareBp: 6000 };
     var gAraba = { id: uid(), name: 'Araba peşinatı', target: 9500000, targetYm: addMonths(nowYm, 24), glide: 'conservative', shareBp: 2500 };
-    var gEgitim = { id: uid(), name: 'Çocuğun eğitimi', target: 40000000, targetYm: addMonths(nowYm, 96), glide: 'standard', shareBp: 1000 };
-    var gEmek = { id: uid(), name: 'Emeklilik', target: 500000000, targetYm: addMonths(nowYm, 300), glide: 'aggressive', shareBp: 500 };
-    s.goals = [gEv, gAraba, gEgitim, gEmek];
+    var gEmek = { id: uid(), name: 'Emeklilik', target: 500000000, targetYm: addMonths(nowYm, 300), glide: 'aggressive', shareBp: 1500 };
+    s.goals = [gEv, gAraba, gEmek];
     s.goal = { name: gEv.name, target: gEv.target, targetYm: gEv.targetYm };
     function A(o) { var a = { id: uid(), emergency: false, value: 0, tracking: 'trades', currency: 'TRY', lot: 'fraction', priceKey: null, withinTierBp: null, goalId: null }; Object.keys(o).forEach(function (k) { a[k] = o[k]; }); return a; }
-    var fund = A({ name: 'Katılım fonu (örnek: KTV)', symbol: 'KTV', cls: 'katilim_fund', risk: 'medium', halal: H('uygun', 'Katılım fonu, danışma kurulu onaylı') });
-    var spus = A({ name: 'SPUS — helal ETF (örnek)', symbol: 'SPUS', cls: 'halal_etf', risk: 'risky', currency: 'USD', lot: 'whole', priceKey: 'td:SPUS', goalId: gEmek.id, withinTierBp: 6000, halal: H('uygun', 'S&P 500 Shariah endeksini izler') });
+    var ktv = A({ name: 'Katılım fonu (örnek: KTV)', symbol: 'KTV', cls: 'katilim_fund', risk: 'medium', halal: H('uygun', 'Katılım fonu, danışma kurulu onaylı') });
+    var ktn = A({ name: 'Katılım fonu (örnek: KTN)', symbol: 'KTN', cls: 'katilim_fund', risk: 'medium', halal: H('uygun', 'Katılım fonu, danışma kurulu onaylı') });
     var gold = A({ name: 'Fiziki gram altın (örnek)', symbol: 'ALTIN', cls: 'gold', risk: 'medium', priceKey: 'metal:XAU', halal: H('uygun', 'Fiziki altın, peşin alım') });
-    var stock = A({ name: 'Katılım endeksi hissesi (örnek: ASELS)', symbol: 'ASELS', cls: 'katilim_stock', risk: 'risky', lot: 'whole', withinTierBp: 4000, halal: H('uygun', 'Katılım endeksinde') });
+    var silver = A({ name: 'Fiziki gram gümüş (örnek)', symbol: 'GUMUS', cls: 'other', risk: 'medium', priceKey: 'metal:XAG', halal: H('uygun', 'Fiziki gümüş, peşin alım') });
+    var asels = A({ name: 'Katılım endeksi hissesi (örnek: ASELS)', symbol: 'ASELS', cls: 'katilim_stock', risk: 'risky', lot: 'whole', withinTierBp: 2500, halal: H('uygun', 'Katılım endeksinde') });
+    var eregl = A({ name: 'Katılım endeksi hissesi (örnek: EREGL)', symbol: 'EREGL', cls: 'katilim_stock', risk: 'risky', lot: 'whole', withinTierBp: 1500, halal: H('uygun', 'Katılım endeksinde') });
+    var spus = A({ name: 'SPUS — helal ETF (örnek)', symbol: 'SPUS', cls: 'halal_etf', risk: 'risky', currency: 'USD', lot: 'whole', priceKey: 'td:SPUS', goalId: gEmek.id, withinTierBp: 3500, halal: H('uygun', 'S&P 500 Shariah endeksini izler') });
+    var hlal = A({ name: 'HLAL — helal ETF (örnek)', symbol: 'HLAL', cls: 'halal_etf', risk: 'risky', currency: 'USD', lot: 'whole', priceKey: 'td:HLAL', goalId: gEmek.id, withinTierBp: 2500, halal: H('uygun', 'ABD helal hisse endeksini izler') });
+    var btc = A({ name: 'Bitcoin (örnek)', symbol: 'BTC', cls: 'crypto', risk: 'risky', priceKey: 'cg:bitcoin', halal: H('supheli', 'Âlimler arasında görüş ayrılığı var') });
+    var eth = A({ name: 'Ethereum (örnek)', symbol: 'ETH', cls: 'crypto', risk: 'risky', priceKey: 'cg:ethereum', halal: H('supheli', 'Âlimler arasında görüş ayrılığı var') });
     var sukuk = A({ name: 'Kira sertifikası fonu (örnek)', cls: 'sukuk', risk: 'safe', tracking: 'manual', value: 4000000, halal: H('uygun', 'Kira sertifikası (sukuk) fonu') });
     var mmf = A({ name: 'Para piyasası fonu — faizli (örnek)', cls: 'other', risk: 'safe', tracking: 'manual', value: 1000000, halal: H('uygun_degil', 'Faiz geliri içerir') });
-    var btc = A({ name: 'Bitcoin (örnek)', symbol: 'BTC', cls: 'crypto', risk: 'risky', priceKey: 'cg:bitcoin', halal: H('supheli', 'Âlimler arasında görüş ayrılığı var') });
-    s.assets = [fund, spus, gold, stock, sukuk, mmf, btc];
+    s.assets = [ktv, ktn, gold, silver, asels, eregl, spus, hlal, btc, eth, sukuk, mmf];
     var q = function (x) { return PF.parseScaled(x, 8); }, pr = function (x) { return PF.parseScaled(x, 6); };
     function T(a, mBack, day, side, qty, price, fee, fx) {
       var d = L.ymdOf(addMonths(nowYm, -mBack), day); if (d > today) d = today;
-      var t = { id: uid(), assetId: a.id, date: d, side: side, qty: q(qty), price: pr(price), fee: fee, currency: a.currency, fxRate: a.currency === 'TRY' ? null : fx, note: '', source: 'örnek' };
+      var t = { id: uid(), assetId: a.id, date: d, side: side, qty: q(qty), price: pr(price), fee: fee || 0, currency: a.currency, fxRate: a.currency === 'TRY' ? null : fx, note: '', source: 'örnek' };
       s.trades.push(t); return t;
     }
     s.trades = [];
-    T(fund, 18, 10, 'buy', '30000', '2,50', 0); T(fund, 10, 12, 'buy', '8000', '2,85', 0); T(fund, 4, 8, 'sell', '5000', '3,10', 0);
-    T(spus, 20, 15, 'buy', '20', '38,50', 100, 3350); T(spus, 8, 14, 'buy', '15', '42,10', 100, 3900); T(spus, 2, 6, 'buy', '10', '44,80', 100, 4150);
-    T(gold, 14, 20, 'buy', '10', '3050', 0); T(gold, 6, 18, 'buy', '5', '4200', 0);
-    T(stock, 12, 5, 'buy', '200', '62,40', 1248); T(stock, 3, 11, 'sell', '50', '95,00', 475);
-    T(btc, 7, 3, 'buy', '0,005', '2400000', 3000);
-    // Aylık fiyat geçmişi (ay sonları) + bugün: doğrusal örnek seri
+    /* KTV — 18 ay, düzenli alım + kârlı kısmi satış */
+    T(ktv, 18, 10, 'buy', '12000', '2,52', 0);
+    T(ktv, 16, 11, 'buy', '5000', '2,58', 0);
+    T(ktv, 14, 9, 'buy', '5000', '2,64', 0);
+    T(ktv, 12, 10, 'buy', '5000', '2,70', 0);
+    T(ktv, 10, 12, 'buy', '8000', '2,85', 0);
+    T(ktv, 8, 8, 'buy', '4000', '2,94', 0);
+    T(ktv, 6, 8, 'sell', '5000', '3,00', 0);
+    T(ktv, 4, 8, 'buy', '4000', '3,06', 0);
+    T(ktv, 2, 7, 'buy', '4000', '3,12', 0);
+    /* KTN */
+    T(ktn, 15, 14, 'buy', '8000', '2,35', 0);
+    T(ktn, 12, 16, 'buy', '4000', '2,45', 0);
+    T(ktn, 9, 15, 'buy', '4000', '2,55', 0);
+    T(ktn, 6, 14, 'buy', '3000', '2,65', 0);
+    T(ktn, 3, 13, 'buy', '3000', '2,75', 0);
+    /* Gram altın */
+    T(gold, 14, 20, 'buy', '8', '3050', 0);
+    T(gold, 8, 18, 'buy', '4', '3800', 0);
+    T(gold, 3, 16, 'buy', '3', '4800', 0);
+    /* Gram gümüş + kârlı kısmi satış */
+    T(silver, 12, 6, 'buy', '150', '40,00', 0);
+    T(silver, 6, 7, 'buy', '150', '50,00', 0);
+    T(silver, 2, 5, 'sell', '30', '58,00', 0);
+    /* ASELS + kârlı kısmi satış (komisyonlu) */
+    T(asels, 12, 5, 'buy', '200', '62,40', 1248);
+    T(asels, 7, 9, 'buy', '100', '78,00', 780);
+    T(asels, 3, 11, 'sell', '50', '95,00', 475);
+    /* EREGL */
+    T(eregl, 10, 8, 'buy', '200', '34,00', 680);
+    T(eregl, 4, 10, 'buy', '150', '42,00', 630);
+    /* SPUS (USD, emeklilik) */
+    T(spus, 18, 15, 'buy', '20', '38,50', 100, 3350);
+    T(spus, 10, 14, 'buy', '15', '42,10', 100, 3780);
+    T(spus, 4, 6, 'buy', '10', '44,80', 100, 4080);
+    /* HLAL (USD, emeklilik) */
+    T(hlal, 16, 12, 'buy', '10', '42,00', 100, 3420);
+    T(hlal, 8, 10, 'buy', '8', '47,00', 100, 3850);
+    T(hlal, 3, 9, 'buy', '6', '50,50', 100, 4120);
+    /* Bitcoin / Ethereum (şüpheli etiket) */
+    T(btc, 12, 3, 'buy', '0,003', '1800000', 2000);
+    T(btc, 7, 3, 'buy', '0,002', '2400000', 3000);
+    T(eth, 11, 4, 'buy', '0,08', '70000', 1500);
+    T(eth, 5, 5, 'buy', '0,05', '95000', 1500);
+
+    /* Aylık fiyat geçmişi (ay sonları) + dün: doğrusal örnek seri. Her noktada kaynak=ÖRNEK ve saat damgası var. */
     s.prices = {};
     function series(key, cur, fromVal, toVal, months) {
       var a = pr(fromVal), b = pr(toVal);
       for (var i = months; i >= 1; i--) {
-        var ym = addMonths(nowYm, -i), v = a + Math.round((b - a) * (months - i) / months);
-        PF.addPricePoint(s.prices, key, cur, { d: L.ymdOf(ym, 31), p: v, src: EX, at: null });
+        var ym = addMonths(nowYm, -i), d = L.ymdOf(ym, 31), v = a + Math.round((b - a) * (months - i) / months);
+        PF.addPricePoint(s.prices, key, cur, { d: d, p: v, src: EX, at: atOf(d) });
       }
-      PF.addPricePoint(s.prices, key, cur, { d: addDays(today, -1), p: b, src: EX, at: null });
+      var y = addDays(today, -1);
+      PF.addPricePoint(s.prices, key, cur, { d: y, p: b, src: EX, at: atOf(y) });
     }
-    series('m:' + fund.id, 'TRY', '2,40', '3,18', 24);
+    series('m:' + ktv.id, 'TRY', '2,40', '3,18', 24);
+    series('m:' + ktn.id, 'TRY', '2,20', '2,85', 24);
     series('td:SPUS', 'USD', '36,00', '46,20', 24);
+    series('td:HLAL', 'USD', '40,00', '52,40', 24);
     series('metal:XAU', 'TRY', '2600', '5400', 24);
-    series('m:' + stock.id, 'TRY', '55,00', '101,50', 24);
+    series('metal:XAG', 'TRY', '32,00', '62,00', 24);
+    series('m:' + asels.id, 'TRY', '55,00', '101,50', 24);
+    series('m:' + eregl.id, 'TRY', '28,00', '48,20', 24);
     series('cg:bitcoin', 'TRY', '1500000', '3000000', 24);
+    series('cg:ethereum', 'TRY', '60000', '120000', 24);
     series('fx:USD', 'TRY', '32,00', '42,50', 24);
     series('fx:EUR', 'TRY', '35,00', '49,00', 24);
     series('idx:XU100', 'PT', '9000', '11500', 24);
-    // TÜFE (aylık % değişim) — son 24 ay, bu ay henüz açıklanmamış gibi
+    /* TÜFE (aylık % değişim, örnek seri) — son 24 ay, bu ay henüz açıklanmamış gibi */
     s.cpi = [];
     for (var i = 24; i >= 1; i--) s.cpi.push({ ym: addMonths(nowYm, -i), bp: 150 + ((i * 37) % 120) });
-    // Hesaplara helal etiketi
     acc.katilim.halal = H('uygun', 'Katılım bankası, kâr payı'); acc.bank.halal = H('uygun', 'Vadesiz hesap, faiz işlemiyor');
     acc.gold.halal = H('uygun', 'Katılım bankası altın hesabı'); acc.usd.halal = H('uygun', 'Nakit döviz');
     s.settings.riskRules = JSON.parse(JSON.stringify(PF.DEFAULT_RULES));
@@ -420,6 +477,6 @@
     PF.sync(s);
     return s;
   }
-  return { SCHEMA_VERSION: SCHEMA_VERSION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
-    defaultSettings: defaultSettings, addMonths: addMonths, todayYmd: todayYmd };
+  return { SCHEMA_VERSION: SCHEMA_VERSION, EXAMPLE_REVISION: EXAMPLE_REVISION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
+    defaultSettings: defaultSettings, addMonths: addMonths, todayYmd: todayYmd, shouldRefreshExample: shouldRefreshExample };
 });
