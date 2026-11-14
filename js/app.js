@@ -25,11 +25,24 @@
     if (undo) el.querySelector('button').onclick = function () { undo(); root.innerHTML = ''; };
     clearTimeout(toast.t); toast.t = setTimeout(function () { root.innerHTML = ''; }, undo ? 7000 : 3500);
   }
-  function loadScript(src) {
+  var scriptCache = {};
+  function loadScript(src, timeoutMs) {
+    if (scriptCache[src]) return scriptCache[src];
+    var pr = new Promise(function (res, rej) {
+      var s = document.createElement('script'), done = false;
+      var fail = function (why) { if (done) return; done = true; s.remove(); delete scriptCache[src]; rej(new Error('Kütüphane yüklenemedi (' + why + '): ' + src)); };
+      var t = setTimeout(function () { fail('zaman aşımı'); }, timeoutMs || 60000);
+      s.src = src; s.dataset.src = src; s.async = true;
+      s.onload = function () { if (done) return; done = true; clearTimeout(t); res(); };
+      s.onerror = function () { clearTimeout(t); fail('ağ hatası'); };
+      document.head.appendChild(s);
+    });
+    scriptCache[src] = pr; return pr;
+  }
+  function withTimeout(pr, ms, msg) {
     return new Promise(function (res, rej) {
-      if ($('script[data-src="' + src + '"]')) return res();
-      var s = document.createElement('script'); s.src = src; s.dataset.src = src; s.onload = res;
-      s.onerror = function () { rej(new Error('Kütüphane yüklenemedi: ' + src)); }; document.head.appendChild(s);
+      var t = setTimeout(function () { rej(new Error(msg)); }, ms);
+      pr.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
     });
   }
 
@@ -281,7 +294,9 @@
   }
 
   /* ---------- VERİ EKLE (içe aktarma) ---------- */
-  var importOpts = { cc: false, method: 'ai' };
+  var importOpts = { cc: false, method: (aiCfg.importMethod === 'ai' || aiCfg.importMethod === 'ocr') ? aiCfg.importMethod : 'auto' };
+  function useAiForImages() { return importOpts.method === 'ai' ? aiReady() : importOpts.method === 'auto' ? aiReady() : false; }
+  var COARSE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   function aiReady() { var p = AI.PROVIDERS[aiCfg.provider]; return !!(p && (!p.needsKey || (aiCfg.keys || {})[aiCfg.provider])); }
   function renderImport() {
     if (review) return renderReview();
@@ -291,16 +306,18 @@
       '<a class="choice" href="#islemler" style="text-decoration:none;color:inherit"><b>✍️ Elle gir</b><span>Tek tek işlem ekle</span></a>' +
       '<button class="choice" data-pick=".xlsx,.xls,.csv,.ods,.txt"><b>📊 Excel / CSV</b><span>Banka hareket dökümü, kendi tablon</span></button>' +
       '<button class="choice" data-pick=".pdf,application/pdf"><b>📄 PDF ekstre</b><span>Hesap veya kredi kartı ekstresi</span></button>' +
-      '<button class="choice" data-pick="image/*"><b>📷 Fotoğraf / fiş / ekran görüntüsü</b><span>Alışveriş fişi, uygulama ekranı</span></button></div>';
-    h += '<div class="drop" id="drop" tabindex="0" role="button" aria-label="Dosya seçmek için tıkla veya dosyayı buraya sürükle"><b>Dosyayı buraya sürükle</b> veya tıklayıp seç<div class="hint">Excel, CSV, PDF, JPG/PNG/WebP. Dosyalar cihazından çıkmaz (yapay zekâ ile okuma seçersen yalnızca seçtiğin sağlayıcıya gönderilir).</div></div>';
+      '<button class="choice" data-pick="image/*,.heic,.heif"><b>📷 Fotoğraf / fiş / ekran görüntüsü</b><span>Alışveriş fişi, uygulama ekranı (galeriden)</span></button>' +
+      (COARSE ? '<button class="choice" data-pick="image/*" data-capture="environment"><b>📸 Kamerayla fiş çek</b><span>Fişi düz bir yere koy, yakından ve net çek</span></button>' : '') + '</div>';
+    h += '<div class="drop" id="drop" tabindex="0" role="button" aria-label="Dosya seçmek için tıkla veya dosyayı buraya sürükle"><b>Dosyayı buraya sürükle</b> veya tıklayıp seç<div class="hint">Excel, CSV, PDF, JPG/PNG/WebP/HEIC (iPhone). Ekran görüntüsünü Ctrl+V ile de yapıştırabilirsin. Dosyalar cihazından çıkmaz (yapay zekâ ile okuma seçersen yalnızca seçtiğin sağlayıcıya gönderilir).</div></div>';
     h += '<input type="file" id="file-in" hidden>';
     h += '<section class="card" style="margin-top:14px"><h2>Okuma seçenekleri</h2>' +
       '<label class="row"><input type="checkbox" id="opt-cc"' + (importOpts.cc ? ' checked' : '') + '> Kredi kartı ekstresi: belgede <b>artı</b> görünen tutarlar <b>harcamadır</b> ' + tip('Kredi kartı ekstrelerinde harcamalar genelde eksi işaretsiz yazılır. Bunu işaretlersen artı tutarlar gider, eksi tutarlar (iade/ödeme) gelir sayılır. Kontrol tablosunda tek tıkla da çevirebilirsin.') + '</label>' +
       '<div class="field" style="margin-top:10px"><label for="opt-method">Fotoğraf ve taranmış PDF okuma yöntemi</label><select id="opt-method" style="max-width:520px">' +
+      '<option value="auto"' + (importOpts.method === 'auto' ? ' selected' : '') + '>Otomatik (önerilen) — ' + (aiReady() ? 'yapay zekâ (' + esc(p.label) + '), olmazsa ücretsiz OCR' : 'ücretsiz OCR; yapay zekâ eklersen onu kullanır') + '</option>' +
       '<option value="ai"' + (importOpts.method === 'ai' ? ' selected' : '') + '>Yapay zekâ ile oku (en iyi sonuç) — ' + esc(p ? p.label : 'sağlayıcı seçilmedi') + '</option>' +
       '<option value="ocr"' + (importOpts.method === 'ocr' ? ' selected' : '') + '>Ücretsiz metin tanıma (OCR, Tesseract) — anahtar gerekmez</option></select>' +
       '<span class="hint">' + (aiReady() ? 'Yapay zekâ hazır.' : 'Yapay zekâ henüz ayarlı değil: <a href="#asistan">Asistan</a> bölümünden ücretsiz bir sağlayıcı (ör. Gemini) ekle veya OCR\'ı seç.') +
-      ' OCR ilk kullanımda dil dosyasını internetten indirir (~10 MB); bundan sonra hızlanır. El yazısı ve bulanık fotoğraflarda yapay zekâ daha doğrudur.</span></div>' +
+      ' Ücretsiz OCR ilk kullanımda ~6 MB okuma dosyası indirir, sonra hızlanır. İnternet yoksa da ilk indirmeden sonra çalışır. Buruşuk, bulanık veya el yazılı fişlerde yapay zekâ daha doğrudur.</span></div>' +
       '<p class="hint">Excel/CSV ve metin içeren PDF\'ler tamamen cihazında, internetsiz okunur.</p></section>';
     h += '<div id="imp-status" role="status" style="margin-top:12px"></div>';
     return h;
@@ -315,11 +332,10 @@
     var job;
     if (/^(xlsx|xls|csv|ods|txt|tsv)$/.test(ext)) job = importSheet(file);
     else if (ext === 'pdf' || file.type === 'application/pdf') job = importPdf(file);
-    else if (/^image\//.test(file.type) || /^(jpe?g|png|webp|gif|bmp)$/.test(ext)) job = importImage(file);
-    else if (/^(heic|heif)$/.test(ext)) return setStatus('HEIC (iPhone) fotoğrafları tarayıcıda açılamıyor. Telefonda "Ayarlar > Kamera > Biçimler > En Uyumlu" seç veya ekran görüntüsü al.', 'warn');
+    else if (/^image\//.test(file.type) || /^(jpe?g|png|webp|gif|bmp|heic|heif|avif)$/.test(ext) || (!file.type && !ext)) job = importImage(file);
     else if (ext === 'json') return setStatus('Yedek dosyası mı? Onu <a href="#ayarlar">Ayarlar ve yedek</a> bölümünden geri yükle.', 'warn');
     else return setStatus('Bu dosya türü desteklenmiyor: .' + esc(ext), 'warn');
-    job.catch(function (e) { console.error(e); setStatus('Okunamadı: ' + esc(e.message), 'danger'); });
+    job.catch(function (e) { console.warn('İçe aktarma hatası:', e); setStatus('Okunamadı: ' + esc(e.message) + '<div class="hint">Fişi düz bir yüzeye koyup yakından, gölgesiz ve net çekmeyi dene. İstersen <a href="#islemler">elle</a> de girebilirsin.</div>', 'danger'); });
   }
 
   function decodeText(buf) {
@@ -348,14 +364,20 @@
   function startReviewRows(rows) {
     review.rows = rows.map(function (r, i) {
       return { key: i, include: true, date: r.date, rawDate: r.rawDate, description: r.description || '', amount: r.amount, note: r.note || '',
-        category: P.suggestCategory(r.description, r.amount || 0), source: r.source };
+        category: (r.category && r.amount < 0) ? r.category : P.suggestCategory(r.description, r.amount || 0), source: r.source, manual: !!r.manual };
     });
     revalidate(true);
   }
   function revalidate(initial) {
     var today = todayYmd();
     P.markDuplicates(review.rows, state.transactions);
-    review.rows.forEach(function (r) { P.validateRow(r, today); if (initial && (r.duplicate || r.errors.length)) r.include = false; r.inst = L.detectInstallment(r.description); });
+    review.rows.forEach(function (r) {
+      P.validateRow(r, today);
+      if (initial && (r.duplicate || r.errors.length) && !r.manual) { r.include = false; r.autoEx = !r.duplicate; }
+      // Hata yüzünden otomatik dışarıda kalan satır düzeltilince kendiliğinden dahil edilir
+      else if (!initial && r.autoEx && !r.errors.length) { r.include = true; r.autoEx = false; }
+      r.inst = L.detectInstallment(r.description);
+    });
     L.reconcileImported(review.rows, state.transactions);
   }
 
@@ -414,21 +436,95 @@
         });
       });
   }
-  function readImage(file) {
+  /* ---------- Görsel hazırlama: HEIC → JPEG, EXIF yönü, küçültme, OCR için ön işleme ---------- */
+  function sniffHeic(file) {
+    return file.slice(0, 32).arrayBuffer().then(function (buf) {
+      var b = new Uint8Array(buf), str = String.fromCharCode.apply(null, b);
+      return str.slice(4, 8) === 'ftyp' && /heic|heix|hevc|hevx|heim|heis|mif1|msf1/.test(str.slice(8, 32));
+    }).catch(function () { return false; });
+  }
+  function decodeBitmap(blob) {
+    // EXIF yönü: modern tarayıcılar (Chrome 81+, Safari 13.1+, Firefox 77+) görseli EXIF'e göre döndürerek çizer.
+    if (window.createImageBitmap) {
+      return createImageBitmap(blob, { imageOrientation: 'from-image' }).catch(function () { return decodeViaImg(blob); });
+    }
+    return decodeViaImg(blob);
+  }
+  function decodeViaImg(blob) {
     return new Promise(function (res, rej) {
-      var url = URL.createObjectURL(file), img = new Image();
-      img.onload = function () {
-        var max = 2000, s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-        var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(canvasToImg(c));
-      };
+      var url = URL.createObjectURL(blob), img = new Image();
+      img.onload = function () { res({ width: img.naturalWidth, height: img.naturalHeight, src: img, close: function () { URL.revokeObjectURL(url); } }); };
       img.onerror = function () { URL.revokeObjectURL(url); rej(new Error('Görsel açılamadı')); };
       img.src = url;
     });
   }
+  function heicToJpeg(file) {
+    busy('iPhone (HEIC) fotoğrafı dönüştürülüyor…');
+    return loadScript('vendor/heic2any.min.js', 60000).then(function () {
+      return withTimeout(window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 }), 90000, 'HEIC dönüştürme zaman aşımına uğradı');
+    }).then(function (out) { return Array.isArray(out) ? out[0] : out; }).catch(function (e) {
+      console.warn('HEIC dönüştürülemedi', e);
+      throw new Error('Bu iPhone fotoğrafı (HEIC) açılamadı. Çözüm: fişin ekran görüntüsünü al ve onu yükle, ya da iPhone\'da Ayarlar > Kamera > Biçimler > "En Uyumlu"yu seç.');
+    });
+  }
+  function readImage(file) {
+    return sniffHeic(file).then(function (isHeic) {
+      var heic = isHeic || /^image\/hei[cf]/.test(file.type) || /\.(heic|heif)$/i.test(file.name || '');
+      if (!heic) return decodeBitmap(file).catch(function () { throw new Error('Görsel açılamadı. Dosya bozuk olabilir veya bu biçim desteklenmiyor; JPG, PNG veya ekran görüntüsü dene.'); });
+      // Safari HEIC'i kendisi açabilir; açamazsa heic2any ile JPEG'e çevir
+      return decodeBitmap(file).catch(function () { return heicToJpeg(file).then(decodeBitmap); });
+    }).then(function (bmp) {
+      var src = bmp.src || bmp, w = bmp.width, h = bmp.height;
+      if (!w || !h) throw new Error('Görsel boş görünüyor');
+      // Renkli kopya: önizleme ve yapay zekâ için (en fazla 2000 px)
+      var s1 = Math.min(1, 2000 / Math.max(w, h));
+      var c = document.createElement('canvas'); c.width = Math.round(w * s1); c.height = Math.round(h * s1);
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      var color = canvasToImg(c);
+      // OCR kopyası: uzun kenar 1600–2600 px (küçük ekran görüntüleri büyütülür, büyük kamera fotoğrafları küçültülür)
+      var L = Math.max(w, h), target = Math.max(1600, Math.min(2600, L)), s2 = target / L;
+      var o = document.createElement('canvas'); o.width = Math.round(w * s2); o.height = Math.round(h * s2);
+      var ctx = o.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(src, 0, 0, o.width, o.height);
+      if (bmp.close) try { bmp.close(); } catch (e) { /* */ }
+      color.ocrPlain = o.toDataURL('image/png');
+      try { preprocessForOcr(o); color.ocrClean = o.toDataURL('image/png'); } catch (e) { console.warn('ön işleme atlandı', e); }
+      color.size = [w, h];
+      return color;
+    });
+  }
+  /* Gri ton + gölge/ışık düzeltme (arka plana bölme) + kontrast germe. Tesseract kendi eşiklemesini (Otsu) bunun üstüne yapar. */
+  function preprocessForOcr(canvas) {
+    var w = canvas.width, h = canvas.height, ctx = canvas.getContext('2d', { willReadFrequently: true });
+    var bw = Math.max(8, Math.round(w / 24)), bh = Math.max(8, Math.round(h / 24));
+    var bg = document.createElement('canvas'); bg.width = bw; bg.height = bh;
+    var bctx = bg.getContext('2d'); bctx.filter = 'blur(2px)'; bctx.drawImage(canvas, 0, 0, bw, bh);
+    var big = document.createElement('canvas'); big.width = w; big.height = h;
+    var gctx = big.getContext('2d'); gctx.imageSmoothingQuality = 'high'; gctx.drawImage(bg, 0, 0, w, h);
+    var img = ctx.getImageData(0, 0, w, h), d = img.data, bgd = gctx.getImageData(0, 0, w, h).data;
+    var n = w * h, gray = new Uint8ClampedArray(n), hist = new Uint32Array(256);
+    for (var i = 0, j = 0; i < n; i++, j += 4) {
+      var y = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+      var by = 0.299 * bgd[j] + 0.587 * bgd[j + 1] + 0.114 * bgd[j + 2];
+      // Yerel arka plana göre normalleştir: kağıt beyaza, mürekkep koyuya
+      var v = by > 8 ? Math.min(255, (y / by) * 235) : y;
+      gray[i] = v; hist[gray[i]]++;
+    }
+    var lo = 0, hi = 255, acc = 0;
+    for (var k = 0; k < 256; k++) { acc += hist[k]; if (acc > n * 0.01) { lo = k; break; } }
+    acc = 0; for (k = 255; k >= 0; k--) { acc += hist[k]; if (acc > n * 0.02) { hi = k; break; } }
+    var range = Math.max(1, hi - lo);
+    for (i = 0, j = 0; i < n; i++, j += 4) { var g = (gray[i] - lo) * 255 / range; g = g < 0 ? 0 : g > 255 ? 255 : g; d[j] = d[j + 1] = d[j + 2] = g; d[j + 3] = 255; }
+    ctx.putImageData(img, 0, 0);
+  }
   function importImage(file) {
     busy('Görsel hazırlanıyor…');
-    return readImage(file).then(function (img) { return importOpts.method === 'ocr' ? ocrImages([img], file.name) : aiImages([img], file.name); });
+    // OCR gerekecekse motoru görselle aynı anda ısıt
+    if (!useAiForImages()) getOcrWorker().catch(function () { /* asıl hata ocrImages'ta gösterilir */ });
+    return readImage(file).then(function (img) {
+      if (useAiForImages()) return aiImages([img], file.name);
+      var note = importOpts.method === 'ai' && !aiReady() ? 'Yapay zekâ ayarlı olmadığı için ücretsiz OCR ile okundu.' : '';
+      return ocrImages([img], file.name, note);
+    });
   }
   var EXTRACT_PROMPT = 'Bu belgedeki (alışveriş fişi, banka/kredi kartı ekstresi veya uygulama ekran görüntüsü) finansal işlemleri çıkar.\n' +
     'SADECE şu JSON\'u döndür, başka metin yazma:\n{"merchant": "işyeri adı veya null", "date": "YYYY-MM-DD veya null", "total": sayı veya null, "transactions": [{"date": "YYYY-MM-DD", "description": "kısa açıklama", "amount": sayı}]}\n' +
@@ -436,40 +532,113 @@
     '- Fişte kalemler varsa her kalemi ayrı satır yaz; "total" alanına fişin TOPLAM tutarını (pozitif) yaz. KDV, ara toplam, nakit, para üstü satırlarını işlem olarak yazma.\n' +
     '- Ekstrede "bakiye" sütununu tutar sanma. Dönem borcu/toplam varsa "total" alanına yaz.\n- Tarih yalnızca belgenin başında yazıyorsa her satıra o tarihi koy. Türkiye tarih biçimi GG.AA.YYYY\'dir.\n- Belgede olmayan hiçbir bilgiyi uydurma; okuyamadığın alanı null bırak.';
   function aiImages(images, name) {
-    if (!aiReady()) { setStatus('Yapay zekâ ayarlı değil. <a href="#asistan">Asistan</a> bölümünden bir sağlayıcı ve anahtar ekle ya da yöntem olarak OCR\'ı seç.<div class="row" style="margin-top:8px"><button class="btn small" data-act="retry-ocr">Bunun yerine OCR ile oku</button></div>', 'warn'); pendingImages = { images: images, name: name }; return Promise.resolve(); }
+    if (!aiReady()) return ocrImages(images, name, 'Yapay zekâ ayarlı olmadığı için ücretsiz OCR ile okundu.');
     busy(AI.PROVIDERS[aiCfg.provider].label + ' belgeyi okuyor… (birkaç saniye sürebilir)');
     return AI.chat(aiCfg, 'Sen dikkatli bir muhasebe asistanısın. Yalnızca geçerli JSON üretirsin.', [{ role: 'user', text: EXTRACT_PROMPT, images: images }], true).then(function (txt) {
       var res = P.rowsFromAiJson(txt);
-      if (!res.rows.length) throw new Error('Belgede işlem bulunamadı.');
+      if (!res.rows.length) throw new Error('Yapay zekâ belgede işlem bulamadı.');
       review = { source: name + ' (yapay zekâ: ' + AI.PROVIDERS[aiCfg.provider].label + ')', kind: 'ai', cc: false, docTotal: res.docTotal, preview: images[0].dataUrl };
       startReviewRows(res.rows.map(function (r) { if (r.description && res.merchant && P.fold(r.description).indexOf(P.fold(res.merchant)) < 0 && res.rows.length > 1) r.description = r.description + ' (' + res.merchant + ')'; return r; }));
       render();
+    }).catch(function (e) {
+      // Yapay zekâ hata verirse (kota, ağ, anahtar) fişi yine de ücretsiz OCR ile oku
+      console.warn('Yapay zekâ okuyamadı, OCR deneniyor', e);
+      return ocrImages(images, name, 'Yapay zekâ okuyamadı (' + e.message + '), ücretsiz OCR ile okundu.');
     });
   }
   var pendingImages = null;
-  function ocrImages(images, name) {
-    busy('Ücretsiz OCR yükleniyor… (ilk seferde dil dosyası indirilir)');
-    return loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js').catch(function () {
-      throw new Error('OCR kütüphanesi indirilemedi. İnternet bağlantını kontrol et veya yapay zekâ ile okumayı dene.');
-    }).then(function () {
+  /* ---------- Ücretsiz OCR (Tesseract.js) ----------
+   * Kütüphane, motor (wasm) ve Türkçe dil dosyası sitenin kendi vendor/ klasöründen yüklenir (CDN'e bağımlı değil).
+   * Site dosyadan (file://) açıldıysa tarayıcı yerel worker'a izin vermediği için jsDelivr CDN kullanılır. */
+  var OCR_CDN = { lib: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js', worker: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+    core: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1', lang: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/tur@1.0.0/4.0.0_best_int' };
+  function ocrPaths(useCdn) {
+    if (useCdn) return OCR_CDN;
+    var base = new URL('vendor/tesseract/', location.href).href;
+    return { lib: 'vendor/tesseract/tesseract.min.js', worker: base + 'worker.min.js', core: base + 'core', lang: base + 'lang' };
+  }
+  var ocrWorkerP = null, ocrProgress = null;
+  var OCR_STEPS = { 'loading tesseract core': 'OCR motoru yükleniyor', 'initializing tesseract': 'OCR motoru başlatılıyor', 'loading language traineddata': 'Türkçe okuma dosyası yükleniyor',
+    'loading language traineddata (from cache)': 'Türkçe okuma dosyası yükleniyor', 'initializing api': 'OCR hazırlanıyor', 'recognizing text': 'Metin okunuyor' };
+  function ocrLogger(m) { if (ocrProgress) ocrProgress(m); }
+  function createOcrWorker(useCdn) {
+    var P0 = ocrPaths(useCdn);
+    return loadScript(P0.lib, 60000).then(function () {
+      return withTimeout(Tesseract.createWorker('tur', 1, { workerPath: P0.worker, corePath: P0.core, langPath: P0.lang, logger: ocrLogger, errorHandler: function (e) { console.warn('OCR worker:', e); } }),
+        180000, 'OCR motoru 3 dakikada hazırlanamadı (yavaş internet olabilir)');
+    }).then(function (w) {
+      return w.setParameters({ tessedit_pageseg_mode: '4', preserve_interword_spaces: '1', user_defined_dpi: '300' }).then(function () { return w; });
+    });
+  }
+  function getOcrWorker() {
+    if (ocrWorkerP) return ocrWorkerP;
+    var useCdn = location.protocol === 'file:';
+    ocrWorkerP = createOcrWorker(useCdn).catch(function (e) {
+      if (useCdn) throw e;
+      console.warn('Yerel OCR dosyaları yüklenemedi, CDN deneniyor', e);
+      return createOcrWorker(true);
+    }).catch(function (e) {
+      ocrWorkerP = null;
+      throw new Error('Ücretsiz OCR başlatılamadı: ' + e.message + '. İnternet bağlantını kontrol edip tekrar dene.');
+    });
+    return ocrWorkerP;
+  }
+  function resetOcrWorker() { var p = ocrWorkerP; ocrWorkerP = null; if (p) p.then(function (w) { w.terminate(); }).catch(function () { }); }
+  function ocrRecognize(worker, src, label) {
+    return withTimeout(worker.recognize(src, { rotateAuto: true }), 150000, 'Metin okuma 2,5 dakikayı aştı').then(function (r) {
+      return { text: (r.data && r.data.text) || '', conf: (r.data && r.data.confidence) || 0, label: label };
+    });
+  }
+  function receiptScore(text) {
+    var rec = P.parseReceiptText(text);
+    return { rec: rec, score: rec.rows.length + (rec.docTotal != null ? 3 : 0) + (rec.matches ? 10 : 0) + (rec.date ? 1 : 0) };
+  }
+  var lastOcr = null;
+  function ocrImages(images, name, note) {
+    var startedAt = Date.now();
+    ocrProgress = function (m) {
+      var label = OCR_STEPS[m.status] || null; if (!label) return;
+      var pct = typeof m.progress === 'number' ? ' %' + Math.round(m.progress * 100) : '';
+      busy(label + '…' + pct + (images.length > 1 ? ' (sayfa ' + (curPage + 1) + '/' + images.length + ')' : '') + (Date.now() - startedAt > 20000 && m.status !== 'recognizing text' ? ' — ilk seferde biraz sürer' : ''));
+    };
+    var curPage = 0;
+    busy('Ücretsiz OCR hazırlanıyor…');
+    return getOcrWorker().then(function (worker) {
       var texts = [], chain = Promise.resolve();
       images.forEach(function (im, i) {
         chain = chain.then(function () {
-          return Tesseract.recognize(im.dataUrl, 'tur+eng', { logger: function (m) { if (m.status === 'recognizing text') busy('Metin tanınıyor… sayfa ' + (i + 1) + '/' + images.length + ' %' + Math.round(m.progress * 100)); } })
-            .then(function (r) { texts.push(r.data.text); });
+          curPage = i;
+          var first = im.ocrClean || im.ocrPlain || im.dataUrl;
+          return ocrRecognize(worker, first, 'temiz').then(function (r1) {
+            var s1 = receiptScore(r1.text);
+            // Sonuç zayıfsa (toplam tutmadı / satır yok) işlenmemiş kopyayı da dene, daha iyisini al
+            if (s1.rec.matches || !(im.ocrClean && im.ocrPlain)) return r1;
+            busy('İkinci deneme: görsel farklı ayarla okunuyor…');
+            return ocrRecognize(worker, im.ocrPlain, 'ham').then(function (r2) { return receiptScore(r2.text).score > s1.score ? r2 : r1; }, function () { return r1; });
+          }).then(function (r) { texts.push(r.text); });
         });
       });
-      return chain.then(function () {
-        var text = texts.join('\n'), lines = P.parseTextLines(text, importOpts.cc ? -1 : 1), rec = P.parseReceiptText(text);
-        var useLines = lines.rows.length >= 2 && lines.rows.length >= rec.rows.length;
-        var rows = useLines ? lines.rows : rec.rows;
-        if (!rows.length) throw new Error('Metin tanındı ama işlem satırı çıkarılamadı. Daha net bir fotoğraf dene veya yapay zekâ ile oku.');
-        review = { source: name + ' (OCR)', kind: 'ocr', cc: importOpts.cc, docTotal: useLines ? (lines.totals.length ? lines.totals[lines.totals.length - 1].amount : null) : rec.docTotal, preview: images[0].dataUrl, ocrText: text };
-        startReviewRows(rows); render();
-      });
+      return chain.then(function () { ocrProgress = null; buildOcrReview(texts.join('\n'), images, name, note); });
+    }, function (e) { ocrProgress = null; throw e; }).catch(function (e) {
+      ocrProgress = null;
+      if (/zaman aşımı|aştı/.test(e.message)) resetOcrWorker();
+      throw e;
     });
   }
-
+  function buildOcrReview(text, images, name, note) {
+    var lines = P.parseTextLines(text, importOpts.cc ? -1 : 1), rec = P.parseReceiptText(text);
+    var useLines = lines.rows.length >= 2 && lines.rows.length > rec.rows.length;
+    var rows = useLines ? lines.rows : rec.rows, warn = [];
+    if (note) warn.push(note);
+    if (!String(text).trim()) warn.push('Görselde okunabilir yazı bulunamadı. Fişi düz bir yere koyup yakından, gölgesiz çekmeyi dene; aşağıdaki satırı elle de doldurabilirsin.');
+    var fallback = false;
+    if (!rows.length) { rows = P.receiptFallbackRows(rec, todayYmd()); fallback = true; if (String(text).trim()) warn.push(rec.docTotal != null ? 'Kalemler ayrı ayrı okunamadı; fişin TOPLAM tutarı tek satır olarak eklendi. Kontrol et.' : 'Metin okundu ama kalemler ayrıştırılamadı. Okunan ham metin aşağıda; tutarı oradan bakıp satıra yazabilirsin.'); }
+    else if (!useLines && rec.docTotal == null) warn.push('Fişin TOPLAM satırı okunamadı, bu yüzden kontrol yapılamadı. Satırları fişle karşılaştır; eksik kalem varsa "+ Satır ekle" ile ekle.');
+    else if (!useLines && rec.docTotal != null && !rec.matches) warn.push('Okunan kalemlerin toplamı (' + tl2(rec.itemsSum) + ') fişteki TOPLAM ile (' + tl2(rec.docTotal) + ') tutmuyor. Yanlış okunan satırı düzelt ya da "Fişi tek satır olarak kaydet"e bas.');
+    review = { source: name + ' (ücretsiz OCR' + (rec.merchant && !useLines ? ', ' + rec.merchant : '') + ')', kind: 'ocr', receipt: !useLines, cc: importOpts.cc,
+      docTotal: useLines ? (lines.totals.length ? lines.totals[lines.totals.length - 1].amount : null) : rec.docTotal, preview: images[0].dataUrl, ocrText: text, ocrWarn: warn, ocrRec: rec, rawOpen: fallback };
+    startReviewRows(rows); render();
+  }
   /* ---------- KONTROL / ONAY TABLOSU ---------- */
   function renderReview() {
     var r = review, h = '<h1>Kontrol et ve onayla</h1>';
@@ -487,12 +656,14 @@
         colSel('date', 'Tarih sütunu') + colSel('desc', 'Açıklama sütunu') + colSel('amount', 'Tutar sütunu') + colSel('debit', 'Borç/çıkan sütunu') + colSel('credit', 'Alacak/giren sütunu') +
         '<div class="field"><label>Başlık satırı</label><input type="number" min="0" max="' + t.rows.length + '" data-map="headerRow" value="' + (t.map.headerRow + 1) + '"></div></div></details>';
     }
+    if (r.ocrWarn && r.ocrWarn.length) h += r.ocrWarn.map(function (w) { return '<div class="notice warn">' + esc(w) + '</div>'; }).join('');
     if (r.preview) h += '<details class="card" style="margin-top:10px"><summary><b>Belgeyi göster</b> <span class="hint">(karşılaştırmak için)</span></summary><img src="' + r.preview + '" alt="Yüklenen belge" style="max-width:100%;max-height:600px;margin-top:10px;border-radius:8px"></details>';
     h += '<section class="card" style="margin-top:10px" id="rv-summary">' + reviewSummary() + '</section>';
     h += reviewCardBox();
     h += '<section class="card" style="margin-top:10px"><div class="row" style="margin-bottom:10px">' +
       '<button class="btn small" data-act="rv-all">Tümünü seç</button><button class="btn small" data-act="rv-none">Tümünü kaldır</button>' +
       '<button class="btn small" data-act="rv-flip">Seçililerde gelir ↔ gider çevir</button><button class="btn small" data-act="rv-merge">Seçilileri tek işlemde birleştir</button>' +
+      '<button class="btn small" data-act="rv-add">+ Satır ekle</button>' + (r.receipt && r.ocrRec && r.ocrRec.docTotal != null ? '<button class="btn small" data-act="rv-total-only">Fişi tek satır olarak kaydet (' + esc(tl2(r.ocrRec.docTotal)) + ')</button>' : '') +
       '<span class="row" style="gap:6px"><label for="rv-date" class="hint">Seçililere tarih:</label><input type="date" id="rv-date" style="width:auto"><button class="btn small" data-act="rv-setdate">Uygula</button></span>' +
       '<span class="row" style="gap:6px"><label for="rv-cat" class="hint">Seçililere kategori:</label><select id="rv-cat" style="width:auto"><option value="">— seç —</option>' + catOptions('') + '</select><button class="btn small" data-act="rv-setcat">Uygula</button></span></div>';
     h += '<div class="tablewrap"><table class="review"><thead><tr><th><span class="sr">Dahil</span>✓</th><th>Tarih</th><th>Açıklama</th><th class="r">Tutar (TL) ' + tip('Eksi (−) harcama, artı gelir demektir.') + '</th><th>Kategori</th><th>Durum</th></tr></thead><tbody>';
@@ -505,7 +676,7 @@
     });
     h += '</tbody></table></div>' + (r.rows.length ? '' : '<p class="muted">Hiç satır çıkarılamadı. Sütun eşleştirmesini kontrol et.</p>') + '</section>';
     h += '<div class="row savebar"><button class="btn primary" data-act="rv-save" id="rv-save">Onayla ve kaydet</button><button class="btn" data-act="rv-cancel">Vazgeç</button></div>';
-    if (r.pdfText || r.ocrText) h += '<details class="card detail-only" style="margin-top:14px"><summary>Belgeden okunan ham metin</summary><pre style="white-space:pre-wrap;font-size:.8rem;max-height:400px;overflow:auto">' + esc(r.pdfText || r.ocrText) + '</pre></details>';
+    if (r.pdfText || r.ocrText || r.kind === 'ocr') h += '<details class="card' + (r.kind === 'ocr' ? '' : ' detail-only') + '" style="margin-top:14px"' + (r.rawOpen ? ' open' : '') + ' id="rv-raw"><summary>Belgeden okunan ham metin' + (r.kind === 'ocr' ? ' <span class="hint">(tutarları buradan kontrol edebilirsin)</span>' : '') + '</summary><pre style="white-space:pre-wrap;font-size:.8rem;max-height:400px;overflow:auto">' + esc(r.pdfText || r.ocrText || '(Görselde yazı bulunamadı)') + '</pre></details>';
     return h;
   }
   function rowClass(x) { return (x.include ? '' : 'excluded ') + (x.include && x.errors.length ? 'has-err' : ''); }
@@ -533,6 +704,7 @@
   function refreshReviewRow(x) {
     var tr = $('tr[data-key="' + x.key + '"]'); if (!tr) return;
     tr.className = rowClass(x); $('.rv-status', tr).innerHTML = rowStatus(x);
+    var cb = $('input[data-rv="include"]', tr); if (cb) cb.checked = !!x.include;
   }
   function refreshReview() {
     revalidate(false);
@@ -1269,7 +1441,7 @@
   }
   function onClick(e) {
     var t = e.target.closest('[data-act],[data-pick],[data-ask]'); if (!t) { if (e.target.closest('#drop')) $('#file-in').click(); return; }
-    if (t.dataset.pick) { var fi = $('#file-in'); fi.accept = t.dataset.pick; fi.value = ''; fi.click(); return; }
+    if (t.dataset.pick) { var fi = $('#file-in'); fi.accept = t.dataset.pick; if (t.dataset.capture) fi.setAttribute('capture', t.dataset.capture); else fi.removeAttribute('capture'); fi.value = ''; fi.click(); return; }
     if (t.dataset.ask) { ask(t.dataset.ask); return; }
     var act = t.dataset.act;
     var A = {
@@ -1311,7 +1483,19 @@
       },
       'pdf-ai': function () { if (!lastPdf) return; busy('Sayfalar görüntüye çevriliyor…'); pdfToImages(lastPdf.pdf, 5).then(function (imgs) { return aiImages(imgs, lastPdf.name); }).catch(function (er) { setStatus('Okunamadı: ' + esc(er.message), 'danger'); }); },
       'pdf-ocr': function () { if (!lastPdf) return; busy('Sayfalar görüntüye çevriliyor…'); pdfToImages(lastPdf.pdf, 5).then(function (imgs) { return ocrImages(imgs, lastPdf.name); }).catch(function (er) { setStatus('Okunamadı: ' + esc(er.message), 'danger'); }); },
-      'retry-ocr': function () { if (pendingImages) ocrImages(pendingImages.images, pendingImages.name).catch(function (er) { setStatus('Okunamadı: ' + esc(er.message), 'danger'); }); },
+      'rv-add': function () {
+        if (!review) return;
+        var key = review.rows.reduce(function (m, x) { return Math.max(m, x.key); }, -1) + 1;
+        var d = (review.ocrRec && review.ocrRec.date) || (review.rows[0] && review.rows[0].date) || todayYmd();
+        review.rows.push({ key: key, include: true, manual: true, date: d, rawDate: '', description: '', amount: null, note: 'Elle eklendi', category: (review.ocrRec && review.ocrRec.category) || 'Diğer', source: 'elle' });
+        revalidate(false); render();
+        var inp = $('tr[data-key="' + key + '"] input[data-rv="description"]'); if (inp) inp.focus();
+      },
+      'rv-total-only': function () {
+        if (!review || !review.ocrRec) return;
+        var rows = P.receiptFallbackRows(review.ocrRec, todayYmd());
+        startReviewRows(rows); review.docTotal = review.ocrRec.docTotal; review.ocrWarn = []; render();
+      },
       'ai-showkey': function () { var k = $('#ai-key'); k.type = k.type === 'password' ? 'text' : 'password'; t.textContent = k.type === 'password' ? 'Göster' : 'Gizle'; },
       'ai-delkey': function () { if (aiCfg.keys) delete aiCfg.keys[aiCfg.provider]; Store.saveAi(aiCfg); render(); toast('Anahtar bu cihazdan silindi.'); },
       'ai-list': function () { saveAiFromForm(); var msg = $('#ai-msg'); msg.innerHTML = '<span class="spinner"></span> Modeller alınıyor…'; AI.listModels(aiCfg).then(function (ids) { $('#ai-models').innerHTML = ids.map(function (i) { return '<option value="' + esc(i) + '">'; }).join(''); msg.textContent = ids.length + ' model bulundu. Model kutusuna tıklayınca listeden seçebilirsin.' + (aiCfg.provider === 'openrouter' ? ' Ücretsiz olanların adı ":free" ile biter.' : ''); }, function (er) { msg.textContent = er.message; }); },
@@ -1372,16 +1556,16 @@
     }
     if (el.dataset.rv && review) {
       var tr = el.closest('tr'), x = review.rows.find(function (r) { return String(r.key) === tr.dataset.key; }), f2 = el.dataset.rv;
-      if (f2 === 'include') x.include = el.checked;
+      if (f2 === 'include') { x.include = el.checked; x.autoEx = false; }
       else if (f2 === 'date') x.date = P.parseDate(el.value);
       else if (f2 === 'description') { x.description = el.value; }
-      else if (f2 === 'amount') { x.amount = M.parse(el.value); el.setAttribute('aria-invalid', x.amount == null ? 'true' : 'false'); if (x.amount != null) el.value = moneyInputVal(x.amount); }
+      else if (f2 === 'amount') { x.amount = M.parse(el.value); if (review.receipt && x.amount > 0 && !/^\s*\+/.test(el.value)) x.amount = -x.amount; /* fişte yazılan tutar harcamadır (+ ile gelir) */ el.setAttribute('aria-invalid', x.amount == null ? 'true' : 'false'); if (x.amount != null) el.value = moneyInputVal(x.amount); }
       else if (f2 === 'category') x.category = el.value;
       refreshReview(); return;
     }
     if (el.id === 'rv-total' && review) { var dt = el.value.trim() ? M.parse(el.value) : null; if (el.value.trim() && dt == null) return toast('Geçersiz toplam'); review.docTotal = dt == null ? null : Math.abs(dt); refreshReview(); return; }
     if (el.id === 'opt-cc') { importOpts.cc = el.checked; return; }
-    if (el.id === 'opt-method') { importOpts.method = el.value; return; }
+    if (el.id === 'opt-method') { importOpts.method = el.value; aiCfg.importMethod = el.value; Store.saveAi(aiCfg); return; }
     if (el.id === 'file-in') return handleFile(el.files[0]);
     if (el.id === 'backup-in') return importBackup(el.files[0]);
     if (el.id === 'tx-month') { txFilter.ym = el.value; return render(); }

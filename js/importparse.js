@@ -208,30 +208,127 @@
   }
 
   /* ---------- Fiş (OCR metni) ayrıştırma ----------
-   * Tarih metnin herhangi bir yerinde olabilir; kalemler satır sonunda tutar olan satırlardır. KDV/ara toplam/ödeme satırları atlanır. */
-  var RECEIPT_SKIP = /(kdv|topkdv|ara ?toplam|toplam|nakit|kredi|kart|para üstü|para ustu|değişim|degisim|fiş no|fis no|z no|ekü|eku|mersis|vergi|v\.d|tel[:. ]|saat|iade tutar|indirim toplam|ödenen|odenen|bakiye|puan)/;
+   * Türk yazar kasa fişi düzeni: üstte işyeri + adres + tarih/saat, ortada "ÜRÜN  %KDV  *TUTAR" kalemleri,
+   * altta TOPKDV / TOPLAM / ödeme şekli / KDV dökümü / Z-EKÜ-MERSİS. Kalemler ilk TOPKDV/TOPLAM satırına kadar okunur;
+   * sonrası (ödeme, KDV tablosu) asla kalem sayılmaz. "2 AD X 22,50" gibi miktar satırları atlanır. */
+  var CHAINS = [['bim', 'BİM'], ['a101', 'A101'], ['a 101', 'A101'], ['migros', 'Migros'], ['sok market', 'ŞOK'], ['sok marketler', 'ŞOK'], ['carrefour', 'CarrefourSA'],
+    ['metro grosmarket', 'Metro'], ['macrocenter', 'Macrocenter'], ['file market', 'File'], ['hakmar', 'Hakmar'], ['onur market', 'Onur Market'], ['bizim toptan', 'Bizim Toptan'],
+    ['happy center', 'Happy Center'], ['mopas', 'Mopaş'], ['kim market', 'Kim Market'], ['tarim kredi', 'Tarım Kredi'], ['gratis', 'Gratis'], ['watsons', 'Watsons'],
+    ['rossmann', 'Rossmann'], ['eve ', 'EVE'], ['koctas', 'Koçtaş'], ['teknosa', 'Teknosa'], ['mediamarkt', 'MediaMarkt'], ['opet', 'Opet'], ['shell', 'Shell'],
+    ['petrol ofisi', 'Petrol Ofisi'], ['total', 'Total'], ['bp ', 'BP'], ['eczane', 'Eczane'], ['starbucks', 'Starbucks'], ['burger king', 'Burger King'], ['mcdonald', "McDonald's"]];
+  var MARKET_CHAINS = /^(BİM|A101|Migros|ŞOK|CarrefourSA|Metro|Macrocenter|File|Hakmar|Onur Market|Bizim Toptan|Happy Center|Mopaş|Kim Market|Tarım Kredi)$/;
+  function asciiFold(s) { return fold(s).replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/â/g, 'a').replace(/î/g, 'i').replace(/û/g, 'u'); }
+  function cleanOcrLine(l) {
+    return String(l).replace(/[\u2018\u2019\u201c\u201d`´]/g, "'").replace(/\s*[—–-]+\s*(?=\*)/g, ' ').replace(/[—–]/g, '-').replace(/\s+/g, ' ')
+      // "57,:50" "57 ,50" "57. 50" → "57,50"
+      .replace(/(\d)\s?([,.])\s?[:;']?\s?(\d{2})(?!\d)/g, '$1$2$3')
+      // "*34 50" (virgül okunmamış, yıldızlı tutar) → "*34,50"
+      .replace(/(\*\s?\d{1,6}) (\d{2})\s*$/, '$1,$2')
+      // satır sonunda "TL" / "₺" / "#" gürültüsü
+      .replace(/\s*(TL|₺|#)\s*$/i, '')
+      .trim();
+  }
+  var RC_AMOUNT_END = /([-−]?\s?[*xX¥#]?\s?[-−]?(?:\d{1,3}(?:\.\d{3})+|\d{1,7}),\d{2}|[-−]?\s?[*¥#]?\s?[-−]?\d{1,7}\.\d{2})\s*$/;
+  var RC_TOTAL = /^(genel )?t[o0]p(l|i|1)am\b|^(genel )?toplam|^tutar$|^odenecek|^toplam tutar/;
+  var RC_STOP = /^(genel )?t[o0]p(l|i|1)am|^topkdv|^top ?kdv|^kdv ?top|^ara ?toplam|^toplam kdv|^kdv ?(orani|matrah|tutari)|^matrah/;
+  var RC_SKIP = /(kdv|ara ?toplam|nakit|kredi|banka|kart|para ustu|degisim|fis ?no|z ?no|eku|mersis|vergi|v\.? ?d\.?|vkn|tckn|tel[:. ]|saat|iade|odenen|bakiye|puan|bonus|toplam|termin|onay|provizyon|batch|merchant|isyeri|tutar)/;
+  var RC_QTY = /^\s*\d+([.,]\d+)?\s*(ad|adet|ad\.|kg|gr|g|lt|l|pk|pkt)?\s*[x×*]\s*\d/i;
+  var RC_DATE = /(\d{1,2})\s?[./-]\s?(\d{1,2})\s?[./-]\s?(\d{2,4})(?!\d)/;
+  function detectMerchant(lines) {
+    var head = lines.slice(0, 8);
+    for (var i = 0; i < head.length; i++) {
+      var a = ' ' + asciiFold(head[i]).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ') + ' ';
+      for (var j = 0; j < CHAINS.length; j++) {
+        var k = CHAINS[j][0].trim();
+        if (new RegExp('(^|\\s)' + k.replace(/ /g, '\\s?') + '(\\s|$)').test(a)) return { name: CHAINS[j][1], known: true };
+      }
+    }
+    for (var n = 0; n < head.length; n++) { var t = head[n].replace(/[^A-Za-zÇĞİÖŞÜçğıöşü0-9 .&'-]/g, '').trim(); if ((t.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/g) || []).length >= 3) return { name: t.slice(0, 40), known: false }; }
+    return { name: '', known: false };
+  }
+  function findReceiptDate(lines) {
+    // Önce "TARİH" yazan satır, sonra herhangi bir satır
+    var ordered = lines.filter(function (l) { return /tar[i1l]h|tar\.|date/.test(asciiFold(l)); }).concat(lines);
+    for (var i = 0; i < ordered.length; i++) {
+      var re = new RegExp(RC_DATE.source, 'g'), m;
+      while ((m = re.exec(ordered[i]))) { var d = parseDate(m[1] + '.' + m[2] + '.' + m[3]); if (d) return { date: d, raw: m[0] }; }
+    }
+    return { date: null, raw: '' };
+  }
+  /* Gölge/eğim yüzünden OCR fişi iki sütun gibi okuyabilir: önce k adet ürün adı, sonra k adet yalnız-tutar satırı.
+   * Böyle ardışık blokları satır satır yeniden eşleştirir ("YUMURTA" + "S1 *45,00"). */
+  function hasEndAmount(l) { return RC_AMOUNT_END.test(l); }
+  function letterCount(s) { return (String(s).match(/[A-Za-zÇĞİÖŞÜçğıöşü]/g) || []).length; }
+  function isAmountOnly(l) { var m = RC_AMOUNT_END.exec(l); return !!m && letterCount(l.slice(0, m.index)) < 2; }
+  function isLabelOnly(l) { return !hasEndAmount(l) && letterCount(l) >= 2; }
+  function pairColumns(lines) {
+    var out = lines.slice(), i = 0;
+    while (i < out.length) {
+      if (!isAmountOnly(out[i])) { i++; continue; }
+      var a0 = i; while (i < out.length && isAmountOnly(out[i])) i++;
+      var k = i - a0, l1 = a0; while (l1 > 0 && isLabelOnly(out[l1 - 1])) l1--;
+      var L = a0 - l1;
+      if (k >= 2 && L >= k) {
+        var labels = out.slice(a0 - k, a0), amts = out.slice(a0, i);
+        var merged = labels.map(function (lab, j) { return lab + ' ' + amts[j]; });
+        out.splice(a0 - k, 2 * k, merged[0]); out.splice.apply(out, [a0 - k + 1, 0].concat(merged.slice(1)));
+        i = a0;
+      }
+    }
+    return out;
+  }
   function parseReceiptText(text) {
-    var lines = String(text || '').split(/\r?\n/).map(function (l) {
-      // Sık OCR gürültüsü: "57,:50" → "57,50", "57 ,50" → "57,50"
-      return l.replace(/\s+/g, ' ').replace(/(\d)\s?([,.])\s?[:;']?\s?(\d{2})(?!\d)/g, '$1$2$3').trim();
-    }).filter(Boolean);
-    var date = null, total = null, items = [], merchant = lines.length ? lines[0].slice(0, 60) : '';
-    var dre = /(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/;
-    lines.forEach(function (l) {
-      var f = fold(l);
-      if (!date) { var dm = dre.exec(l); if (dm && parseDate(dm[1])) date = parseDate(dm[1]); }
-      var am = /([-−]?\*?\s?(?:\d{1,3}(?:[.,]\d{3})+|\d+)[.,]\d{2})\s*(?:TL|₺)?\s*$/.exec(l);
-      if (!am) return;
-      var v = M.parse(am[1].replace(/[*\s]/g, ''));
-      if (v == null) return;
-      if (/(^|\s)(genel )?toplam/.test(f) && !/(ara ?toplam|topkdv|kdv)/.test(f)) { if (total == null || Math.abs(v) > total) total = Math.abs(v); return; }
-      if (RECEIPT_SKIP.test(f)) return;
-      var desc = l.slice(0, am.index).replace(/[*xX]\s*\d+([.,]\d+)?\s*$/, '').replace(/\s+(%|S|5)\s?(1|8|10|18|20)\s*$/, '').replace(/%\s*\d+\s*$/, '').trim();
-      if (!desc || dre.test(desc) && desc.length < 12) return;
-      items.push({ date: date, rawDate: '', description: desc, amount: -Math.abs(v), source: 'OCR' });
+    var lines = pairColumns(String(text || '').split(/\r?\n/).map(cleanOcrLine).filter(Boolean));
+    var mer = detectMerchant(lines), dt = findReceiptDate(lines);
+    var date = dt.date, total = null, items = [], stopped = false, sawStar = false;
+    lines.forEach(function (l) { if (/\*\s?\d+[.,]\d{2}\s*$/.test(l)) sawStar = true; });
+    lines.forEach(function (l, idx) {
+      var f = asciiFold(l).replace(/^[^a-z0-9%*]+/, '');
+      var am = RC_AMOUNT_END.exec(l);
+      var v = am ? M.parse(am[1].replace(/[*xX¥#\s]/g, '').replace('−', '-')) : null;
+      if (RC_TOTAL.test(f) && !/(ara ?toplam|topkdv|kdv)/.test(f)) {
+        if (v != null && (total == null || stopped === 'kdv')) total = Math.abs(v);
+        stopped = true; return;
+      }
+      if (RC_STOP.test(f)) { if (!stopped) stopped = 'kdv'; return; }
+      if (stopped) {
+        // ARA TOPLAM ile TOPLAM arasındaki indirim satırları (Migros, A101 vb.) toplamı düşürür
+        if (stopped === 'kdv' && v != null && v !== 0 && /(indirim|iskonto|kampanya)/.test(f) && !/(toplam|kdv)/.test(f)) {
+          var dd = l.slice(0, am.index).replace(/[\s.*:_-]+$/, '').trim();
+          items.push({ date: date, rawDate: dt.raw, description: dd.slice(0, 80) || 'İndirim', amount: Math.abs(v), source: 'OCR', rawLine: l, note: 'İndirim: toplamdan düşülür', lineNo: idx });
+        }
+        return;
+      }
+      if (v == null || v === 0) return;
+      if (RC_QTY.test(l) && !/[A-Za-zÇĞİÖŞÜçğıöşü]{3,}/.test(l.replace(/\b(AD|ADET|KG|GR|LT|PK|PKT)\b/gi, ''))) return;
+      if (RC_SKIP.test(f)) return;
+      var desc = l.slice(0, am.index)
+        .replace(/[\s&|¥$§#@(){}\[\]<>]+$/, '').replace(/\s+[%¥&]\s?\d{1,2}\s*$/, '').replace(/\s+(%|S|5|8|X|&|¥)\s?(0|1|8|10|18|20)\s*$/, '').replace(/[\s&|(){}\[\]<>]+$/, '').replace(/[*xX]\s*\d+([.,]\d+)?\s*$/, '')
+        .replace(/\s+[&%¥$§#@|]+\d{0,2}$/, '').replace(/[\s.*:_|-]+$/, '').replace(/^[\s.*:_|-]+/, '').trim();
+      var letters = (desc.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/g) || []).length;
+      if (letters < 2) return;
+      if (RC_DATE.test(desc) && desc.length < 14) return;
+      // İndirim satırı tutarı azaltır
+      var isDisc = /(indirim|iskonto|kampanya|ind\.)/.test(asciiFold(desc));
+      // Yıldızlı tutar düzeni olan fişte yıldızsız satırlar şüphelidir: alınır ama not düşülür
+      var star = /\*\s?[-−]?\d/.test(am[1]);
+      items.push({ date: date, rawDate: dt.raw, description: desc.slice(0, 80), amount: isDisc ? Math.abs(v) : -Math.abs(v), source: 'OCR', rawLine: l,
+        note: isDisc ? 'İndirim: toplamdan düşülür' : (sawStar && !star ? 'Kontrol et: tutar yıldızsız okundu' : '') , lineNo: idx });
     });
-    items.forEach(function (it) { if (!it.date) it.date = date; });
-    return { rows: items, docTotal: total, date: date, merchant: merchant };
+    // Çoğu kalemin sonunda aynı kısa sayı/simge varsa (KDV oranı "%1"in "5" okunması gibi) hepsinden at
+    var tails = {}; items.forEach(function (it) { var m = /\s(\S{1,2})$/.exec(it.description); if (m && letterCount(m[1]) === 0) tails[m[1]] = (tails[m[1]] || 0) + 1; });
+    Object.keys(tails).forEach(function (t) { if (tails[t] >= 2 && tails[t] >= items.length * 0.3) items.forEach(function (it) { if (it.description.slice(-t.length - 1) === ' ' + t) it.description = it.description.slice(0, -t.length - 1).trim(); }); });
+    var category = mer.known && MARKET_CHAINS.test(mer.name) ? 'Market' : null;
+    items.forEach(function (it) { if (!it.date) it.date = date; if (mer.name) it.merchant = mer.name; if (category) it.category = category; });
+    var itemsSum = items.reduce(function (s, it) { return s - it.amount; }, 0);
+    return { rows: items, docTotal: total, date: date, rawDate: dt.raw, merchant: mer.name, merchantKnown: mer.known, category: category,
+      itemsSum: itemsSum, matches: total != null && itemsSum === total };
+  }
+  /* Fişten satır çıkmazsa veya kalem toplamı tutmazsa kullanıcıya her zaman düzenlenebilir bir satır bırak. */
+  function receiptFallbackRows(rec, todayYmd) {
+    var desc = (rec.merchant ? rec.merchant + ' alışverişi' : 'Fiş alışverişi');
+    return [{ date: rec.date || todayYmd || null, rawDate: rec.rawDate || '', description: desc, amount: rec.docTotal != null ? -Math.abs(rec.docTotal) : null,
+      source: 'OCR', category: rec.category || null, note: rec.docTotal != null ? 'Fişin TOPLAM satırından' : 'Tutarı fişten bakıp yaz', manual: rec.docTotal == null }];
   }
 
   /* ---------- Toplam kontrolü ---------- */
@@ -274,5 +371,5 @@
 
   return { parseDate: parseDate, suggestCategory: suggestCategory, CATEGORIES: CATEGORIES, markDuplicates: markDuplicates, dupKey: dupKey,
     validateRow: validateRow, detectColumns: detectColumns, rowsFromTable: rowsFromTable, parseTextLines: parseTextLines, totalsCheck: totalsCheck,
-    rowsFromAiJson: rowsFromAiJson, parseReceiptText: parseReceiptText, fold: fold, trLower: trLower, isValidYmd: isValidYmd };
+    rowsFromAiJson: rowsFromAiJson, parseReceiptText: parseReceiptText, receiptFallbackRows: receiptFallbackRows, cleanOcrLine: cleanOcrLine, fold: fold, trLower: trLower, isValidYmd: isValidYmd };
 });

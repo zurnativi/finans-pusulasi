@@ -120,6 +120,48 @@
     eq(r.docTotal, 5750); eq(r.rows.map(function (x) { return x.description; }), ['EKMEK', 'SÜT 1L', 'DETERJAN']);
   });
 
+  test('fiş: gerçek BİM düzeni — KDV tablosu ve miktar satırı kalem sayılmaz', function () {
+    var txt = 'BIM BIRLESIK MAGAZALAR A.S.\nABDURRAHMANGAZI MAH. SAMANDIRA\nV.D. BUYUK MUKELLEFLER 1750051846\nTARIH : 12.11.2026 SAAT : 18:42\nFIS NO : 0087\n' +
+      'SUT 1 LT %1 *34,50\nEKMEK %1 *12,50\nDOMATES KG %1 *48,75\n2 AD X 22,50\nYUMURTA 10LU %1 *45,00\nDETERJAN 4 KG %20 *189,90\nPEYNIR BEYAZ %1 *129,95\n' +
+      'TOPKDV *33,29\nTOPLAM *460,60\nKREDI KARTI *460,60\nKDV ORANI MATRAH KDV\n%1 267,03 2,67\n%20 158,25 31,65\nZ NO:1234 EKU NO:0001\nMERSIS NO:0175005184600014';
+    var r = P.parseReceiptText(txt);
+    eq(r.merchant, 'BİM'); eq(r.category, 'Market'); eq(r.date, '2026-11-12'); eq(r.docTotal, 46060);
+    eq(r.rows.map(function (x) { return x.description; }), ['SUT 1 LT', 'EKMEK', 'DOMATES KG', 'YUMURTA 10LU', 'DETERJAN 4 KG', 'PEYNIR BEYAZ']);
+    eq(r.itemsSum, 46060); ok(r.matches);
+    r.rows.forEach(function (x) { ok(x.category === 'Market'); ok(x.date === '2026-11-12'); });
+  });
+  test('fiş: A101/Migros, nokta ondalık, eksik virgül, indirim satırı, GENEL TOPLAM', function () {
+    var r = P.parseReceiptText('MIGROS TICARET A.S.\n13/11/26 20:15\nMUZ YERLI %1 *59.90\nCIKOLATA %10 *42 50\nARA TOPLAM *102,40\nINDIRIM -10,00\nGENEL TOPLAM *92,40\nBANKA KARTI *92,40');
+    eq(r.merchant, 'Migros'); eq(r.date, '2026-11-13'); eq(r.docTotal, 9240);
+    eq(r.rows.map(function (x) { return x.amount; }), [-5990, -4250, 1000]);
+    r.rows.forEach(function (x) { x.include = true; }); ok(P.totalsCheck(r.rows, r.docTotal).match, 'indirim sonrası toplam tutar');
+    var a = P.parseReceiptText('A101 YENI MAGAZACILIK A.S.\nTARIH:01-10-2026\nSU 5 LT %1 *25,00\nT0PLAM *25,00');
+    eq(a.merchant, 'A101'); eq(a.date, '2026-10-01'); eq(a.docTotal, 2500); eq(a.rows.length, 1);
+  });
+  test('fiş: OCR gürültüsü, TOPLAM önce, yıldızsız satır notu, tarih ortada', function () {
+    var r = P.parseReceiptText('ŞOK MARKETLER T.A.Ş.\nFIS NO 12  12 . 11 . 2026\nPEYNIR ¥1 *89,90\nZEYTIN 64,50\nTOPLAM *154,40\nNAKIT *200,00\nPARA USTU *45,60');
+    eq(r.merchant, 'ŞOK'); eq(r.date, '2026-11-12'); eq(r.docTotal, 15440); eq(r.rows.length, 2);
+    ok(/yıldızsız/.test(r.rows[1].note)); ok(r.matches);
+    eq(P.parseReceiptText('BIM\nSUT 1 LT & *34,50\nPEYNIR %1 | *10,00\nTOPLAM *44,50').rows.map(function (x) { return x.description; }), ['SUT 1 LT', 'PEYNIR']);
+  });
+  test('fiş: hiçbir şey okunamazsa yine düzenlenebilir satır', function () {
+    var r = P.parseReceiptText('~~ ## bulanik ~~\n....');
+    eq(r.rows.length, 0); eq(r.docTotal, null);
+    var fb = P.receiptFallbackRows(r, '2026-11-14');
+    eq(fb.length, 1); eq(fb[0].date, '2026-11-14'); eq(fb[0].amount, null); ok(fb[0].manual);
+    var r2 = P.parseReceiptText('KAFE ORNEK\n14.11.2026\nTOPLAM 85,00');
+    var fb2 = P.receiptFallbackRows(r2, '2026-11-14'); eq(fb2[0].amount, -8500); eq(fb2[0].description, 'KAFE ORNEK alışverişi');
+    eq(P.parseReceiptText('').rows.length, 0); eq(P.parseReceiptText(null).rows.length, 0);
+  });
+
+  test('fiş: gölgede iki sütun okunan fiş satır satır eşleşir, tire işaret sayılmaz', function () {
+    var txt = 'BIM BIRLESIİK MAĞAZALAR A.S.\nTARIH : 12.11.2026 SAAT : 18:42\nFIS NO : 0087\nSUT 1LT S1 — *34,50\nEKMEK S1 —*12,50\nDOMATES KG S1 — *48,75\n2 AD X 22,50\n\nYUMURTA 10LU\nDETERJAN 4 KG\nPEYNIR BEYAZ\n\nS1 — *45,00\n820 *189,90\nS1 ( *129,95\n\nTOPKDV\nTOPLAM\nKREDİ KARTI\n\nE33,29\n*460,60\n*460,60\n\nKDV ORANI MATRAH\n&1 267,03\n20 158,25';
+    var r = P.parseReceiptText(txt);
+    eq(r.docTotal, 46060); eq(r.rows.length, 6); ok(r.rows.every(function (x) { return x.amount < 0; }), 'hepsi gider'); ok(r.matches, 'toplam tutar');
+    eq(r.rows.map(function (x) { return x.description; }), ['SUT 1LT', 'EKMEK', 'DOMATES KG', 'YUMURTA 10LU', 'DETERJAN 4 KG', 'PEYNIR BEYAZ']); eq(r.rows[5].amount, -12995);
+    eq(P.parseReceiptText('BIM\nEKMEK 5 *1,00\nSUT 5 *2,00\nPEYNIR 5 *3,00\nTOPLAM *6,00').rows.map(function (x) { return x.description; }), ['EKMEK', 'SUT', 'PEYNIR']);
+  });
+
 
   // ================= Bütçe v2 (ledger.js) =================
   var clone = function (o) { return JSON.parse(JSON.stringify(o)); };

@@ -64,7 +64,7 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 |---|---|---|
 | Excel (.xlsx/.xls/.ods), CSV | SheetJS ile; sütunlar (tarih, açıklama, tutar veya borç/alacak) otomatik bulunur, yanlışsa elle eşleştirilir. Türkçe karakterli (Windows-1254) CSV desteklenir | Gerekmez |
 | PDF ekstre (metinli) | pdf.js ile metin çıkarılır, satırlar tarih+tutar kuralıyla ayrıştırılır | Gerekmez |
-| Taranmış PDF, fotoğraf, fiş, ekran görüntüsü | **Yapay zekâ** (seçtiğin sağlayıcı, en iyi sonuç) veya **ücretsiz OCR** (Tesseract.js) | Gerekir (OCR ilk seferde ~10 MB dil dosyası indirir) |
+| Taranmış PDF, fotoğraf, fiş, ekran görüntüsü (JPG/PNG/WebP/HEIC) | **Otomatik**: yapay zekâ ayarlıysa yapay zekâ, değilse (veya hata verirse) **ücretsiz OCR** (Tesseract.js, Türkçe) | OCR dosyaları sitenin kendi `vendor/tesseract` klasöründen bir kez (~6 MB) yüklenir, sonra tarayıcı önbelleğinden |
 
 Kredi kartı ekstrelerinde harcamalar artı yazılır: "Kredi kartı ekstresi" kutusunu işaretle veya tabloda "gelir ↔ gider çevir" kullan.
 Kart borcu ödemesi gibi **Transfer** kategorisindeki işlemler, çift sayılmasın diye aylık gelir/gider toplamlarına katılmaz.
@@ -137,7 +137,7 @@ js/sample.js          Örnek veri, boş durum, şema dönüştürme (v1→v2), y
 js/store.js           IndexedDB + localStorage saklama
 js/ai.js              Yapay zekâ sağlayıcıları (resmi REST API'ler)
 js/app.js             Arayüz
-vendor/               SheetJS (Apache-2.0), pdf.js (Apache-2.0) — yerel kopya, CDN gerekmez
+vendor/               SheetJS (Apache-2.0), pdf.js (Apache-2.0), Tesseract.js 5.1.1 + Türkçe dil verisi (Apache-2.0), heic2any (MIT) — yerel kopya, CDN gerekmez
 tests/                Otomatik testler (fixture-v1.js: dönüştürme testi için gerçek v1 verisi)
 ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek veri)
 ```
@@ -150,7 +150,9 @@ ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek ver
 - Kumbaraya "ayrılan" para ayrı bir hesaba taşınmaz; birikim/net varlık içinde görünmeye devam eder.
 - Ay seçme kutusunun ay adları tarayıcının diline göre görünür.
 - Ücretsiz OCR, el yazısı ve bulanık fotoğraflarda zayıftır; bu durumda yapay zekâ ile oku. Her durumda kontrol tablosundan geçer.
-- HEIC (iPhone) fotoğrafları tarayıcıda açılamaz; JPG çek veya ekran görüntüsü kullan.
+- HEIC (iPhone) fotoğrafları otomatik JPEG'e çevrilir. Fotoğraf yan yatık çekilmişse (EXIF bilgisi yoksa) OCR okuyamayabilir; fişi dik çek.
+- Fiş okunamazsa bile kontrol tablosunda düzenlenebilir bir satır ve okunan ham metin gösterilir; tutarı elle yazıp kaydedebilirsin.
+- Site dosyadan (file://) açıldığında OCR motoru jsDelivr CDN'den yüklenir (tarayıcı yerel worker'a izin vermez).
 - Cihazlar arası otomatik eşitleme yok; yedek dosyasıyla taşınır.
 
 Bu uygulama bir planlama aracıdır, yatırım tavsiyesi değildir.
