@@ -434,7 +434,7 @@
           fieldRow('Hedef tutar (bugünün parasıyla, TL)', '<input class="money" type="text" inputmode="decimal" data-pfg="target" data-id="' + id + '" value="' + esc(M.format(g.target, { symbol: false })) + '">') +
           fieldRow('Hedef tarih (ay)', '<input type="month" data-pfg="targetYm" data-id="' + id + '" value="' + esc(g.targetYm) + '">') +
           fieldRow('Aylık birikimden pay (%)', '<input type="number" min="0" max="100" step="1" data-pfg="shareBp" data-id="' + id + '" value="' + g.shareBp / 100 + '">', 'Her ay artan paranın (acil fon sonrası) bu hedefe giden yüzdesi. Mevcut ortak birikim de bu oranla paylaştırılır.') +
-          fieldRow('Risk profili (süzülme yolu)', '<select data-pfg="glide" data-id="' + id + '">' + Object.keys(PF.GLIDES).map(function (k) { return opt(k, PF.GLIDES[k].label, g.glide); }).join('') + '</select>', 'Hedefe yaklaştıkça riskli payın ne hızla azalacağı. Temkinli: kısa vadeli, kaybı kaldıramayacağın hedefler. Büyüme: emeklilik gibi uzun vadeli hedefler.') +
+          fieldRow('Risk profili<span class="detail-only"> (süzülme yolu)</span>', '<select data-pfg="glide" data-id="' + id + '">' + Object.keys(PF.GLIDES).map(function (k) { return opt(k, PF.GLIDES[k].label, g.glide); }).join('') + '</select>', 'Hedefe yaklaştıkça riskli payın ne hızla azalacağı. Temkinli: kısa vadeli, kaybı kaldıramayacağın hedefler. Büyüme: emeklilik gibi uzun vadeli hedefler.') +
           '</div>' + (canDelete ? '<button class="btn small danger" data-act="pf-del-goal" data-id="' + id + '">Hedefi sil</button>' : '') + '</details>';
     }
     function goalsEditOnly() {

@@ -6,7 +6,7 @@
  * - Yeni sürüm kendiliğinden devreye girmez; sayfa "Yeni sürüm hazır" der, kullanıcı onaylayınca geçilir.
  * Kapsam: dosyanın bulunduğu klasör (GitHub Pages alt yolu /finans-pusulasi/ dahil) — tüm yollar göreli.
  */
-var VERSION = '6.0';
+var VERSION = '6.0.1';
 var CACHE = 'fp-shell-' + VERSION;
 var Q = '?v=' + VERSION;
 var SHELL = ['./', 'index.html', 'css/style.css' + Q, 'vendor/echarts.min.js'].concat(
