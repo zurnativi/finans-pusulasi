@@ -285,7 +285,7 @@
       var N = newsBy[A.key], h = '<section class="card"><h2>Haberler ' + tip('Ücretsiz GDELT haber veritabanından son 14 günün başlıkları ve basit kelime tabanlı duygu etiketi. Kaynak yanıt vermezse haber gösterilmez; "Asistana sor" ile bağlam içinde değerlendirme isteyebilirsin.') + '</h2>';
       if (!N) h += '<button class="btn small" type="button" data-act="a-news">Haberleri getir</button> <span class="hint">Sorgu: ' + esc(newsQuery(A)) + '</span>';
       else if (N.loading) h += '<p class="loading-line">Haberler alınıyor…</p>';
-      else if (N.error) h += '<p class="muted">Haber kaynağı yok / yanıt vermedi (' + esc(N.error) + '). Haber analizi uydurulmaz — "Asistana sor" ile değerlendirme isteyebilirsin.</p>';
+      else if (N.error) h += '<p class="muted">Haber kaynağı yanıt vermedi (' + esc(/fetch|network|cors/i.test(N.error) ? 'bağlantı reddedildi — GDELT yoğunken veya 5 sn\'de birden fazla istekte erişimi kısıtlar' : N.error) + '). <button class="btn small" type="button" data-act="a-news">Tekrar dene</button> Haber analizi uydurulmaz — "Asistana sor" ile değerlendirme isteyebilirsin.</p>';
       else if (!N.items.length) h += '<p class="muted">Son 14 günde başlık bulunamadı.</p>';
       else h += '<ul class="news">' + N.items.slice(0, 8).map(function (it) { var s = sentiment(it.title); return '<li><span class="sent ' + s.c + '" title="' + s.t + '">' + s.i + '</span> <a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.title) + '</a><div class="hint">' + esc(it.domain || '') + ' · ' + esc(it.d || '') + '</div></li>'; }).join('') + '</ul><p class="hint">Kaynak: ' + esc(N.source || 'GDELT') + ', ' + when(N.at) + '</p>';
       return h + '</section>';
