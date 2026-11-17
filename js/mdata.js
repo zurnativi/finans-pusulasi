@@ -18,6 +18,10 @@
   var URL = {
     mdIndex: REPO_RAW + 'index.json',
     md: function (kind, sym) { return REPO_RAW + kind + '/' + encodeURIComponent(sym) + '.json'; },
+    h1: function (kind, sym) { return REPO_RAW + 'h1/' + kind + '/' + encodeURIComponent(sym) + '.json'; },
+    kap: function (sym) { return REPO_RAW + 'kap/' + encodeURIComponent(sym) + '.json'; },
+    newsSym: function (sym) { return REPO_RAW + 'news/bist/' + encodeURIComponent(sym) + '.json'; },
+    newsTopic: function (t) { return REPO_RAW + 'news/topic/' + t + '.json'; },
     tvSymbol: function (tv, fields) { return 'https://scanner.tradingview.com/symbol?symbol=' + encodeURIComponent(tv) + '&fields=' + fields.join(','); },
     tvScan: function (market) { return 'https://scanner.tradingview.com/' + market + '/scan'; },
     binKlines: function (sym, interval, limit) { return 'https://data-api.binance.vision/api/v3/klines?symbol=' + sym + '&interval=' + (interval || '1d') + '&limit=' + (limit || 1000); },
@@ -204,6 +208,7 @@
   function mdIndex() { if (!mdIndexP) { mdIndexP = fetchJson(URL.mdIndex, { timeout: 20000 }); mdIndexP.catch(function () { mdIndexP = null; }); } return mdIndexP; }
   var ALIASES = { altin: 'metal:XAU', 'altın': 'metal:XAU', 'gram altin': 'metal:XAU', 'gram altın': 'metal:XAU', gumus: 'metal:XAG', 'gümüş': 'metal:XAG', 'ons altin': 'macro:XAUUSD', 'ons altın': 'macro:XAUUSD', xauusd: 'macro:XAUUSD', xagusd: 'macro:XAGUSD',
     dolar: 'fx:USD', usd: 'fx:USD', usdtry: 'fx:USD', euro: 'fx:EUR', eur: 'fx:EUR', eurtry: 'fx:EUR', 'bist100': 'idx:XU100', xu100: 'idx:XU100', 'bist 100': 'idx:XU100', xu030: 'idx:XU030', 'bist30': 'idx:XU030',
+    'katılım': 'idx:XKTUM', katilim: 'idx:XKTUM', 'katılım tüm': 'idx:XKTUM', xktum: 'idx:XKTUM', 'katılım 50': 'idx:XK050', 'katilim 50': 'idx:XK050', xk050: 'idx:XK050', katlm: 'idx:XK050', 'katılım 100': 'idx:XK100', xk100: 'idx:XK100', 'katılım 30': 'idx:XK030', xk030: 'idx:XK030',
     bitcoin: 'cg:bitcoin', btc: 'cg:bitcoin', ethereum: 'cg:ethereum', eth: 'cg:ethereum' };
   function norm(q) { return String(q || '').trim().toLocaleLowerCase('tr-TR'); }
   function resolve(query) {
@@ -229,7 +234,8 @@
   function describe(key) {
     var k = key.split(':')[0], s = key.slice(k.length + 1);
     var L = { 'metal:XAU': ['Gram altın (TL)', 'metal'], 'metal:XAG': ['Gram gümüş (TL)', 'metal'], 'fx:USD': ['ABD doları / TL', 'fx'], 'fx:EUR': ['Euro / TL', 'fx'], 'idx:XU100': ['BIST 100 endeksi', 'index'], 'idx:XU030': ['BIST 30 endeksi', 'index'],
-      'macro:XAUUSD': ['Altın ons (USD)', 'metal'], 'macro:XAGUSD': ['Gümüş ons (USD)', 'metal'] }[key];
+      'macro:XAUUSD': ['Altın ons (USD)', 'metal'], 'macro:XAGUSD': ['Gümüş ons (USD)', 'metal'],
+      'idx:XKTUM': ['Katılım Tüm endeksi', 'index'], 'idx:XK100': ['Katılım 100 endeksi', 'index'], 'idx:XK050': ['Katılım 50 endeksi', 'index'], 'idx:XK030': ['Katılım 30 endeksi', 'index'] }[key];
     if (L) return { key: key, kind: L[1], label: L[0], sub: '' };
     var kind = { bist: 'stock', tefas: 'fund', cg: 'crypto', us: 'etf', td: 'etf', imp: 'import', idx: 'index', fx: 'fx', metal: 'metal', macro: 'metal' }[k] || 'other';
     return { key: key, kind: kind, label: s, sub: '' };
@@ -348,10 +354,114 @@
       });
     });
   }
+  /* ---------- Gün içi (1S / 4S) mumlar ---------- */
+  var TF_MS = { '1h': 3600000, '4h': 14400000 };
+  function pad2(x) { return String(x).padStart(2, '0'); }
+  function labelOfMs(ms) { var d = new Date(ms + 3 * 3600000); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()); } // TSİ
+  function parseH1(j) {
+    if (!j || !Array.isArray(j.bars)) throw new Error('Saatlik veri dosyası biçimi tanınmadı');
+    var bars = j.bars.filter(function (b) { return num(b[0]) && num(b[4]) && b[4] > 0; }).map(function (b) { var t = b[0] * 1000; return { t: t, d: labelOfMs(t), o: b[1], h: b[2], l: b[3], c: b[4], v: num(b[5]) && b[5] > 0 ? b[5] : null }; });
+    return { bars: bars, currency: j.currency || null, fetchedAt: j.fetchedAt || null, source: j.source || 'Yahoo Finance 60 dk', stale: !!j.stale, lastError: j.lastError || null, name: j.name || null };
+  }
+  function parseBinanceIntraday(arr, nowMs) {
+    if (!Array.isArray(arr)) throw new Error('Binance yanıtı tanınmadı');
+    return arr.map(function (k) { return { t: k[0], d: labelOfMs(k[0]), o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], partial: nowMs ? k[6] > nowMs : false }; });
+  }
+  // 4 saatlik birleştirme. mode 'bist': seans yarıları (TSİ 13:30 öncesi / sonrası; BIST 10:00–18:10), '24h': UTC 4 saatlik dilimler (00, 04, 08…)
+  function aggregate(bars, mode, nowMs) {
+    var out = [], cur = null, key = null;
+    bars.forEach(function (b) {
+      var k = mode === 'bist' ? b.d.slice(0, 10) + (b.d.slice(11) < '13:30' ? 'A' : 'B') : String(Math.floor(b.t / 14400000));
+      if (k !== key) { if (cur) out.push(cur); key = k; cur = { t: b.t, d: b.d, o: b.o, h: b.h, l: b.l, c: b.c, v: num(b.v) ? b.v : null, n: 1, partial: !!b.partial, k: k }; return; }
+      cur.h = num(cur.h) && num(b.h) ? Math.max(cur.h, b.h) : null; cur.l = num(cur.l) && num(b.l) ? Math.min(cur.l, b.l) : null; cur.c = b.c; cur.n++;
+      if (num(b.v)) cur.v = (cur.v || 0) + b.v; if (b.partial) cur.partial = true;
+    });
+    if (cur) out.push(cur);
+    if (nowMs && out.length) { // son dilim henüz kapanmadıysa işaretle
+      var L = out[out.length - 1], end;
+      if (mode === 'bist') { var day = Date.UTC(+L.d.slice(0, 4), +L.d.slice(5, 7) - 1, +L.d.slice(8, 10)) - 3 * 3600000; end = day + (L.k.slice(-1) === 'A' ? 13.5 : 18 + 1 / 6) * 3600000; }
+      else end = (Math.floor(L.t / 14400000) + 1) * 14400000;
+      if (nowMs < end) L.partial = true;
+    }
+    return out.map(function (b) { delete b.k; return b; });
+  }
+  function checkIntraday(bars, kind, tf, opts) {
+    opts = opts || {}; var out = [], n = bars.length, now = opts.nowMs || Date.now(), today = ymdOfMs(now, 3);
+    function add(id, level, msg) { out.push({ id: id, level: level, msg: msg }); }
+    if (n < 60) add('count', 'fail', 'Yalnızca ' + n + ' mum var; gün içi teknik analiz için en az 60 mum gerekir.');
+    else if (n < 200) add('count', 'warn', n + ' mum var; 200 mumluk ortalama hesaplanamaz.');
+    else add('count', 'ok', n + ' adet ' + tf + ' mum (' + bars[0].d + ' → ' + bars[n - 1].d + ' TSİ).');
+    var order = 0; for (var i = 1; i < n; i++) if (!(bars[i].t > bars[i - 1].t)) order++;
+    if (order) add('order', 'fail', 'Zaman sırası bozuk veya tekrar eden mum (' + order + ').'); else if (n) add('order', 'ok', 'Mumlar zaman sırasında, tekrar yok.');
+    if (!opts.closeOnly) {
+      var bad = []; bars.forEach(function (b) { if (!(b.h >= Math.max(b.o, b.c) - 1e-9 && b.l <= Math.min(b.o, b.c) + 1e-9 && b.l > 0)) bad.push(b.d); });
+      if (bad.length) add('ohlc', bad.length > Math.max(2, n * 0.01) ? 'fail' : 'warn', bad.length + ' mumda en yüksek/en düşük tutarsız: ' + bad.slice(-3).join(', ')); else add('ohlc', 'ok', 'Tüm mumlarda en yüksek ≥ açılış/kapanış ≥ en düşük.');
+    } else add('ohlc', 'info', 'Türetilmiş seri: yalnızca kapanış (mum yok).');
+    if (n) {
+      var L = bars[n - 1], ageH = (now - L.t) / 3600000, lastDay = L.d.slice(0, 10);
+      if (L.t > now + 5 * 60000) add('fresh', 'fail', 'Son mum gelecekte (' + L.d + ') — saat/kaynak hatası.');
+      else if (kind === 'crypto') { var lim = TF_MS[tf] / 3600000; if (ageH > 3 * lim) add('fresh', 'fail', 'Veri eski: son mum ' + L.d + ' TSİ (' + Math.round(ageH) + ' saat önce).'); else add('fresh', 'ok', 'Güncel: son mum ' + L.d + ' TSİ' + (L.partial ? ' (kapanmamış, canlı)' : '') + '.'); }
+      else { var bd = businessDaysBetween(lastDay, today); if (bd > 3) add('fresh', 'fail', 'Veri eski: son mum ' + L.d + ' TSİ (' + bd + ' iş günü önce). Sinyal üretilmez.'); else if (bd > 1) add('fresh', 'warn', 'Son mum ' + L.d + ' TSİ (' + bd + ' iş günü önce).'); else add('fresh', 'ok', 'Son mum ' + L.d + ' TSİ' + (L.partial ? ' (kapanmamış)' : '') + ' — saatlik derleme seans içinde yaklaşık saatte bir güncellenir.'); }
+    }
+    if (!opts.closeOnly && kind !== 'fx' && kind !== 'index' && kind !== 'metal') {
+      var z = 0, m = Math.min(n, 120); for (i = n - m; i < n; i++) if (!num(bars[i].v) || bars[i].v <= 0) z++;
+      if (m && z / m > 0.2) add('volume', 'warn', 'Son ' + m + ' mumun %' + Math.round(z / m * 100) + "'inde hacim yok — hacim göstergeleri güvenilmez."); else if (m) add('volume', 'ok', 'Hacim verisi mevcut.');
+    }
+    if (opts.stale) add('stale', 'warn', 'Saatlik derleyici bu sembolü son çalıştırmada alamadı; önceki veri kullanılıyor.');
+    return out;
+  }
+  function loadH1(kind, sym) { return cached('h1:' + kind + ':' + sym, 5 * 60000, function () { return fetchJson(URL.h1(kind, sym), { timeout: 25000 }).then(parseH1, function (e) { if (e.status === 404) throw new Error('Bu varlık için gün içi veri derlenmiyor (saatlik veri: Katılım endeksi + BIST 100/30 hisseleri, endeksler, altın/gümüş, döviz, helal ETF\'ler; kripto Binance\'ten).'); throw e; }); }); }
+  function loadIntraday(key, tf, opts) {
+    opts = opts || {}; if (!TF_MS[tf]) return Promise.reject(new Error('Bilinmeyen zaman dilimi: ' + tf));
+    var d = describe(key), k = key.split(':')[0], s = key.slice(k.length + 1), now = opts.nowMs || Date.now();
+    var base = { key: key, kind: d.kind, name: d.label, currency: 'TRY', tf: tf, intraday: true, fetchedAt: new Date(now).toISOString() };
+    function done(res, kind) { res.checks = checkIntraday(res.bars, kind, tf, { closeOnly: res.closeOnly, stale: res.stale, nowMs: now }); res.quality = worstLevel(res.checks); return res; }
+    if (k === 'tefas') return Promise.reject(new Error('Yatırım fonları günde bir fiyat açıklar; gün içi grafik yoktur.'));
+    if (k === 'imp' || k === 'td') return Promise.reject(new Error('Bu varlık için gün içi veri kaynağı yok.'));
+    if (k === 'cg') {
+      var pair = cryptoPair(s, opts.symbol); if (!pair) return Promise.reject(new Error('Bu kripto için Binance paritesi bilinmiyor.'));
+      return fetchJson(URL.binKlines(pair, tf, 1000), { timeout: 20000 }).then(function (arr) {
+        var bars = parseBinanceIntraday(arr, now);
+        return done(Object.assign(base, { bars: bars, currency: 'USD', pair: pair, name: pair.replace('USDT', '') + ' / USDT', histSource: { label: SOURCES.binance + ' — ' + tf + ' mumlar (anlık)', at: new Date(now).toISOString(), lastBar: bars.length ? bars[bars.length - 1].d : null } }), 'crypto');
+      });
+    }
+    if (k === 'metal') {
+      var sym = s === 'XAU' ? 'XAUUSD' : 'XAGUSD';
+      return Promise.all([loadH1('macro', sym), loadH1('macro', 'USDTRY')]).then(function (r) {
+        var fx = {}; r[1].bars.forEach(function (b) { fx[b.t] = b.c; });
+        var h = r[0].bars.filter(function (b) { return fx[b.t]; }).map(function (b) { return { t: b.t, d: b.d, o: null, h: null, l: null, c: b.c * fx[b.t] / 31.1034768, v: null }; });
+        var bars = tf === '4h' ? aggregate(h, '24h', now).map(function (b) { return Object.assign(b, { o: null, h: null, l: null }); }) : h;
+        return done(Object.assign(base, { bars: bars, currency: 'TRY', closeOnly: true, derived: 'ons × USD/TL ÷ 31,1035 — aynı saatin kapanışları', stale: r[0].stale || r[1].stale, histSource: { label: r[0].source + ' (türetilmiş)', at: r[0].fetchedAt, lastBar: bars.length ? bars[bars.length - 1].d : null } }), 'metal');
+      });
+    }
+    if (k === 'bist' || k === 'idx' || k === 'us' || k === 'macro' || k === 'fx') {
+      var mk = k === 'bist' ? 'bist' : k === 'idx' ? 'index' : k === 'us' ? 'us' : 'macro', ms = k === 'fx' ? s + 'TRY' : s;
+      return loadH1(mk, ms).then(function (h) {
+        var bars = tf === '4h' ? aggregate(h.bars, k === 'bist' || k === 'idx' ? 'bist' : '24h', now) : h.bars.slice();
+        if (tf === '1h' && bars.length && (k === 'bist' || k === 'idx')) { var L = bars[bars.length - 1]; if (now < L.t + 3600000 && now < Date.UTC(+L.d.slice(0, 4), +L.d.slice(5, 7) - 1, +L.d.slice(8, 10)) + 15.17 * 3600000) L.partial = true; }
+        var kind = k === 'bist' ? 'stock' : k === 'idx' ? 'index' : k === 'us' ? 'etf' : k === 'fx' ? 'fx' : 'metal';
+        return done(Object.assign(base, { bars: bars, currency: h.currency || (k === 'bist' || k === 'idx' || k === 'fx' ? 'TRY' : 'USD'), stale: h.stale, name: h.name ? (k === 'bist' ? s + ' — ' + h.name : h.name) : d.label,
+          histSource: { label: h.source, at: h.fetchedAt, lastBar: bars.length ? bars[bars.length - 1].d : null } }), kind);
+      });
+    }
+    return Promise.reject(new Error('Bu varlık türü için gün içi veri yok.'));
+  }
+
+  /* ---------- KAP bildirimleri ve önbelleklenmiş haberler (market-data dalı; iş akışı sunucu tarafında derler) ---------- */
+  function notFoundEmpty(e) { if (e && e.status === 404) return { items: [], none: true }; throw e; }
+  function kap(sym) { return cached('kap:' + sym, 10 * 60000, function () { return fetchJson(URL.kap(sym), { timeout: 15000 }).catch(notFoundEmpty); }); }
+  function newsTopicOf(key) { var k = key.split(':')[0]; return k === 'metal' || key === 'macro:XAUUSD' || key === 'macro:XAGUSD' ? 'gold' : k === 'fx' || key === 'macro:USDTRY' || key === 'macro:EURTRY' ? 'fx' : k === 'cg' ? 'crypto' : k === 'idx' ? 'market' : null; }
+  function newsCached(key) {
+    var k = key.split(':')[0], s = key.slice(k.length + 1), t = newsTopicOf(key);
+    var url = k === 'bist' ? URL.newsSym(s) : t ? URL.newsTopic(t) : null;
+    if (!url) return Promise.resolve(null);
+    return cached('news:' + key, 10 * 60000, function () { return fetchJson(url, { timeout: 15000 }).catch(notFoundEmpty).then(function (j) { return { at: j.generatedAt || null, none: !!j.none, topic: t, keywords: j.keywords || null, items: (j.items || []).map(function (x) { return { title: x.title, url: x.url, src: x.src, at: x.at, match: x.match || null }; }) }; }); });
+  }
   function news(q) { return fetchJson(URL.gdelt(q), { timeout: 15000 }).then(function (j) { return { at: new Date().toISOString(), source: 'GDELT DOC 2.0', items: (j.articles || []).map(function (a) { return { title: a.title, url: a.url, domain: a.domain, lang: a.language, d: a.seendate ? a.seendate.slice(0, 4) + '-' + a.seendate.slice(4, 6) + '-' + a.seendate.slice(6, 8) : null }; }) }; }); }
 
   return { URL: URL, SOURCES: SOURCES, TV_US: TV_US, TV_MACRO: TV_MACRO, fetchJson: fetchJson, ymdOfMs: ymdOfMs, dayNum: dayNum, dow: dow, businessDaysBetween: businessDaysBetween,
     parseMd: parseMd, parseBinanceKlines: parseBinanceKlines, parseTefasHistory: parseTefasHistory, parseTwelve: parseTwelve, tvBarDate: tvBarDate, mergeLive: mergeLive, parseOhlcText: parseOhlcText,
     parseNumLoose: parseNumLoose, parseDateLoose: parseDateLoose, checkBars: checkBars, worstLevel: worstLevel, resolve: resolve, describe: describe, load: load, mdIndex: mdIndex, fundamentals: fundamentals,
-    peerStats: peerStats, median: median, fundPeers: fundPeers, katilimFunds: katilimFunds, katilimScreen: katilimScreen, news: news, cryptoPair: cryptoPair, tvLive: tvLive, loadMd: loadMd };
+    peerStats: peerStats, median: median, parseH1: parseH1, parseBinanceIntraday: parseBinanceIntraday, aggregate: aggregate, checkIntraday: checkIntraday, loadH1: loadH1, loadIntraday: loadIntraday, labelOfMs: labelOfMs, TF_MS: TF_MS,
+    kap: kap, newsCached: newsCached, newsTopicOf: newsTopicOf, fundPeers: fundPeers, katilimFunds: katilimFunds, katilimScreen: katilimScreen, news: news, cryptoPair: cryptoPair, tvLive: tvLive, loadMd: loadMd };
 });

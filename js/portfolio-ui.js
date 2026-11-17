@@ -547,6 +547,7 @@
           if (same) c2.note = 'Kayıtlı fiyatla aynı.';
         });
         priceRun = res; fetching = false; X.render();
+        if (window.__fpCheckAlerts) window.__fpCheckAlerts('fiyat güncelleme');
         if (!res.candidates.length) X.toast('Hiçbir kaynaktan fiyat alınamadı. İnternet bağlantını kontrol et; fiyatları elle girebilirsin.');
       }, function (e) { fetching = false; X.toast('Fiyatlar alınamadı: ' + e.message); X.render(); });
     }

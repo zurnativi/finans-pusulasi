@@ -8,6 +8,12 @@
 })(typeof self !== 'undefined' ? self : this, function (TA, ST) {
   'use strict';
   var num = TA.num, last = TA.last;
+  // Zaman dilimi bağlamı (analyze içinde ayarlanır; günlük = null). Metinler ve yıllıklaştırma buna göre: "200 günlük" ↔ "200 mumluk (1S)".
+  var TFX = null;
+  function UA() { return TFX ? 'mumluk' : 'günlük'; }
+  function UN() { return TFX ? 'mum' : 'gün'; }
+  function UNde() { return TFX ? 'mumda' : 'günde'; }
+  function UNdur() { return TFX ? 'mumdur' : 'gündür'; }
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function r1(x) { return Math.round(x * 10) / 10; }
   function interp(x, pts) { // parçalı doğrusal: pts = [[x0,y0],[x1,y1],...] artan x
@@ -78,10 +84,10 @@
   function trendScore(col, I, sw, tl) {
     var c = col.c, n = c.length, p = c[n - 1], e = [], s = 0;
     var s200 = last(I.sma200), s50 = last(I.sma50), e20 = last(I.ema20);
-    if (num(s200)) s += ev(e, p > s200 ? 'Fiyat 200 günlük ortalamanın üstünde' : 'Fiyat 200 günlük ortalamanın altında', p > s200 ? 20 : -20);
-    if (num(s200) && num(s50)) s += ev(e, s50 > s200 ? '50 günlük ortalama 200 günlüğün üstünde (altın kesişim bölgesi)' : '50 günlük ortalama 200 günlüğün altında (ölüm kesişimi bölgesi)', s50 > s200 ? 15 : -15);
-    if (num(s50)) s += ev(e, p > s50 ? 'Fiyat 50 günlük ortalamanın üstünde' : 'Fiyat 50 günlük ortalamanın altında', p > s50 ? 10 : -10);
-    if (num(e20)) s += ev(e, p > e20 ? 'Fiyat 20 günlük üssel ortalamanın üstünde' : 'Fiyat 20 günlük üssel ortalamanın altında', p > e20 ? 5 : -5);
+    if (num(s200)) s += ev(e, p > s200 ? 'Fiyat 200 ' + UA() + ' ortalamanın üstünde' : 'Fiyat 200 ' + UA() + ' ortalamanın altında', p > s200 ? 20 : -20);
+    if (num(s200) && num(s50)) s += ev(e, s50 > s200 ? '50 ' + UA() + ' ortalama 200 ' + UA() + ' ortalamanın üstünde (altın kesişim bölgesi)' : '50 ' + UA() + ' ortalama 200 ' + UA() + ' ortalamanın altında (ölüm kesişimi bölgesi)', s50 > s200 ? 15 : -15);
+    if (num(s50)) s += ev(e, p > s50 ? 'Fiyat 50 ' + UA() + ' ortalamanın üstünde' : 'Fiyat 50 ' + UA() + ' ortalamanın altında', p > s50 ? 10 : -10);
+    if (num(e20)) s += ev(e, p > e20 ? 'Fiyat 20 ' + UA() + ' üssel ortalamanın üstünde' : 'Fiyat 20 ' + UA() + ' üssel ortalamanın altında', p > e20 ? 5 : -5);
     if (I.adx) { var ax = last(I.adx.adx), pd = last(I.adx.pdi), md = last(I.adx.mdi); if (num(ax)) { if (ax >= 25) s += ev(e, 'ADX ' + r1(ax) + ': güçlü trend, ' + (pd > md ? 'alıcılar (+DI) baskın' : 'satıcılar (−DI) baskın'), pd > md ? 15 : -15); else ev(e, 'ADX ' + r1(ax) + ': belirgin trend yok (yatay piyasa)', 0); } }
     if (I.supertrend) { var sd = last(I.supertrend.dir); if (num(sd)) s += ev(e, 'Supertrend ' + (sd > 0 ? 'yükseliş' : 'düşüş') + ' modunda', sd > 0 ? 10 : -10); }
     if (I.ichimoku) { var A = last(I.ichimoku.senkouA), B = last(I.ichimoku.senkouB), tk = last(I.ichimoku.tenkan), kj = last(I.ichimoku.kijun);
@@ -100,24 +106,24 @@
     if (num(m) && num(sg)) {
       s += ev(e, m > sg ? 'MACD sinyal çizgisinin üstünde' : 'MACD sinyal çizgisinin altında', m > sg ? 15 : -15);
       s += ev(e, m > 0 ? 'MACD sıfırın üstünde' : 'MACD sıfırın altında', m > 0 ? 10 : -10);
-      var h3 = hi.slice(-3); if (h3.every(num)) { if (h3[2] > h3[1] && h3[1] > h3[0]) s += ev(e, 'MACD histogramı 3 gündür yükseliyor', 5); else if (h3[2] < h3[1] && h3[1] < h3[0]) s += ev(e, 'MACD histogramı 3 gündür düşüyor', -5); }
+      var h3 = hi.slice(-3); if (h3.every(num)) { if (h3[2] > h3[1] && h3[1] > h3[0]) s += ev(e, 'MACD histogramı 3 ' + UNdur() + ' yükseliyor', 5); else if (h3[2] < h3[1] && h3[1] < h3[0]) s += ev(e, 'MACD histogramı 3 ' + UNdur() + ' düşüyor', -5); }
     }
     var k = last(I.stochRsi.k), d = last(I.stochRsi.d);
     if (num(k) && num(d)) { if (k > d && k < 80) s += ev(e, 'Stokastik RSI yukarı kesişimde (%K ' + r1(k) + ')', 10); else if (k < d && k > 20) s += ev(e, 'Stokastik RSI aşağı kesişimde (%K ' + r1(k) + ')', -10); else ev(e, 'Stokastik RSI uç bölgede (%K ' + r1(k) + ')', 0); }
-    var rc = last(I.roc20); if (num(rc)) s += ev(e, 'Son 20 günde ' + (rc >= 0 ? '+' : '') + r1(rc) + '% değişim', rc > 0 ? 10 : -10);
+    var rc = last(I.roc20); if (num(rc)) s += ev(e, 'Son 20 ' + UNde() + ' ' + (rc >= 0 ? '+' : '') + r1(rc) + '% değişim', rc > 0 ? 10 : -10);
     (divs || []).filter(function (x) { return x.fresh; }).forEach(function (x) { s += ev(e, x.name + ' (RSI, ' + x.age + ' mum önce)', x.type === 'bull' ? 15 : -15); });
     if (I.obv) { var ob = I.obv.slice(-20), xs = ob.map(function (_, i) { return i; }), lr = ob.every(num) ? TA.linreg(xs, ob) : null, pr = TA.linreg(xs, col.c.slice(-20));
       if (lr && pr) { if (lr.slope > 0 && pr.slope > 0) s += ev(e, 'Hacim (OBV) yükselişi doğruluyor', 10); else if (lr.slope < 0 && pr.slope < 0) s += ev(e, 'Hacim (OBV) düşüşü doğruluyor', -10); else ev(e, 'Hacim (OBV) fiyatla uyumsuz — hareketin gücü şüpheli', lr.slope > 0 ? 5 : -5), s += lr.slope > 0 ? 5 : -5; } }
     return { score: Math.round(clamp(50 + s / 1.9, 0, 100)), ev: e };
   }
   function riskScore(col, I, kind, ctx) {
-    var e = [], c = col.c, n = c.length, vol = TA.annVol(c.slice(-61), kind === 'crypto' ? 365 : 252), base = VOL_BASE[kind] || 0.35;
+    var e = [], c = col.c, n = c.length, vol = TA.annVol(c.slice(-61), ctx && ctx.ppy ? ctx.ppy : kind === 'crypto' ? 365 : 252), base = VOL_BASE[kind] || 0.35;
     if (ctx && ctx.fundRisk) base = [0, 0.02, 0.05, 0.10, 0.15, 0.22, 0.30, 0.40][ctx.fundRisk] || base;
     var sc = num(vol) ? interp(vol / base, [[0.6, 90], [1, 60], [1.5, 35], [2.2, 15]]) : 50;
-    ev(e, num(vol) ? 'Yıllık oynaklık (60 gün) %' + r1(vol * 100) + ' — sınıf tabanı %' + Math.round(base * 100) : 'Oynaklık hesaplanamadı', 0);
-    var dd = TA.maxDrawdown(c.slice(-252)); if (num(dd.current)) { var pen = dd.current < -0.35 ? -15 : dd.current < -0.2 ? -8 : dd.current < -0.1 ? -3 : 0; sc += pen; ev(e, '52 haftalık zirveden uzaklık %' + r1(dd.current * 100), pen); }
+    ev(e, num(vol) ? 'Yıllık oynaklık (son 60 ' + UN() + ') %' + r1(vol * 100) + ' — sınıf tabanı %' + Math.round(base * 100) : 'Oynaklık hesaplanamadı', 0);
+    var dd = TA.maxDrawdown(c.slice(-252)); if (num(dd.current)) { var pen = dd.current < -0.35 ? -15 : dd.current < -0.2 ? -8 : dd.current < -0.1 ? -3 : 0; sc += pen; ev(e, (TFX ? 'Son 252 mumdaki zirveden' : '52 haftalık zirveden') + ' uzaklık %' + r1(dd.current * 100), pen); }
     var mdd = TA.maxDrawdown(c); ev(e, 'Dönemdeki en büyük düşüş %' + r1(mdd.mdd * 100), 0);
-    var bw = I.bb.width.slice(-252).filter(num); if (bw.length > 50) { var cur = bw[bw.length - 1], rank = bw.filter(function (x) { return x <= cur; }).length / bw.length; if (rank > 0.9) { sc -= 5; ev(e, 'Bollinger bant genişliği yılın en geniş %10\'unda (yüksek oynaklık dönemi)', -5); } else if (rank < 0.1) ev(e, 'Bollinger bantları çok dar — sert hareket öncesi sıkışma olabilir', 0); }
+    var bw = I.bb.width.slice(-252).filter(num); if (bw.length > 50) { var cur = bw[bw.length - 1], rank = bw.filter(function (x) { return x <= cur; }).length / bw.length; if (rank > 0.9) { sc -= 5; ev(e, (TFX ? 'Bollinger bant genişliği son 252 mumun' : 'Bollinger bant genişliği yılın') + ' en geniş %10\'unda (yüksek oynaklık dönemi)', -5); } else if (rank < 0.1) ev(e, 'Bollinger bantları çok dar — sert hareket öncesi sıkışma olabilir', 0); }
     return { score: Math.round(clamp(sc, 0, 100)), ev: e, vol: vol, mdd: mdd.mdd, ddNow: dd.current };
   }
   function valueScoreStock(f, peers) {
@@ -161,7 +167,7 @@
         if (!num(a0) || !num(b0) || !num(b1)) return; var ex = (a1 / a0 - 1) - (b1 / b0 - 1); s += ev(e, w[1] + ': ' + ctx.benchName + '\'e göre ' + (ex >= 0 ? '+' : '') + r1(ex * 100) + ' puan', clamp(ex * 100, -25, 25));
       });
     }
-    if (ctx && ctx.tv && ctx.benchTv) { var x = ctx.tv['Perf.6M'], y = ctx.benchTv['Perf.6M']; if (num(x) && num(y)) ev(e, '6 ay: Katılım Tüm endeksine (XKTUM) göre ' + (x - y >= 0 ? '+' : '') + r1(x - y) + ' puan (TradingView)', 0); }
+    if (ctx && ctx.tv && ctx.benchTv && !/XKTUM/.test(ctx.benchName || '')) { var x = ctx.tv['Perf.6M'], y = ctx.benchTv['Perf.6M']; if (num(x) && num(y)) ev(e, '6 ay: Katılım Tüm endeksine (XKTUM) göre ' + (x - y >= 0 ? '+' : '') + r1(x - y) + ' puan (TradingView)', 0); }
     if (!e.length) return null;
     return { score: Math.round(clamp(50 + s, 0, 100)), ev: e };
   }
@@ -234,7 +240,7 @@
       var trig = rz.hi + 0.2 * a, st3 = rz.lo - 0.5 * a, lastL = A.swings.filter(function (s) { return s.type === 'L' && s.p < trig; }).pop();
       if (lastL && lastL.p - 0.3 * a > st3 && lastL.p < rz.lo) st3 = lastL.p - 0.3 * a;
       if (trig - st3 < 1.0 * a) st3 = trig - 1.0 * a;
-      var why3 = ['Direnç ' + fmtP(rz.lo) + '–' + fmtP(rz.hi) + ' (' + rz.touches + ' dokunuş) üzerinde günlük kapanış + 0,2 ATR onay', 'Kırılım hacimle desteklenmeli; stop kırılım bölgesinin altında'];
+      var why3 = ['Direnç ' + fmtP(rz.lo) + '–' + fmtP(rz.hi) + ' (' + rz.touches + ' dokunuş) üzerinde ' + (TFX ? TFX + ' mum kapanışı' : 'günlük kapanış') + ' + 0,2 ATR onay', 'Kırılım hacimle desteklenmeli; stop kırılım bölgesinin altında'];
       var mm = rz.hi - (supports[0] ? supports[0].lo : rz.lo - 2 * a); var ex = patT.concat([{ p: rz.hi + mm, why: 'Ölçülen hareket (son destek–direnç aralığı kadar) ' + fmtP(rz.hi + mm) }]);
       res.aggressive = mkPlan('Atak (yüksek risk)', 'Direnç kırılımında alım (al-stop emri)', trig, trig, st3, targetsAbove(trig, ex), why3, isFund, 0.01);
     } else res.notes.push('Fiyat son bir yılın üstünde/zirvede: üstte direnç yok. Hedef yerine iz süren stop önerilir (Supertrend veya son dip − 0,5 ATR).');
@@ -269,7 +275,7 @@
       var weak = [], rsi = A.ind.rsi, n = rsi.length, h = A.ind.macd.hist;
       if (A.divergences.some(function (d) { return d.type === 'bear' && d.fresh; })) weak.push('Güncel negatif RSI uyumsuzluğu');
       if (num(rsi[n - 1]) && num(rsi[n - 3]) && Math.max(rsi[n - 2], rsi[n - 3]) > 70 && rsi[n - 1] < rsi[n - 2]) weak.push('RSI aşırı alımdan dönüyor');
-      for (var k = Math.max(1, n - 5); k < n; k++) if (num(h[k]) && num(h[k - 1]) && h[k - 1] > 0 && h[k] <= 0) { weak.push('MACD son 5 günde aşağı kesti'); break; }
+      for (var k = Math.max(1, n - 5); k < n; k++) if (num(h[k]) && num(h[k - 1]) && h[k - 1] > 0 && h[k] <= 0) { weak.push('MACD son 5 ' + UNde() + ' aşağı kesti'); break; }
       if (A.ind.supertrend) { var d = A.ind.supertrend.dir; if (d[n - 1] === -1 && d.slice(-6, -1).indexOf(1) >= 0) weak.push('Supertrend düşüşe döndü'); }
       if (A.patterns.some(function (x) { return x.dir < 0 && x.status === 'onaylandı'; })) weak.push('Onaylı düşüş formasyonu');
       if (atRes && weak.length >= 2) { out.hold = { code: 'trim', label: 'Kısmi kâr al / azaltmayı gözden geçir', why: ['Fiyat direnç bölgesinde'].concat(weak) }; }
@@ -284,9 +290,19 @@
   /* ---------- Ana analiz ---------- */
   // series: MData.load çıktısı; ctx: { fundamentals:{self,peers}, fundPeers, benchBars, benchName, benchTv, halal:{status,reason}, holding, portfolioValue, maxSingleFrac }
   function analyze(series, ctx) {
+    TFX = series && series.tf && series.tf !== '1d' ? series.tf : null;
+    try { return analyzeInner(series, ctx); } finally { TFX = null; }
+  }
+  // Yıllık periyot sayısı (gün içi): son 20 takvim gününde gün başına düşen mum sayısından ölçülür (BIST ~10/gün, kripto 24/gün)
+  function periodsPerYear(bars, kind) {
+    if (!TFX) return kind === 'crypto' ? 365 : 252;
+    var n = bars.length, days = {}, cnt = 0; for (var i = Math.max(0, n - 200); i < n; i++) { days[String(bars[i].d).slice(0, 10)] = 1; cnt++; }
+    var per = cnt / Math.max(1, Object.keys(days).length); return (kind === 'crypto' ? 365 : 252) * per;
+  }
+  function analyzeInner(series, ctx) {
     ctx = ctx || {}; var bars = series.bars || [], kind = series.kind || 'import', W = WEIGHTS[kind] || WEIGHTS.import;
-    var A = { key: series.key, kind: kind, name: series.name, currency: series.currency, n: bars.length, closeOnly: !!series.closeOnly, checks: series.checks || [], blocked: false, blockReasons: [], warnings: [] };
-    if (bars.length < 30) { A.blocked = true; A.blockReasons.push('Yalnızca ' + bars.length + ' gün veri var.'); A.total = null; A.confidence = 0; A.confLabel = 'Yetersiz'; A.scores = {}; A.stance = { code: 'nosignal', label: 'Sinyal yok — veri yetersiz', why: A.blockReasons }; return A; }
+    var A = { key: series.key, tf: TFX || '1d', kind: kind, name: series.name, currency: series.currency, n: bars.length, closeOnly: !!series.closeOnly, checks: series.checks || [], blocked: false, blockReasons: [], warnings: [] };
+    if (bars.length < 30) { A.blocked = true; A.blockReasons.push('Yalnızca ' + bars.length + ' ' + UN() + ' veri var.'); A.total = null; A.confidence = 0; A.confLabel = 'Yetersiz'; A.scores = {}; A.stance = { code: 'nosignal', label: 'Sinyal yok — veri yetersiz', why: A.blockReasons }; return A; }
     var col = columns(bars); col.bars = bars;
     var I = indicators(col, A.closeOnly), atr = last(I.atr), price = col.c[col.c.length - 1];
     A.ind = I; A.col = col; A.price = price; A.atr = atr; A.lastDate = col.d[col.d.length - 1];
@@ -299,15 +315,17 @@
     var S = {};
     S.trend = trendScore(col, I, sw, A.trendlines);
     S.momentum = momentumScore(col, I, A.divergences);
-    S.risk = riskScore(col, I, kind, { fundRisk: series.fund && series.fund.risk && series.fund.risk.score });
+    S.risk = riskScore(col, I, kind, { fundRisk: series.fund && series.fund.risk && series.fund.risk.score, ppy: periodsPerYear(bars, kind) });
     // Çok düşük oynaklıklı fonlarda (kira sertifikası, katılım para piyasası gibi) fiyat neredeyse doğrusal artar: RSI/MACD anlamsızdır (RSI sürekli ~100).
     // Bu durumda momentum "uygulanamaz" sayılır; ağırlığı diğer alt skorlara dağıtılır ve güven düşürülmez.
     var vol60 = TA.annVol(col.c.slice(-121), 252);
     if (kind === 'fund' && vol60 != null && vol60 < 0.04) S.momentum = { score: null, na: true, ev: [{ t: 'Yıllık oynaklık %' + r1(vol60 * 100) + ' — fiyat neredeyse doğrusal; momentum göstergeleri bu fonda anlamlı değil', p: 0 }] };
-    if (kind === 'stock') S.value = ctx.fundamentals ? valueScoreStock(ctx.fundamentals.self, ctx.fundamentals.peers) : null;
-    if (kind === 'fund') S.value = valueScoreFund(series.fund, ctx.fundPeers, I, col);
-    if (W.rel) S.rel = relScore(col, { benchBars: ctx.benchBars, benchName: ctx.benchName, tv: series.tv, benchTv: ctx.benchTv }, kind);
-    if (W.liquidity) S.liquidity = liquidityScore(col, kind, { tv: (ctx.fundamentals && ctx.fundamentals.self) || series.tv, fund: series.fund, currency: series.currency });
+    if (TFX) { // Gün içi: yalnız teknik (trend/momentum/risk). Temel, göreli güç ve likidite günlük analizde değerlendirilir.
+      ['value', 'rel', 'liquidity'].forEach(function (k) { if (W[k]) S[k] = { score: null, na: true, ev: [{ t: 'Gün içi görünümde uygulanmaz — günlük analizde değerlendirilir', p: 0 }] }; });
+    } else if (kind === 'stock') S.value = ctx.fundamentals ? valueScoreStock(ctx.fundamentals.self, ctx.fundamentals.peers) : null;
+    if (kind === 'fund' && !TFX) S.value = valueScoreFund(series.fund, ctx.fundPeers, I, col);
+    if (W.rel && !TFX) S.rel = relScore(col, { benchBars: ctx.benchBars, benchName: ctx.benchName, tv: series.tv, benchTv: ctx.benchTv }, kind);
+    if (W.liquidity && !TFX) S.liquidity = liquidityScore(col, kind, { tv: (ctx.fundamentals && ctx.fundamentals.self) || series.tv, fund: series.fund, currency: series.currency });
     var hs = ctx.halal && ctx.halal.status; S.halal = { score: HALAL_SCORE[hs] != null ? HALAL_SCORE[hs] : null, ev: [{ t: ctx.halal ? (ctx.halal.label || hs) + (ctx.halal.reason ? ' — ' + ctx.halal.reason : '') : 'Bilinmiyor', p: 0 }], gate: true };
     A.scores = S;
     // Sentez: ağırlıklı ortalama (eksik alt skorların ağırlığı dağıtılır)
@@ -317,12 +335,12 @@
     A.synthesis = { weights: W, parts: parts.map(function (x) { return { k: x.k, label: SUB_LABEL[x.k], w: x.w, wEff: x.w / used, s: x.s, contrib: x.w / used * x.s }; }), missing: missing.map(function (k) { return SUB_LABEL[k]; }) };
     // Çapraz doğrulama
     var tvDate = series.live && series.live.barDate, sameBar = !!(series.tv && tvDate && tvDate === A.lastDate && (kind !== 'crypto' || true));
-    A.xcheck = crossVerify(I, series.tv, price, kind === 'crypto' ? !!series.tv : sameBar);
+    A.xcheck = TFX ? { rows: [], compared: 0, ok: 0, note: 'Gün içi grafikte TradingView karşılaştırması yapılmaz (doğrulama günlük göstergelerle yapılır).' } : crossVerify(I, series.tv, price, kind === 'crypto' ? !!series.tv : sameBar);
     // Güven
     var conf = 100, cr = [];
     A.checks.forEach(function (c) { if (c.level === 'fail') { A.blocked = true; A.blockReasons.push(c.msg); } if (c.level === 'warn') { conf -= 10; cr.push('Veri uyarısı: ' + c.msg); } });
     if (A.closeOnly) { conf -= 15; cr.push('Yalnızca kapanış verisi (mum yok)'); }
-    if (bars.length < 200) { conf -= 10; cr.push('200 günden az veri'); }
+    if (bars.length < 200) { conf -= 10; cr.push('200 ' + (TFX ? 'mumdan' : 'günden') + ' az veri'); }
     missing.forEach(function (k) { if (S[k] && S[k].na) return; conf -= 5; cr.push(SUB_LABEL[k] + ' hesaplanamadı'); });
     var bad = A.xcheck.rows.filter(function (r) { return !r.ok; }); if (bad.length) { conf -= Math.min(30, 10 * bad.length); cr.push('TradingView ile ' + bad.length + ' göstergede fark: ' + bad.map(function (r) { return r.name; }).join(', ')); }
     if (series.liveError && kind !== 'fund') { conf -= 5; cr.push('Canlı fiyat alınamadı: ' + series.liveError); }

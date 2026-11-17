@@ -1053,7 +1053,7 @@
     h += '</tbody></table></div><button class="btn small" data-act="scen-reset">Varsayılana dön</button></section>';
     h += '<section class="card"><h2>Veri yönetimi</h2><div class="row"><button class="btn" data-act="load-example">Örnek veriyi yükle</button><button class="btn danger" data-act="clear-all">Tüm verileri sil</button></div>' +
       '<p class="hint">Örnek veriyi yüklemek mevcut verilerinin yerine geçer (önce yedek almayı unutma). Silme işlemi asistan anahtarlarını silmez; onlar Asistan bölümünden silinir.</p>' +
-      '<p class="hint detail-only">Uygulama sürümü 5.0 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
+      '<p class="hint detail-only">Uygulama sürümü 7.1 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
     return h;
   }
   function exportCsv() {
@@ -1883,6 +1883,7 @@
       sub: function () { return sub; }, tab: function () { return tab; }, calc: function () { return PUI.calc(); },
       snapshot: function (r) { return SUI && SUI.snapshot ? SUI.snapshot(r) : Promise.resolve(); }
     });
+    if (AUI && AUI.startAlerts) AUI.startAlerts();
     document.addEventListener('click', onClick);
     document.addEventListener('change', onChange);
     document.addEventListener('submit', onSubmit);

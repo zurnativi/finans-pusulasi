@@ -7,9 +7,12 @@
     var M = window.Money, PF = window.Portfolio, C = window.Calc, AN = window.Analysis, MD = window.MData, TA = window.TA, TC = window.TAChart;
     var esc = X.esc, tip = X.tip, tl = X.tl;
     var SUM_KEY = 'finans-pusulasi:analiz-ozet', IMP_KEY = 'finans-pusulasi:analiz-ice-aktarim';
-    var cur = { key: null, loading: false, error: null, view: { range: '1Y', lower: 'volume', lens: 'conservative', overlays: { ma: true, structure: true, plan: true, patterns: true, fib: false, bb: false, ichimoku: false, supertrend: false, vwap: false } } };
+    var cur = { key: null, loading: false, error: null, view: { tf: '1d', range: '1Y', lower: 'volume', lens: 'conservative', overlays: { ma: true, structure: true, plan: true, patterns: true, fib: false, bb: false, ichimoku: false, supertrend: false, vwap: false } } };
     var cacheA = {}, search = { q: '', results: null, loading: false }, newsBy = {}, corr = null, corrBusy = false, bulk = null, verifyRun = null, liveTimer = null;
     var builder = { result: null, bt: null, loading: false, error: null };
+    var cacheI = {}, kapBy = {}, newsG = {}, mdIx = null, mdIxP = null, alertLast = {}, alertBusy = false, alertTimer = null, alertMsg = null;
+    var AL = window.Alerts, NOTIFY_KEY = 'finans-pusulasi:uyari-bildirim';
+    var TFS = [['1d', 'Günlük'], ['4h', '4 saat'], ['1h', '1 saat']], TF_LABEL = { '1d': 'günlük', '4h': '4 saatlik', '1h': 'saatlik' };
     var KIND_LABEL = { stock: 'BIST hissesi', fund: 'TEFAS fonu', crypto: 'Kripto', etf: 'ABD ETF/hisse', metal: 'Emtia', fx: 'Döviz', index: 'Endeks', import: 'İçe aktarılan' };
     var US_HALAL = { SPUS: 1, HLAL: 1, SPSK: 1, SPRE: 1, SPTE: 1, SPWO: 1, UMMA: 1 };
     function st() { return X.state(); }
@@ -65,7 +68,9 @@
         var k = key.split(':')[0], jobs = [], ctx = { halal: halalFor(key, series) };
         if (series.kind === 'stock' && k === 'bist') {
           jobs.push(MD.fundamentals(key.slice(5)).then(function (f) { ctx.fundamentals = f; }, function (e) { ctx.fundErr = e.message; }));
-          jobs.push(MD.loadMd('index', 'XU100').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'BIST 100'; }, function () { }));
+          // Göreli güç: Katılım endeksindeki hisse → Katılım Tüm (XKTUM, gerçek endeks değerleri); değilse BIST 100. XKTUM dosyası yoksa BIST 100'e düşülür (etiketlenir).
+          var isK = (series.katilim || []).indexOf('XKTUM') >= 0, xu = function () { return MD.loadMd('index', 'XU100').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'BIST 100'; }, function () { }); };
+          jobs.push(isK ? MD.loadMd('index', 'XKTUM').then(function (b) { if (b.bars.length < 130) return xu(); ctx.benchBars = b.bars; ctx.benchName = 'Katılım Tüm (XKTUM)'; }, xu) : xu());
           jobs.push(MD.tvLive('BIST:XKTUM').then(function (x) { ctx.benchTv = x.raw; }, function () { }));
         }
         if (series.kind === 'fund' && series.fund && series.fund.type) jobs.push(MD.fundPeers(series.fund.type).then(function (p) { ctx.fundPeers = p; }, function () { }));
@@ -76,18 +81,155 @@
           var R = Object.assign({}, PF.DEFAULT_RULES, (st().settings && st().settings.riskRules) || {});
           ctx.holding = !!held; ctx.portfolioValue = total > 0 && series.currency === 'TRY' ? total : null; ctx.maxSingleFrac = R.maxAssetBp / 10000;
           var A = AN.analyze(series, ctx); A.series = series; A.ctx = ctx; A.at = new Date().toISOString();
-          cacheA[key] = A; saveSum(A); return A;
+          cacheA[key] = A; saveSum(A);
+          if (A.price != null) alertPrice(key, { price: A.price, at: (series.live && series.live.at) || A.at, source: series.live ? series.live.source : (series.histSource ? series.histSource.label : 'analiz') }, A.closeOnly || series.kind === 'fund' ? null : A.col && A.col.bars[A.col.bars.length - 1]);
+          return A;
         });
       });
     }
     function open(key, opts) {
+      if (cur.key !== key) cur.view.tf = cur.view.tf === '1d' || !tfAllowed(key) ? '1d' : cur.view.tf;
       cur.key = key; cur.error = null; cur.loading = true;
       if (X.tab() !== 'analiz' || X.sub() !== 'varlik') location.hash = '#analiz/varlik/' + key; // route → render
       else { if (location.hash !== '#analiz/varlik/' + key) history.replaceState(null, '', '#analiz/varlik/' + key); X.render(); }
       runAnalysis(key, opts).then(function () { cur.loading = false; X.render(); }, function (e) { cur.loading = false; cur.error = e.message || String(e); X.render(); });
     }
 
-    /* ---------- GÖRÜNÜMLER ---------- */
+    /* ---------- Gün içi analiz (1S/4S): ayrı seri + aynı motor; skor/ana plan günlükten kalır ---------- */
+    function tfAllowed(key) { var k = String(key || '').split(':')[0]; return !(k === 'tefas' || k === 'imp' || k === 'td'); }
+    function loadIntra(key, tf) {
+      var ik = key + '|' + tf, A0 = cacheA[key]; if (cacheI[ik] && cacheI[ik].loading) return; cacheI[ik] = { loading: true };
+      var sym = A0 && A0.series && A0.series.pair ? A0.series.pair.replace(/USDT$/, '') : undefined;
+      MD.loadIntraday(key, tf, { symbol: sym }).then(function (series) {
+        var c0 = A0 ? A0.ctx : null, ctx = { halal: c0 ? c0.halal : halalFor(key, series), holding: c0 ? c0.holding : false, portfolioValue: c0 ? c0.portfolioValue : null, maxSingleFrac: c0 ? c0.maxSingleFrac : 0.2 };
+        var Ai = AN.analyze(series, ctx); Ai.series = series; Ai.ctx = ctx; Ai.at = new Date().toISOString(); cacheI[ik] = Ai; X.render();
+      }, function (e) { cacheI[ik] = { error: e.message || String(e) }; X.render(); });
+    }
+    function tfSeg(A) {
+      var ok = tfAllowed(A.key), why = A.kind === 'fund' ? 'Fonlar günde bir fiyat açıklar' : 'Bu varlık için gün içi veri kaynağı yok';
+      return '<div class="seg tf" role="group" aria-label="Zaman dilimi">' + TFS.map(function (x) { var dis = x[0] !== '1d' && !ok; return '<button type="button" data-act="a-tf" data-v="' + x[0] + '" aria-pressed="' + (cur.view.tf === x[0]) + '"' + (dis ? ' disabled title="' + esc(why) + '"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div>';
+    }
+    function intraCard(Ai) {
+      var tfl = TF_LABEL[Ai.tf] || Ai.tf, p = Ai.plans && Ai.plans[cur.view.lens], ks = ['trend', 'momentum', 'risk'];
+      var h = '<section class="card a-intra"><h2>Gün içi görünüm (' + esc(tfl) + ') ' + tip('Aynı yöntem (yapı, göstergeler, formasyonlar) ' + tfl + ' mumlara uygulanır. Yalnız teknik: trend, momentum, risk. Varlığın ana skoru ve ana planı günlük analizden gelir; gün içi görünüm giriş/çıkış zamanlaması içindir.') + '</h2>';
+      if (Ai.blocked) h += '<div class="notice warn"><b>Gün içi sinyal yok.</b> ' + esc(Ai.blockReasons.join(' ')) + '</div>';
+      h += '<div class="hrow"><div class="hbars">' + bar(Ai.total, 'Kısa vade teknik skor') + ks.map(function (k) { var x = Ai.scores[k]; return bar(x ? x.score : null, AN.SUB_LABEL[k]); }).join('') + '</div>' +
+        '<div class="stance st-' + Ai.stance.code + '"><b>' + esc(Ai.stance.label) + '</b><div class="hint">Güven ' + Ai.confidence + '/100</div></div></div>';
+      if (p) h += '<div class="plan' + (!Ai.halalOk || Ai.blocked ? ' dim' : '') + '"><div class="plan-h"><b>' + esc(p.how) + '</b> ' + pill(p.ok ? 'ok' : 'warn', p.verdict) + '</div>' + levelRows(Ai, p, ' (' + tfl + ')') + '</div>';
+      else h += '<p class="muted">' + esc((Ai.plans && Ai.plans.notes || []).join(' ') || 'Bu mercek için gün içi yapısal plan yok.') + '</p>';
+      var warns = (Ai.series.checks || []).filter(function (c) { return c.level === 'warn' || c.level === 'fail'; });
+      if (warns.length) h += '<ul class="ev small">' + warns.map(function (c) { return '<li>' + pill(c.level, c.level === 'fail' ? 'hata' : 'uyarı') + ' ' + esc(c.msg) + '</li>'; }).join('') + '</ul>';
+      return h + '<p class="hint">Kaynak: ' + esc(Ai.series.histSource ? Ai.series.histSource.label : '') + (Ai.series.histSource && Ai.series.histSource.at ? ' · derlendi ' + when(Ai.series.histSource.at) : '') + ' · son mum ' + esc(Ai.lastDate || '—') + ' TSİ</p></section>';
+    }
+    // Seviye satırları (giriş/stop/hedefler) + her birinde "uyarı kur" düğmesi
+    function levelRows(A, p, ctxLabel) {
+      var lens = cur.view.lens === 'aggressive' ? 'Atak' : 'Temkinli', sfx = ' — ' + lens + (ctxLabel || '');
+      function bell(price, label) { return canAlert(A) ? '<button type="button" class="bell" data-act="a-alert" data-p="' + price + '" data-l="' + esc(label + sfx) + '" title="Bu seviyeye fiyat uyarısı kur" aria-label="' + esc(label) + ' için uyarı kur">🔔</button>' : '<span></span>'; }
+      return '<div class="lv"><span>Giriş</span><b>' + money(p.entryLo, A.currency) + (p.entryHi !== p.entryLo ? ' – ' + money(p.entryHi, A.currency) : '') + '</b><i></i>' + bell(p.entryHi, 'Giriş bölgesi') + '</div>' +
+        '<div class="lv stop"><span>' + esc(p.stopLabel) + '</span><b>' + money(p.stop, A.currency) + '</b><i>−' + pc(p.riskPct) + '%</i>' + bell(p.stop, 'Stop') + '</div>' +
+        p.targets.map(function (t, i) { return '<div class="lv tgt' + (t.minor ? ' minor' : '') + '"><span>Hedef ' + (i + 1) + (t.minor ? ' (ara)' : '') + '</span><b>' + money(t.p, A.currency) + '</b><i>R/Ö ' + (t.rr != null ? t.rr.toFixed(2).replace('.', ',') : '—') + '</i>' + bell(t.p, 'Hedef ' + (i + 1)) + '</div>'; }).join('');
+    }
+
+    /* ---------- Seviye uyarıları ---------- */
+    function alertsList() { return (an().alerts || []); }
+    function canAlert(A) { var k = A.key.split(':')[0]; return !!AL && k !== 'imp' && !(k === 'td' && !window.MData.TV_US[A.key.slice(3)]); }
+    function notifyOn() { try { return localStorage.getItem(NOTIFY_KEY) === '1'; } catch (e) { return false; } }
+    function alertPrice(key, q, lastBar) { // analizden gelen fiyatı uyarılara uygula (ek ağ isteği yok)
+      alertLast[key] = q; var act = AL ? AL.active(alertsList()).filter(function (a) { return a.key === key; }) : [];
+      if (act.length) applyPrices((function () { var o = {}; o[key] = q; return o; })(), 'analiz');
+    }
+    function quickPrice(a) {
+      var k = a.key.split(':')[0], s = a.key.slice(k.length + 1), TV = function (sym) { return MD.tvLive(sym).then(function (x) { return { price: x.c, at: x.at, source: MD.SOURCES.tv }; }); };
+      if (k === 'bist' || k === 'idx') return TV('BIST:' + s);
+      if (k === 'us' || k === 'td') return MD.TV_US[s] ? TV(MD.TV_US[s]) : Promise.reject(new Error('kaynak yok'));
+      if (k === 'macro') return TV(MD.TV_MACRO[s]);
+      if (k === 'fx') return TV(MD.TV_MACRO[s + 'TRY']);
+      if (k === 'metal') return Promise.all([MD.tvLive(MD.TV_MACRO[s === 'XAU' ? 'XAUUSD' : 'XAGUSD']), MD.tvLive(MD.TV_MACRO.USDTRY)]).then(function (r) { return { price: r[0].c * r[1].c / 31.1034768, at: r[0].at, source: 'TradingView (ons × USD/TL ÷ 31,1035, türetilmiş)' }; });
+      if (k === 'cg') { var pair = MD.cryptoPair(s, a.sym); if (!pair) return Promise.reject(new Error('parite bilinmiyor')); return MD.fetchJson('https://data-api.binance.vision/api/v3/ticker/price?symbol=' + pair, { timeout: 12000 }).then(function (j) { var v = +j.price; if (!(v > 0)) throw new Error('fiyat yok'); return { price: v, at: new Date().toISOString(), source: 'Binance spot (' + pair + ')' }; }); }
+      if (k === 'tefas') return MD.fetchJson(MD.URL.tefas(s, 0), { timeout: 15000 }).then(function (j) { if (!(j && j.price > 0)) throw new Error('fiyat yok'); return { price: j.price, at: j.data_date ? j.data_date + 'T18:00:00+03:00' : new Date().toISOString(), source: MD.SOURCES.tefas }; });
+      return Promise.reject(new Error('kaynak yok'));
+    }
+    function applyPrices(prices, why) {
+      var now = new Date().toISOString(), ev = AL.evaluate(alertsList(), prices, now);
+      Object.keys(prices).forEach(function (k) { alertLast[k] = prices[k]; });
+      if (!ev.fired.length) return 0;
+      var ids = {}; ev.alerts.forEach(function (a) { ids[a.id] = a; });
+      X.mutate(function (s) { s.analysis = s.analysis || { watchlist: [], profile: {} }; s.analysis.alerts = (s.analysis.alerts || []).map(function (a) { return ids[a.id] && ids[a.id].triggeredAt && !a.triggeredAt ? ids[a.id] : a; }); });
+      ev.fired.forEach(function (a) {
+        var msg = a.name + ': ' + a.label + ' ' + fp(a.price) + (a.dir === 'above' ? ' yukarı kesildi' : ' aşağı kesildi') + ' (fiyat ' + fp(a.firedPrice) + ', ' + (a.firedSource || '') + ')';
+        X.toast('🔔 ' + msg);
+        if (notifyOn() && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          var opt = { body: msg + '. Satış/alım kararı için önce güncel analizi aç.', tag: 'fp-' + a.id, icon: undefined };
+          (navigator.serviceWorker && navigator.serviceWorker.getRegistration ? navigator.serviceWorker.getRegistration().then(function (r) { if (r && r.showNotification) return r.showNotification('Finans Pusulası — seviye uyarısı', opt); throw new Error('sw yok'); }) : Promise.reject(new Error('sw yok')))
+            .catch(function () { try { new Notification('Finans Pusulası — seviye uyarısı', opt); } catch (e) { /* bildirim desteklenmiyor */ } });
+        }
+      });
+      return ev.fired.length;
+    }
+    function checkAlerts(why) {
+      if (!AL || alertBusy) return Promise.resolve(); var act = AL.active(alertsList()); if (!act.length) return Promise.resolve();
+      alertBusy = true; var keys = {}, jobs = [], prices = {}, errs = [];
+      act.forEach(function (a) { if (keys[a.key]) return; keys[a.key] = 1; jobs.push(quickPrice(a).then(function (q) { prices[a.key] = q; }, function (e) { errs.push(a.name + ': ' + e.message); })); });
+      return Promise.all(jobs).then(function () {
+        alertBusy = false; var n = applyPrices(prices, why);
+        alertMsg = { at: new Date().toISOString(), why: why, checked: Object.keys(prices).length, total: Object.keys(keys).length, fired: n, errs: errs };
+        if (X.tab() === 'analiz') X.render();
+      });
+    }
+    function startAlerts() {
+      window.__fpCheckAlerts = checkAlerts;
+      setTimeout(function () { checkAlerts('uygulama açılışı'); }, 3500);
+      clearInterval(alertTimer); alertTimer = setInterval(function () { if (!document.hidden) checkAlerts('10 dakikalık kontrol'); }, 10 * 60000);
+    }
+    function alertRow(a, showName) {
+      var q = alertLast[a.key] || (a.lastPrice != null ? { price: a.lastPrice, at: a.lastAt, source: a.lastSource } : null), dist = q ? AL.distancePct(a, q.price) : null;
+      return '<li class="al-row' + (a.triggeredAt ? ' fired' : '') + '"><div><b>' + (showName ? '<a href="#analiz/varlik/' + esc(a.key) + '">' + esc(a.name) + '</a> · ' : '') + esc(a.label) + '</b> ' + (a.dir === 'above' ? '↑ ' : '↓ ') + money(a.price, a.cur) +
+        '<div class="hint">' + (a.triggeredAt ? '🔔 Tetiklendi ' + when(a.triggeredAt) + ' — fiyat ' + money(a.firedPrice, a.cur) + (a.firedSource ? ' (' + esc(a.firedSource) + ')' : '') : (a.dir === 'above' ? 'Fiyat bu seviyenin üstüne çıkarsa' : 'Fiyat bu seviyenin altına inerse') + (q ? ' · şu an ' + money(q.price, a.cur) + (dist != null ? ' (seviyeye %' + pc(Math.abs(dist) / 100) + ')' : '') + ' · ' + when(q.at) : ' · fiyat henüz kontrol edilmedi')) + '</div></div>' +
+        '<div class="al-act">' + (a.triggeredAt ? '<button type="button" class="btn small" data-act="a-al-rearm" data-id="' + esc(a.id) + '">Yeniden kur</button> ' : '') + '<button type="button" class="btn small" data-act="a-al-del" data-id="' + esc(a.id) + '" aria-label="Uyarıyı sil">Sil</button></div></li>';
+    }
+    function notifyControls() {
+      var sup = typeof Notification !== 'undefined', perm = sup ? Notification.permission : 'unsupported', on = notifyOn() && perm === 'granted';
+      return '<div class="row al-notify"><label class="al-switch"><input type="checkbox" data-act="a-al-notify"' + (on ? ' checked' : '') + (sup ? '' : ' disabled') + '> Tarayıcı bildirimi</label> <span class="hint">' + (!sup ? 'Bu tarayıcı bildirim desteklemiyor; uyarılar uygulama içinde gösterilir.' : perm === 'denied' ? 'Bildirim izni tarayıcıda reddedilmiş; site ayarlarından açabilirsin.' : on ? 'Açık — uyarı tetiklenince bu cihazda bildirim gelir.' : 'Kapalı — uyarılar uygulama içinde gösterilir.') + '</span></div>';
+    }
+    function alertsCard(A) {
+      if (!canAlert(A)) return '';
+      var mine = alertsList().filter(function (a) { return a.key === A.key; });
+      return '<section class="card a-alerts"><h2>Fiyat uyarıları ' + tip('Plan seviyelerindeki 🔔 düğmesiyle veya aşağıya fiyat yazarak uyarı kur. Uygulama açılınca, 10 dakikada bir (sekme açıkken), varlığı analiz edince ve Yönetim\'de fiyatları güncelleyince kontrol edilir. Uygulama kapalıyken kontrol yapılmaz. Uyarı bir kez tetiklenir; satış için önce güncel analiz gerekir.') + '</h2>' +
+        (mine.length ? '<ul class="al-list">' + mine.map(function (a) { return alertRow(a, false); }).join('') + '</ul>' : '<p class="muted">Bu varlık için uyarı yok.</p>') +
+        '<form id="a-al-form" class="row"><label for="a-al-p" class="sr">Uyarı fiyatı</label><input id="a-al-p" inputmode="decimal" placeholder="Fiyat (ör. ' + esc(fp(A.price)) + ')" maxlength="20" style="max-width:11em"> <button class="btn small" type="submit">Uyarı ekle</button></form>' + notifyControls() + '</section>';
+    }
+    function alertsOverview() {
+      var all = alertsList(); if (!all.length) return '';
+      var act = all.filter(function (a) { return !a.triggeredAt; }), fired = all.filter(function (a) { return a.triggeredAt; });
+      return '<section class="card a-alerts"><h2>Fiyat uyarıları <span class="hint">' + act.length + ' bekleyen' + (fired.length ? ' · ' + fired.length + ' tetiklenen' : '') + '</span></h2><ul class="al-list">' + fired.concat(act).map(function (a) { return alertRow(a, true); }).join('') + '</ul>' +
+        '<div class="row"><button type="button" class="btn small" data-act="a-al-check"' + (alertBusy ? ' disabled' : '') + '>' + (alertBusy ? 'Kontrol ediliyor…' : 'Şimdi kontrol et') + '</button>' + (alertMsg ? ' <span class="hint">Son kontrol ' + when(alertMsg.at) + ' (' + esc(alertMsg.why) + '): ' + alertMsg.checked + '/' + alertMsg.total + ' varlığın fiyatı alındı' + (alertMsg.errs.length ? ' — alınamayan: ' + esc(alertMsg.errs.slice(0, 3).join('; ')) : '') + '</span>' : '') + '</div>' + notifyControls() + '</section>';
+    }
+    function addAlert(A, price, label) {
+      try {
+        var q = alertLast[A.key], ref = q && q.price > 0 ? q.price : A.price, a = AL.make({ key: A.key, name: String(A.name).split(' — ')[0], sym: A.series && A.series.pair ? A.series.pair.replace(/USDT$/, '') : null, cur: A.currency === 'USD' ? 'USD' : 'TRY', price: price, label: label, refPrice: ref }, new Date().toISOString());
+        if (alertsList().length >= AL.MAX) throw new Error('En fazla ' + AL.MAX + ' uyarı');
+        if (alertsList().some(function (x) { return x.key === a.key && !x.triggeredAt && Math.abs(x.price - a.price) / a.price < 1e-6; })) throw new Error('Bu seviyede zaten bekleyen bir uyarı var');
+        X.mutate(function (s) { s.analysis = s.analysis || { watchlist: [], profile: {} }; s.analysis.alerts = (s.analysis.alerts || []).concat([a]); }, 'Uyarı kuruldu: ' + a.label + ' ' + fp(a.price) + (a.dir === 'above' ? ' (yukarı keserse)' : ' (aşağı keserse)'));
+      } catch (e) { X.toast('Uyarı kurulamadı: ' + e.message); }
+    }
+
+    /* ---------- KAP bildirimleri ve haberler (önbellek: market-data dalı) ---------- */
+    function ix() { if (!mdIx && !mdIxP) { mdIxP = MD.mdIndex().then(function (j) { mdIx = j; X.render(); }, function () { mdIxP = null; }); } return mdIx; }
+    function kapCard(A) {
+      var sym = A.key.slice(5), K = kapBy[sym], I0 = ix();
+      if (!K) { kapBy[sym] = { loading: true }; MD.kap(sym).then(function (j) { kapBy[sym] = j; X.render(); }, function (e) { kapBy[sym] = { error: e.message }; X.render(); }); K = kapBy[sym]; }
+      var h = '<section class="card a-kap"><h2>KAP bildirimleri ' + tip('Kamuyu Aydınlatma Platformu\'ndaki son 30 günün bildirimleri (şirketin kendi ve ilgili olduğu). Sunucu tarafında derlenir. Etiketler konu başlığından çıkarılır; skora katılmaz — önemli bildirimi KAP\'ta oku.') + '</h2>';
+      if (K.loading) return h + '<p class="loading-line">KAP bildirimleri alınıyor…</p></section>';
+      if (K.error) return h + '<p class="muted">KAP önbelleği alınamadı (' + esc(K.error) + '). Uydurma bildirim gösterilmez. <a href="https://www.kap.org.tr/tr/bildirim-sorgu" target="_blank" rel="noopener noreferrer">KAP\'ta ara</a></p></section>';
+      var its = K.items || [];
+      if (!its.length) return h + '<p class="muted">' + (I0 && I0.kap && I0.kap.ok ? 'Son 30 günde bu hisse için KAP bildirimi yok.' : 'KAP verisi henüz derlenmedi.') + '</p>' + (I0 && I0.kap ? '<p class="hint">Derleme: ' + when(I0.kap.generatedAt) + '</p>' : '') + '</section>';
+      var pos = its.filter(function (x) { return x.tone === 'pos'; }).length, neg = its.filter(function (x) { return x.tone === 'neg'; }).length;
+      h += '<p class="kap-sum">' + its.length + ' bildirim' + (pos ? ' · ' + pill('ok', pos + ' olumlu olabilir') : '') + (neg ? ' · ' + pill('danger', neg + ' dikkat') : '') + '</p><ul class="news">' + its.slice(0, 10).map(function (x) {
+        return '<li><span class="pill ' + (x.tone === 'pos' ? 'ok' : x.tone === 'neg' ? 'err' : 'info') + '">' + esc(x.tag) + '</span> <a href="https://www.kap.org.tr/tr/Bildirim/' + encodeURIComponent(x.i) + '" target="_blank" rel="noopener noreferrer">' + esc(x.sum || x.subj) + '</a>' +
+          '<div class="hint">' + esc(x.subj) + (x.related ? ' · ilgili bildirim (başka kurumca)' : '') + (x.late ? ' · geç bildirim' : '') + (x.fix ? ' · düzeltme' : '') + ' · ' + when(x.at) + '</div></li>';
+      }).join('') + '</ul><p class="hint">Kaynak: KAP (kap.org.tr), ' + when(K.generatedAt) + ' derlendi.</p></section>';
+      return h;
+    }
     var SUBS = [['', 'Genel bakış'], ['varlik', 'Varlık analizi'], ['olustur', 'Portföy oluşturucu'], ['yontem', 'Yöntem ve doğrulama']];
     function render() {
       var sub = X.sub(), h = '<h1>Portföy Analizi</h1>' + X.subtabs('analiz', SUBS);
@@ -138,6 +280,7 @@
       if (noKey.length) h += '<p class="hint">Piyasa verisi eşleşmeyen: ' + esc(noKey.map(function (x) { return x.name; }).join(', ')) + '. Varlığa kod (ör. ASELS, KTV) veya fiyat kaynağı ekleyince analiz edilir. <a href="#portfoy/varliklar">Varlıklar →</a></p>';
       h += '</section></div>';
       var wl = an().watchlist || [];
+      h += alertsOverview();
       h += '<section class="card"><h2>İzleme listesi ' + tip('Takip etmek istediğin varlıklar. Varlık analizinde "İzlemeye al" ile eklenir; eşitleme açıksa tüm cihazlarına taşınır.') + '</h2>';
       if (wl.length) h += '<div class="wl">' + wl.map(function (w) { var s = S[w.key]; return '<a class="wcard" href="#analiz/varlik/' + esc(w.key) + '"><div class="wl-h"><b>' + esc(w.name || w.key) + '</b>' + scoreBadge(s ? s.total : null) + '</div><div class="hint">' + esc(s ? (s.stance + ' · ' + money(s.price, s.cur)) : 'henüz analiz edilmedi') + '</div><div class="hint">' + (s ? when(s.at) : '') + '</div></a>'; }).join('') + '</div>';
       else h += '<p class="muted">Liste boş. Bir varlığı analiz edip "İzlemeye al"a dokun.</p>';
@@ -168,13 +311,17 @@
         '<div class="stance st-' + A.stance.code + '"><b>' + esc(A.stance.label) + '</b>' + (A.stance.hold ? '<div class="hold"><b>Elindeki pozisyon için: ' + esc(A.stance.hold.label) + '</b><div class="hint">' + esc(A.stance.hold.why.join(' · ')) + '</div></div>' : '') + '</div>' +
         '<p class="hint">Güven ' + A.confidence + '/100' + (A.confReasons.length ? ' — ' + esc(A.confReasons.slice(0, 3).join(' · ')) : '') + '</p></section>';
       h += planCards(A) + '</div>';
+      var Ai = cur.view.tf !== '1d' ? cacheI[A.key + '|' + cur.view.tf] : null;
+      if (Ai && Ai.col) h += intraCard(Ai);
       h += chartCard(A);
+      h += alertsCard(A);
       h += '<div class="grid two">' + evidenceCard(A) + structureCard(A) + '</div>';
       if (A.kind === 'stock' && A.key.indexOf('bist:') === 0) h += fundCardStock(A);
       if (A.kind === 'fund' && S.fund) h += fundCardTefas(A);
       if (A.kind === 'crypto' && A.key.indexOf('cg:') === 0) h += cryptoCard(A);
       if (S.derived) h += '<p class="hint">Bu seri türetilmiştir: ' + esc(S.derived) + '. Mum (açılış/en yüksek/en düşük) yok; teknik analiz kapanışla sınırlıdır. Tam mum analizi için "ons altın" ara.</p>';
-      h += '<div class="grid two">' + verifyCard(A) + newsCard(A) + '</div>';
+      h += '<div class="grid two">' + (A.key.indexOf('bist:') === 0 ? kapCard(A) + newsCard(A) : verifyCard(A) + newsCard(A)) + '</div>';
+      if (A.key.indexOf('bist:') === 0) h += '<div class="grid two">' + verifyCard(A) + '<div></div></div>';
       return h;
     }
     function planCards(A) {
@@ -187,28 +334,36 @@
       else {
         var dim = !A.halalOk || A.blocked;
         h += '<div class="plan' + (dim ? ' dim' : '') + '"><div class="plan-h"><b>' + esc(p.how) + '</b> ' + pill(p.ok ? 'ok' : 'warn', p.verdict) + '</div>' +
-          '<div class="lv"><span>Giriş</span><b>' + money(p.entryLo, A.currency) + (p.entryHi !== p.entryLo ? ' – ' + money(p.entryHi, A.currency) : '') + '</b><i></i></div>' +
-          '<div class="lv stop"><span>' + esc(p.stopLabel) + '</span><b>' + money(p.stop, A.currency) + '</b><i>−' + pc(p.riskPct) + '%</i></div>' +
-          p.targets.map(function (t, i) { return '<div class="lv tgt' + (t.minor ? ' minor' : '') + '"><span>Hedef ' + (i + 1) + (t.minor ? ' (ara)' : '') + '</span><b>' + money(t.p, A.currency) + '</b><i>R/Ö ' + (t.rr != null ? t.rr.toFixed(2).replace('.', ',') : '—') + '</i></div>'; }).join('') +
+          levelRows(A, p) +
           (p.size ? '<p class="hint">Pozisyon büyüklüğü (portföyün %' + pc(p.riskFrac) + '\'i riske edilerek): ≈ ' + tl(Math.round(p.size.value * 100)) + (A.kind === 'stock' ? ' (' + Math.floor(p.size.units) + ' adet)' : '') + (p.size.capped ? ' — tek varlık sınırıyla kırpıldı' : '') + '</p>' : '') +
           '<ul class="ev small">' + p.why.concat(p.targets.map(function (t, i) { return 'Hedef ' + (i + 1) + ': ' + t.why; })).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></div>';
         if (P.notes.length) h += '<p class="hint">' + esc(P.notes.join(' ')) + '</p>';
       }
       return h + '</section>';
     }
-    function chartCard(A) {
-      var v = cur.view, ov = v.overlays, plan = A.plans[v.lens];
+    function chartCard(A0) {
+      var v = cur.view, ov = v.overlays, A = A0, intra = v.tf !== '1d' && tfAllowed(A0.key);
+      if (intra) {
+        var Ai = cacheI[A0.key + '|' + v.tf];
+        if (!Ai) { setTimeout(function () { loadIntra(A0.key, v.tf); X.render(); }, 0); Ai = { loading: true }; }
+        var head = '<section class="card a-chart"><div class="ch-h"><h2>Grafik</h2>' + tfSeg(A0) + '</div>';
+        if (Ai.loading) return head + '<p class="loading-line">⏳ ' + esc(TF_LABEL[v.tf]) + ' mumlar alınıyor ve analiz ediliyor…</p></section>';
+        if (Ai.error) return head + '<div class="notice warn">Gün içi veri alınamadı: ' + esc(Ai.error) + ' Uydurma veri kullanılmaz; günlük grafiğe dön.</div></section>';
+        if (!Ai.col) return head + '<div class="notice warn">' + esc(Ai.blockReasons.join(' ')) + '</div></section>';
+        A = Ai;
+      }
+      var plan = A.plans[v.lens];
       var chips = [['ma', 'Ortalamalar'], ['structure', 'Destek/direnç + trend'], ['plan', 'Plan seviyeleri'], ['patterns', 'Formasyon/uyumsuzluk'], ['fib', 'Fibonacci'], ['bb', 'Bollinger'], ['ichimoku', 'Ichimoku'], ['supertrend', 'Supertrend'], ['vwap', 'VWAP']]
         .filter(function (c) { return !(A.closeOnly && (c[0] === 'ichimoku' || c[0] === 'supertrend' || c[0] === 'vwap')); });
       var lowers = [['volume', 'Hacim'], ['rsi', 'RSI'], ['macd', 'MACD'], ['stoch', 'Stok. RSI'], ['adx', 'ADX']].filter(function (x) { return !(x[0] === 'volume' && !A.ind.hasVol) && !(x[0] === 'adx' && A.closeOnly); });
       if (!lowers.some(function (x) { return x[0] === v.lower; })) v.lower = lowers[0][0];
       var last = A.col.bars[A.col.bars.length - 1];
       return '<section class="card a-chart"><div class="ch-h"><h2>Grafik ' + tip('Fare tekerleği veya iki parmakla yakınlaştır, sürükleyerek kaydır. Üzerine gelince o günün fiyatları görünür. Çizimler analizden gelir: yeşil = destek, kırmızı = direnç, kesikli = trend çizgisi/kanal.') + '</h2>' +
-        '<div class="seg" role="group" aria-label="Zaman aralığı">' + Object.keys(TC.RANGES).map(function (r) { return '<button type="button" data-act="a-range" data-v="' + r + '" aria-pressed="' + (v.range === r) + '">' + r + '</button>'; }).join('') + '</div></div>' +
+        tfSeg(A0) + '<div class="seg" role="group" aria-label="Görünen aralık">' + Object.keys(intra ? TC.RANGES_I : TC.RANGES).map(function (r) { var R = intra ? TC.RANGES_I : TC.RANGES, act = v.range === r || (!(v.range in R) && r === (intra ? '1A' : '1Y')); return '<button type="button" data-act="a-range" data-v="' + r + '" aria-pressed="' + act + '">' + r + '</button>'; }).join('') + '</div></div>' +
         '<div class="chips" role="group" aria-label="Göstergeler">' + chips.map(function (c) { return '<button type="button" class="chip" data-act="a-ov" data-v="' + c[0] + '" aria-pressed="' + !!ov[c[0]] + '">' + c[1] + '</button>'; }).join('') + '</div>' +
-        (window.Charts ? window.Charts.custom('a-px', window.innerWidth < 560 ? 430 : 560, A.name + ' fiyat grafiği', function (t) { return TC.build(A, { range: v.range, overlays: ov, lower: v.lower, plan: plan }, t); }, 'pxchart') : '<p class="muted">Grafik kütüphanesi yüklenemedi.</p>') +
+        (window.Charts ? window.Charts.custom('a-px', window.innerWidth < 560 ? 430 : 560, A.name + ' fiyat grafiği', function (t) { return TC.build(A, { range: intra ? (v.range in TC.RANGES_I ? v.range : '1A') : (v.range in TC.RANGES ? v.range : '1Y'), overlays: ov, lower: v.lower, plan: plan }, t); }, 'pxchart') : '<p class="muted">Grafik kütüphanesi yüklenemedi.</p>') +
         '<div class="seg low" role="group" aria-label="Alt panel">' + lowers.map(function (x) { return '<button type="button" data-act="a-lower" data-v="' + x[0] + '" aria-pressed="' + (v.lower === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>' +
-        '<p class="hint">' + A.n + ' günlük veri · son mum ' + esc(A.lastDate) + (last.live ? ' (canlı/gecikmeli)' : last.partial ? ' (gün içi, kapanmadı)' : '') + ' · ATR(14) ' + fp(A.atr) + (A.ind.atrApprox ? ' (yaklaşık: kapanış değişimlerinden)' : '') + '</p></section>';
+        '<p class="hint">' + A.n + (intra ? ' adet ' + esc(TF_LABEL[v.tf]) + ' mum (TSİ)' : ' günlük veri') + ' · son mum ' + esc(A.lastDate) + (last.live ? ' (canlı/gecikmeli)' : last.partial ? ' (gün içi, kapanmadı)' : '') + ' · ATR(14) ' + fp(A.atr) + (A.ind.atrApprox ? ' (yaklaşık: kapanış değişimlerinden)' : '') + '</p></section>';
     }
     function evidenceCard(A) {
       var ks = Object.keys(AN.WEIGHTS[A.kind] || {}), all = [];
@@ -282,12 +437,23 @@
     var POSW = /(rekor|yüksel|artış|büyüme|kâr açıkla|anlaşma|ihale kazan|sipariş|onay|surge|rally|gain|record|growth|beat|upgrade|profit|deal|wins)/i, NEGW = /(düş|kayıp|zarar|ceza|soruşturma|dava|iflas|gerile|plunge|fall|loss|lawsuit|probe|downgrade|crash|drop|fraud|ban)/i;
     function sentiment(t) { var p = POSW.test(t || ''), n = NEGW.test(t || ''); return p && !n ? { c: 'pos', i: '▲', t: 'olumlu kelimeler' } : n && !p ? { c: 'neg', i: '▼', t: 'olumsuz kelimeler' } : { c: 'neu', i: '•', t: 'nötr/karışık' }; }
     function newsCard(A) {
-      var N = newsBy[A.key], h = '<section class="card"><h2>Haberler ' + tip('Ücretsiz GDELT haber veritabanından son 14 günün başlıkları ve basit kelime tabanlı duygu etiketi. Kaynak yanıt vermezse haber gösterilmez; "Asistana sor" ile bağlam içinde değerlendirme isteyebilirsin.') + '</h2>';
-      if (!N) h += '<button class="btn small" type="button" data-act="a-news">Haberleri getir</button> <span class="hint">Sorgu: ' + esc(newsQuery(A)) + '</span>';
-      else if (N.loading) h += '<p class="loading-line">Haberler alınıyor…</p>';
-      else if (N.error) h += '<p class="muted">Haber kaynağı yanıt vermedi (' + esc(/fetch|network|cors/i.test(N.error) ? 'bağlantı reddedildi — GDELT yoğunken veya 5 sn\'de birden fazla istekte erişimi kısıtlar' : N.error) + '). <button class="btn small" type="button" data-act="a-news">Tekrar dene</button> Haber analizi uydurulmaz — "Asistana sor" ile değerlendirme isteyebilirsin.</p>';
-      else if (!N.items.length) h += '<p class="muted">Son 14 günde başlık bulunamadı.</p>';
-      else h += '<ul class="news">' + N.items.slice(0, 8).map(function (it) { var s = sentiment(it.title); return '<li><span class="sent ' + s.c + '" title="' + s.t + '">' + s.i + '</span> <a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.title) + '</a><div class="hint">' + esc(it.domain || '') + ' · ' + esc(it.d || '') + '</div></li>'; }).join('') + '</ul><p class="hint">Kaynak: ' + esc(N.source || 'GDELT') + ', ' + when(N.at) + '</p>';
+      var key = A.key, topic = MD.newsTopicOf(key), hasCache = key.indexOf('bist:') === 0 || !!topic, N = newsBy[key], G = newsG[key], I0 = ix();
+      if (hasCache && !N) { newsBy[key] = N = { loading: true }; MD.newsCached(key).then(function (j) { newsBy[key] = j || { items: [], none: true }; X.render(); }, function (e) { newsBy[key] = { error: e.message }; X.render(); }); }
+      var h = '<section class="card"><h2>Haberler ' + tip('Türk ekonomi haber kaynaklarının (RSS) son 14 günlük başlıkları sunucu tarafında taranır; başlığında şirketin adı/kodu geçenler listelenir. Duygu etiketi basit kelime eşleştirmesidir, skora katılmaz. "Dünya basınında ara" GDELT açık veritabanını sorgular.') + '</h2>';
+      function list(items, srcLine) { return '<ul class="news">' + items.slice(0, 8).map(function (it) { var s2 = sentiment(it.title); return '<li><span class="sent ' + s2.c + '" title="' + s2.t + '">' + s2.i + '</span> <a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.title) + '</a><div class="hint">' + esc(it.src || it.domain || '') + ' · ' + (it.at ? when(it.at) : esc(it.d || '')) + (it.match ? ' · eşleşme: “' + esc(it.match) + '”' : '') + '</div></li>'; }).join('') + '</ul><p class="hint">' + srcLine + '</p>'; }
+      if (hasCache) {
+        if (N.loading) h += '<p class="loading-line">Haberler alınıyor…</p>';
+        else if (N.error) h += '<p class="muted">Haber önbelleği alınamadı (' + esc(N.error) + '). Haber uydurulmaz.</p>';
+        else if (!N.items.length) { var nf = I0 && I0.news && I0.news.feeds ? Object.keys(I0.news.feeds).filter(function (k) { return k !== 'GDELT' && I0.news.feeds[k].ok; }).length : null; h += '<p class="muted">Son 14 günde ' + (topic ? 'bu konuda' : 'başlığında bu şirketin adı geçen') + ' haber yok' + (nf ? ' (' + nf + ' Türk ekonomi kaynağı tarandı)' : (I0 && !I0.news ? ' — haber derlemesi henüz çalışmadı' : '')) + '.</p>'; }
+        else h += list(N.items, 'Kaynak: Türk ekonomi RSS akışları' + (N.keywords && N.keywords.length ? ' · aranan: ' + esc(N.keywords.join(', ')) : '') + ' · ' + when(N.at) + ' derlendi');
+      }
+      h += '<div class="row">';
+      if (!G) h += '<button class="btn small" type="button" data-act="a-news">Dünya basınında ara (GDELT)</button> <span class="hint">Sorgu: ' + esc(newsQuery(A)) + '</span>';
+      else if (G.loading) h += '<p class="loading-line">GDELT sorgulanıyor…</p>';
+      h += '</div>';
+      if (G && G.error) h += '<p class="muted">GDELT yanıt vermedi (' + esc(/fetch|network|ağ hatası|cors/i.test(G.error) ? 'bağlantı reddedildi — GDELT yoğunken veya 5 sn\'de birden fazla istekte erişimi kısıtlar' : G.error) + '). <button class="btn small" type="button" data-act="a-news">Tekrar dene</button></p>';
+      else if (G && G.items && !G.items.length) h += '<p class="muted">GDELT: son 14 günde sonuç yok.</p>';
+      else if (G && G.items) h += list(G.items, 'Kaynak: ' + esc(G.source || 'GDELT') + ', ' + when(G.at));
       return h + '</section>';
     }
     function importCard() {
@@ -476,7 +642,13 @@
     function actions(t) {
       return {
         'a-open': function () { search.results = null; open(t.dataset.key, { symbol: t.dataset.sym }); },
-        'a-refresh': function () { if (cur.key) { delete cacheA[cur.key]; open(cur.key); } },
+        'a-refresh': function () { if (cur.key) { var k0 = cur.key; delete cacheA[k0]; Object.keys(cacheI).forEach(function (k) { if (k.indexOf(k0 + '|') === 0) delete cacheI[k]; }); delete newsBy[k0]; delete kapBy[k0.slice(5)]; open(k0); } },
+        'a-tf': function () { if (t.disabled) return; cur.view.tf = t.dataset.v; X.render(); },
+        'a-alert': function () { var A = cacheA[cur.key]; if (!A) return; addAlert(A, +t.dataset.p, t.dataset.l || 'Seviye'); },
+        'a-al-del': function () { var id = t.dataset.id; X.mutate(function (s) { if (s.analysis && s.analysis.alerts) s.analysis.alerts = s.analysis.alerts.filter(function (a) { return a.id !== id; }); }, 'Uyarı silindi.'); },
+        'a-al-rearm': function () { var id = t.dataset.id, a = alertsList().filter(function (x) { return x.id === id; })[0]; if (!a) return; quickPrice(a).then(function (q) { try { var b = AL.rearm(a, q.price, new Date().toISOString()); X.mutate(function (s) { s.analysis.alerts = s.analysis.alerts.map(function (x) { return x.id === id ? b : x; }); }, 'Uyarı yeniden kuruldu (' + (b.dir === 'above' ? 'yukarı keserse' : 'aşağı keserse') + ').'); } catch (e) { X.toast(e.message); } }, function (e) { X.toast('Güncel fiyat alınamadı, uyarı yeniden kurulmadı: ' + e.message); }); },
+        'a-al-check': function () { checkAlerts('elle kontrol'); X.render(); },
+        'a-al-notify': function () { var on = t.checked; if (!on) { try { localStorage.setItem(NOTIFY_KEY, '0'); } catch (e) { } X.render(); return; } if (typeof Notification === 'undefined') { t.checked = false; return; } Notification.requestPermission().then(function (p) { try { localStorage.setItem(NOTIFY_KEY, p === 'granted' ? '1' : '0'); } catch (e) { } if (p !== 'granted') X.toast('Bildirim izni verilmedi; uyarılar uygulama içinde gösterilecek.'); X.render(); }); },
         'a-watch': function () {
           var A = cacheA[cur.key]; if (!A) return;
           X.mutate(function (s) { s.analysis = s.analysis || { watchlist: [], profile: {} }; var wl = s.analysis.watchlist = s.analysis.watchlist || []; var i = wl.findIndex(function (w) { return w.key === A.key; }); if (i >= 0) wl.splice(i, 1); else if (wl.length < 50) wl.push({ key: A.key, name: String(A.name).slice(0, 80), addedAt: X.today() }); }, 'İzleme listesi güncellendi.');
@@ -486,7 +658,7 @@
         'a-range': function () { cur.view.range = t.dataset.v; X.render(); },
         'a-lower': function () { cur.view.lower = t.dataset.v; X.render(); },
         'a-ov': function () { cur.view.overlays[t.dataset.v] = !cur.view.overlays[t.dataset.v]; X.render(); },
-        'a-news': function () { var A = cacheA[cur.key]; if (!A) return; var k = A.key; newsBy[k] = { loading: true }; X.render(); MD.news(newsQuery(A)).then(function (n) { newsBy[k] = n; X.render(); }, function (e) { newsBy[k] = { error: e.message }; X.render(); }); },
+        'a-news': function () { var A = cacheA[cur.key]; if (!A) return; var k = A.key; newsG[k] = { loading: true }; X.render(); MD.news(newsQuery(A)).then(function (n) { newsG[k] = n; X.render(); }, function (e) { newsG[k] = { error: e.message }; X.render(); }); },
         'a-prof': function () { var f = t.dataset.f, v = t.dataset.v; X.mutate(function (s) { s.analysis = s.analysis || { watchlist: [], profile: {} }; s.analysis.profile = s.analysis.profile || {}; s.analysis.profile[f] = v === 'true' ? true : v === 'false' ? false : v; }); },
         'a-build': doBuild, 'a-apply': applyBuild, 'a-verify': runVerify, 'a-corr': calcCorr, 'a-bulk': bulkAnalyze
       };
@@ -497,6 +669,11 @@
         search.loading = true; search.results = null; X.render();
         MD.resolve(q).then(function (r) { search.loading = false; if (r.length === 1) { search.results = null; open(r[0].key, { symbol: r[0].symbol }); } else { search.results = r; X.render(); } }, function (err) { search.loading = false; search.results = []; X.toast('Arama yapılamadı: ' + err.message); X.render(); });
         return true;
+      }
+      if (e.target.id === 'a-al-form') {
+        e.preventDefault(); var A = cacheA[cur.key], v = MD.parseNumLoose(document.getElementById('a-al-p').value);
+        if (!A) return true; if (v == null || !(v > 0)) { X.toast('Geçerli bir fiyat yaz.'); return true; }
+        addAlert(A, v, 'Elle girilen seviye'); return true;
       }
       if (e.target.id === 'a-imp') {
         e.preventDefault();
@@ -521,9 +698,10 @@
       liveTimer = setTimeout(function () {
         if (cacheA[cur.key] !== A || X.tab() !== 'analiz') return;
         if (document.hidden) return afterRender();
+        if (cur.view.tf !== '1d' && A.kind === 'crypto') { delete cacheI[cur.key + '|' + cur.view.tf]; }
         runAnalysis(cur.key).then(function () { if (X.tab() === 'analiz' && X.sub() === 'varlik' && !document.querySelector('.a-chart :focus')) X.render(); }, function () { afterRender(); });
       }, 60000);
     }
-    return { render: render, homeCard: homeCard, actions: actions, onSubmit: onSubmit, afterRender: afterRender, keyOfAsset: keyOfAsset, halalFor: halalFor, open: open, _cache: cacheA, _sums: sums };
+    return { render: render, homeCard: homeCard, actions: actions, onSubmit: onSubmit, afterRender: afterRender, startAlerts: startAlerts, checkAlerts: checkAlerts, keyOfAsset: keyOfAsset, halalFor: halalFor, open: open, _cache: cacheA, _sums: sums };
   };
 })();

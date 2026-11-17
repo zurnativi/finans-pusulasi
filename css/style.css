@@ -412,7 +412,7 @@ table.mini{font-size:.86rem}table.mini td,table.mini th{padding:5px 6px}
 .plan{border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .plan.dim{opacity:.7;border-style:dashed}
 .plan-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
-.lv{display:grid;grid-template-columns:1fr auto 5.5em;gap:8px;padding:6px 0;border-top:1px dashed var(--line);align-items:center;font-variant-numeric:tabular-nums}
+.lv{display:grid;grid-template-columns:1fr auto 5.5em 2.2em;gap:8px;padding:6px 0;border-top:1px dashed var(--line);align-items:center;font-variant-numeric:tabular-nums}
 .lv span{color:var(--muted);font-size:.88rem}.lv i{font-style:normal;font-size:.82rem;color:var(--muted);text-align:right}
 .lv.stop b{color:var(--danger)}.lv.tgt b{color:var(--ok)}.lv.minor b{opacity:.75}
 .ch-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
@@ -437,5 +437,21 @@ table.levels tr.now td{background:var(--info-bg)}
   .asearch{flex-direction:column}.asearch .btn{width:100%}
   .ah-r{width:100%}.ah-r .btn{flex:1}
   .sbar{grid-template-columns:minmax(80px,120px) 1fr 2em}
-  .lv{grid-template-columns:1fr auto 4.8em}
+  .lv{grid-template-columns:1fr auto 4.6em 2.2em}
 }
+
+/* v7.1: seviye uyarıları, zaman dilimi, gün içi kartı, KAP */
+.bell{border:1px solid var(--line);background:var(--card);border-radius:8px;min-width:32px;min-height:32px;cursor:pointer;font-size:.9rem;line-height:1;padding:0}
+.bell:hover,.bell:focus-visible{border-color:var(--brand);outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 30%,transparent)}
+.al-list{list-style:none;margin:0 0 8px;padding:0}
+.al-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.al-row.fired{background:color-mix(in srgb,var(--ok) 8%,transparent);border-radius:8px;padding:8px}
+.al-act{display:flex;gap:6px;flex-shrink:0}
+.al-notify{margin-top:8px;align-items:center;gap:8px;flex-wrap:wrap}
+.seg.tf{margin-right:6px}
+.ch-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.seg button:disabled{opacity:.45;cursor:not-allowed}
+.a-intra .hrow{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center}
+.kap-sum{margin:0 0 6px}
+@media (max-width:560px){.al-row{flex-direction:column;align-items:flex-start}.a-intra .hrow{grid-template-columns:1fr}}
+.al-switch{display:inline-flex;gap:6px;align-items:center;font-weight:600;cursor:pointer}.al-switch input{width:18px;height:18px}

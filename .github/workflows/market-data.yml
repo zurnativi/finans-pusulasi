@@ -1,12 +1,21 @@
-# Günlük piyasa verisi (BIST, endeks, altın/gümüş, döviz, helal ETF) — tarayıcıdan CORS ile alınamayan geçmiş mumlar.
+# Piyasa verisi (BIST, endeks + Katılım endeksleri, altın/gümüş, döviz, helal ETF; günlük ve saatlik mumlar), KAP bildirimleri ve haber başlıkları —
+# tarayıcıdan CORS ile alınamayan veriler.
 # Çıktı `market-data` dalına (tek commit, geçmiş tutulmaz) yazılır; site raw.githubusercontent.com'dan okur.
 # Not: GitHub, 60 gün hareketsiz depolarda zamanlanmış iş akışlarını durdurabilir; Actions sekmesinden yeniden açılır.
 name: market-data
 on:
   schedule:
-    - cron: '40 15 * * 1-5'   # 18:40 TSİ — BIST kapanışından sonra
-    - cron: '30 7 * * 1-5'    # 10:30 TSİ — sabah tazeleme (ABD/emtia kapanışları)
-  workflow_dispatch: {}
+    - cron: '40 15 * * 1-5'   # 18:40 TSİ — tam derleme (BIST kapanışından sonra)
+    - cron: '30 7 * * 1-5'    # 10:30 TSİ — tam derleme (sabah: ABD/emtia kapanışları)
+    - cron: '10 8-14 * * 1-5' # 11:10–17:10 TSİ saat başı — seans içi: saatlik mumlar + KAP + haber
+    - cron: '0 9 * * 0,6'     # hafta sonu 12:00 TSİ — KAP + haber (+ kripto dışı saatlik veri değişmez)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'full = günlük + saatlik + KAP + haber; intraday = saatlik + KAP + haber'
+        type: choice
+        options: [full, intraday]
+        default: full
 permissions:
   contents: write
 concurrency: { group: market-data, cancel-in-progress: false }
@@ -21,7 +30,10 @@ jobs:
         run: |
           git fetch --depth=1 origin market-data:prev-data 2>/dev/null && git worktree add /tmp/prev prev-data || echo "önceki veri yok"
       - name: Veriyi derle
-        env: { PREV_DIR: /tmp/prev, WORKERS: '5' }
+        env:
+          PREV_DIR: /tmp/prev
+          WORKERS: '5'
+          MODE: ${{ ((github.event.schedule == '10 8-14 * * 1-5' || github.event.schedule == '0 9 * * 0,6') && 'intraday') || inputs.mode || 'full' }}
         run: python3 tools/fetch_market_data.py /tmp/out
       - name: market-data dalına yaz
         run: |

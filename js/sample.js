@@ -537,6 +537,7 @@
     if (['low', 'medium', 'high'].indexOf(p.risk) >= 0) out.profile.risk = p.risk;
     if (typeof p.usd === 'boolean') out.profile.usd = p.usd;
     out.profile.halal = true;
+    if (Array.isArray(a.alerts)) { var AL = (typeof require === 'function' && typeof module === 'object') ? require('./alerts.js') : (typeof self !== 'undefined' ? self.Alerts : null); out.alerts = AL ? AL.clean(a.alerts) : []; }
     return out;
   }
   return { realRecordCount: realRecordCount, cleanAnalysis: cleanAnalysis, SCHEMA_VERSION: SCHEMA_VERSION, EXAMPLE_REVISION: EXAMPLE_REVISION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,

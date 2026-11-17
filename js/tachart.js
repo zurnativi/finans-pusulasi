@@ -5,16 +5,20 @@
   'use strict';
   var num = function (v) { return typeof v === 'number' && isFinite(v); };
   var RANGES = { '3A': 63, '6A': 126, '1Y': 252, '2Y': 504, 'Tümü': 1e9 };
+  var RANGES_I = { '1H': 5, '2H': 10, '1A': 21, '3A': 63, 'Tümü': 1e9 }; // gün içi: iş günü sayısı × günlük mum sayısı (veriden ölçülür)
+  function barsPerDay(d) { var n = d.length, days = {}, c = 0; for (var i = Math.max(0, n - 200); i < n; i++) { days[String(d[i]).slice(0, 10)] = 1; c++; } return c / Math.max(1, Object.keys(days).length); }
+  function spanOf(A, range) { if (!A.tf || A.tf === '1d') return RANGES[range] || 252; var dd = RANGES_I[range] || 21; return dd >= 1e9 ? 1e9 : Math.round(dd * barsPerDay(A.col.d)); }
   function fmt(x) { if (!num(x)) return '—'; var a = Math.abs(x); return x.toLocaleString('tr-TR', { minimumFractionDigits: a >= 1000 ? 0 : 2, maximumFractionDigits: a >= 1000 ? 2 : a >= 1 ? 2 : 6 }); }
   function addBusinessDays(ymd, n) { var p = ymd.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])), out = []; while (out.length < n) { d.setUTCDate(d.getUTCDate() + 1); var w = d.getUTCDay(); if (w !== 0 && w !== 6) out.push(d.toISOString().slice(0, 10)); } return out; }
   function build(A, view, t) {
     var C = window.Charts, hexA = C.hexA, col = A.col, I = A.ind, n = col.c.length, closeOnly = A.closeOnly, up = t.dark ? '#3fb27f' : '#16794c', dn = t.dark ? '#ff6b6b' : '#c0392b';
     var ov = view.overlays || {}, lower = view.lower || 'volume', small = (t.width || 900) < 560;
-    var fut = I.ichimoku && ov.ichimoku ? addBusinessDays(col.d[n - 1], I.ichimoku.shift) : [];
+    var intra = !!(A.tf && A.tf !== '1d'), fut = [];
+    if (I.ichimoku && ov.ichimoku) { if (intra) for (var fi = 1; fi <= I.ichimoku.shift; fi++) fut.push('+' + fi + ' mum'); else fut = addBusinessDays(col.d[n - 1], I.ichimoku.shift); }
     var dates = col.d.concat(fut), N = dates.length;
     // Gelecek tarihler (Ichimoku bulutu) için boşluk: ECharts'ta '-' (null, mum/çubuk öğesinde hata verir)
     var pad = function (arr) { return arr.concat(fut.map(function () { return '-'; })); };
-    var span = Math.min(n, RANGES[view.range] || 252), startPct = Math.max(0, (n - span) / N * 100);
+    var span = Math.min(n, spanOf(A, view.range)), startPct = Math.max(0, (n - span) / N * 100);
     var series = [], legend = [], rail = []; // rail: sağ kenar seviye etiketleri (çakışmasız yerleşim, LabelLayout)
     // Ana fiyat serisi
     var main = closeOnly ? { name: 'Fiyat', type: 'line', data: pad(col.c), showSymbol: false, lineStyle: { width: 2, color: t.brand }, itemStyle: { color: t.brand }, z: 5 }
@@ -127,7 +131,7 @@
       axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
       grid: [{ left: 8, right: (small ? 50 : 70) + railW, top: legend.length && !small ? 28 : 10, height: h1, containLabel: false }, { left: 8, right: (small ? 50 : 70) + railW, top: small ? '74%' : '77%', height: small ? '16%' : '15%' }],
       xAxis: [{ type: 'category', data: dates, boundaryGap: true, axisLine: { lineStyle: { color: t.line } }, axisLabel: { show: false }, axisTick: { show: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax' },
-        { type: 'category', gridIndex: 1, data: dates, boundaryGap: true, axisLine: { lineStyle: { color: t.line } }, axisLabel: { color: t.muted, hideOverlap: true, formatter: function (v) { var p = String(v).split('-'); return p[2] + '.' + p[1] + '.' + p[0].slice(2); } }, axisTick: { show: false } },
+        { type: 'category', gridIndex: 1, data: dates, boundaryGap: true, axisLine: { lineStyle: { color: t.line } }, axisLabel: { color: t.muted, hideOverlap: true, formatter: function (v) { v = String(v); if (v.charAt(0) === '+') return v; var p = v.slice(0, 10).split('-'), s2 = p[2] + '.' + p[1]; return v.length > 10 ? s2 + ' ' + v.slice(11, 16) : s2 + '.' + p[0].slice(2); } }, axisTick: { show: false } },
         { type: 'value', gridIndex: 0, show: false, min: 0, max: 1, axisPointer: { show: false } }],
       yAxis: [{ scale: true, position: 'right', axisLabel: { color: t.muted, formatter: function (v) { return fmt(v); } }, splitLine: { lineStyle: { color: t.line, opacity: 0.6 } } },
         { scale: true, gridIndex: 1, position: 'right', splitNumber: 2, name: lowName, nameLocation: 'end', nameGap: 4, nameTextStyle: { color: t.muted, fontSize: 10, align: 'right' }, axisLabel: { color: t.muted, fontSize: 10, formatter: function (v) { return Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(0) + 'M' : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(0) + 'B' : String(Math.round(v * 100) / 100).replace('.', ','); } }, splitLine: { show: false },
@@ -145,5 +149,5 @@
       title: { show: true, offsetCenter: [0, '38%'], color: t.muted, fontSize: 12 }, detail: { valueAnimation: true, offsetCenter: [0, '-2%'], fontSize: 30, fontWeight: 800, color: t.ink, formatter: function (v) { return score == null ? '—' : Math.round(v); } },
       data: [{ value: score == null ? 0 : score, name: label || '' }] }] };
   }
-  window.TAChart = { build: build, gauge: gauge, RANGES: RANGES, fmt: fmt };
+  window.TAChart = { build: build, gauge: gauge, RANGES: RANGES, RANGES_I: RANGES_I, fmt: fmt };
 })();
