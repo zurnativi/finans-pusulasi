@@ -1,0 +1,15 @@
+ÖRNEK BANK KREDİ KARTI EKSTRESİ — TAKSİTLİ (ÖRNEK VERİ)
+Hesap kesim tarihi: 05.11.2026   Son ödeme tarihi: 15.11.2026
+
+
+İşlem Tarihi     Açıklama                                       Tutar (TL)
+
+21.10.2026       MIGROS ATASEHIR                                1.245,90
+24.10.2026       TEKNOSA TAKSİT 3/6                             1.250,00
+26.10.2026       IKEA (1/4)                                     2.137,48
+28.10.2026       STARBUCKS                                        182,50
+30.10.2026       ODEME - TESEKKUR EDERIZ                        -3.000,00
+02.11.2026       OPET AKARYAKIT                                 1.500,00
+
+                 Dönem Borcu                                    3.315,88
+

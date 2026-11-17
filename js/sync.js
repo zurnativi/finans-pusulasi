@@ -83,6 +83,11 @@
         return CB.decryptJson(env, cfg.pass, o.keyCache).catch(function () { throw new Error('Eşitleme parolası buluttaki veriyi açamadı. Diğer cihazda kullandığın parolanın aynısını yaz.'); }).then(function (remoteRaw) {
           var remote = o.validate(remoteRaw); // eski sürüm verisi yeni şemaya taşınır; daha yeni sürüm ise hata
           var m = mode;
+          // Örnek veri gerçek verinin üzerine ASLA gönderilmez: yerel örnek, buluttaki gerçek veri → buluttakini al.
+          if (local.isExample && !remote.isExample) {
+            if (m === 'push') throw new Error('Bu cihazda örnek veri var; buluttaki gerçek verinin üzerine yazılmadı. Önce "Bunlar artık benim verilerim" de veya buluttakini al.');
+            m = 'pull';
+          }
           if (m === 'auto') {
             if (!cfg.lastSyncAt && local.isExample) m = 'pull'; // bu cihazda yalnızca örnek veri var: örnek veri buluttakine asla karışmaz
             else if (!cfg.lastSyncAt && remote.isExample && !local.isExample) m = 'push';

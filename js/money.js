@@ -6,6 +6,9 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
   var MAX = Number.MAX_SAFE_INTEGER;
+  /* Projeksiyon gibi bileşik büyüyen hesaplar için güvenli üst sınır: 10 trilyon TL (= 1e15 kuruş).
+   * Bu sınırın 9 katı bile MAX_SAFE_INTEGER altında kalır; toplamlar taşmaz. Gösterimde "çok büyük" yazılır. */
+  var CAP = 1e15;
 
   function assertKurus(k, label) {
     if (typeof k !== 'number' || !Number.isInteger(k) || Math.abs(k) > MAX) {
@@ -41,6 +44,11 @@
   function mulBp(k, bp) { return mulRatio(k, Math.round(bp), 10000); }
   /* Float oran ile çarpma (yalnızca bileşik getiri projeksiyonunda; sonuç kuruşa yuvarlanır) */
   function mulFloat(k, f) { assertKurus(k); return assertKurus(roundHalfAwayFromZero(k * f)); }
+  /* Doymalı (taşmayan) işlemler: sonuç ±CAP ile sınırlanır, asla hata atmaz. Yalnızca tahmin/projeksiyonda kullanılır. */
+  function clampK(x) { if (typeof x !== 'number' || x !== x) return 0; if (x > CAP) return CAP; if (x < -CAP) return -CAP; return roundHalfAwayFromZero(x); }
+  function satAdd() { var t = 0; for (var i = 0; i < arguments.length; i++) t = clampK(t + clampK(arguments[i])); return t; }
+  function satMulFloat(k, f) { if (!isFinite(f)) return f > 0 ? CAP : f < 0 ? -CAP : 0; return clampK(clampK(k) * f); }
+  function isCapped(k) { return Math.abs(k) >= CAP; }
 
   /* Bir tutarı ağırlıklara göre kuruşu kuruşuna dağıtır (en büyük kalan yöntemi). Parçaların toplamı daima tutara eşittir. */
   function allocate(total, weights) {
@@ -116,6 +124,22 @@
     while (fracPart.length < 2) fracPart += '0';
     return finish(BigInt(intPart || '0') * 100n + BigInt(fracPart), neg);
   }
+  /* parse + uyarılar: belirsiz ayırıcı ("1,234" binlik mi ondalık mı?) ve kuruştan küçük basamak yuvarlaması kullanıcıya söylenir. */
+  function parseInfo(input) {
+    var v = parse(input), warnings = [];
+    if (v == null || typeof input !== 'string') return { value: v, warnings: warnings };
+    var s = input.replace(/\s+/g, '').replace(/(TL|TRY|₺|USD|\$|EUR|€)/gi, '').replace(/^[-−–+(]+|[-−–)]+$/g, '');
+    var hasC = s.indexOf(',') >= 0, hasD = s.indexOf('.') >= 0;
+    if (hasC !== hasD) {
+      var sep = hasC ? ',' : '.', pieces = s.split(sep);
+      if (pieces.length === 2 && pieces[1].length === 3 && pieces[0] !== '0' && pieces[0].length >= 1)
+        warnings.push('"' + input.trim() + '" belirsiz: binlik ayırıcı sayıldı (' + format(v) + '). Ondalıksa kuruşu 2 haneyle yaz (ör. ' + pieces[0] + ',' + pieces[1].slice(0, 2) + ').');
+    }
+    var dec = hasC && hasD ? (s.lastIndexOf(',') > s.lastIndexOf('.') ? ',' : '.') : null;
+    if (dec) { var frac = s.slice(s.lastIndexOf(dec) + 1); if (frac.length > 2) warnings.push('"' + input.trim() + '" kuruştan küçük basamak içeriyor; ' + format(v) + ' olarak yuvarlandı.'); }
+    else if (hasC && !hasD) { var f2 = s.split(','); if (f2.length === 2 && f2[1].length > 3) warnings.push('"' + input.trim() + '" kuruştan küçük basamak içeriyor; ' + format(v) + ' olarak yuvarlandı.'); }
+    return { value: v, warnings: warnings };
+  }
   function finish(k, neg) {
     if (k > BigInt(MAX)) return null;
     var n = Number(k);
@@ -129,10 +153,12 @@
     return true;
   }
 
-  /* Kuruşu "1.234,56" biçimine çevirir */
+  /* Kuruşu "1.234,56" biçimine çevirir. Gösterim asla hata atmaz: geçersiz değer "—", sınır üstü "çok büyük" yazılır. */
   function format(k, opts) {
     opts = opts || {};
-    assertKurus(k);
+    if (typeof k !== 'number' || !isFinite(k)) return '—';
+    if (!Number.isInteger(k)) k = roundHalfAwayFromZero(k);
+    if (Math.abs(k) >= CAP) return (k < 0 ? '−' : '') + 'çok büyük (10 trilyon TL üstü)';
     var neg = k < 0, a = Math.abs(k);
     var lira = Math.floor(a / 100), kr = a % 100;
     var ls = String(lira).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -143,7 +169,10 @@
     return (neg ? '−' : '') + out + (opts.symbol === false ? '' : ' TL');
   }
   function formatShort(k) {
+    if (typeof k !== 'number' || !isFinite(k)) return '—';
+    if (Math.abs(k) >= CAP) return (k < 0 ? '−' : '') + 'çok büyük';
     var a = Math.abs(k) / 100, neg = k < 0 ? '−' : '';
+    if (a >= 1e12) return neg + (a / 1e12).toFixed(2).replace('.', ',') + ' trilyon TL';
     if (a >= 1e9) return neg + (a / 1e9).toFixed(2).replace('.', ',') + ' milyar TL';
     if (a >= 1e6) return neg + (a / 1e6).toFixed(2).replace('.', ',') + ' milyon TL';
     if (a >= 1e4) return neg + Math.round(a / 1e3) + ' bin TL';
@@ -155,8 +184,39 @@
     var d = digits == null ? 1 : digits;
     return '%' + (bp / 100).toFixed(d).replace('.', ',');
   }
+  /* Türkçe iyelik eki (3. tekil): sayının okunuşunun son kelimesine göre. "%52" → "'si", "%14" → "'ü", "%0,0" → "'ı". */
+  var DIGIT_SFX = ['ı', 'i', 'si', 'ü', 'ü', 'i', 'sı', 'si', 'i', 'u'];       // sıfır bir iki üç dört beş altı yedi sekiz dokuz
+  var TENS_SFX = ['', 'u', 'si', 'u', 'ı', 'si', 'ı', 'i', 'i', 'ı'];        // on yirmi otuz kırk elli altmış yetmiş seksen doksan
+  function numSuffix(numStr) {
+    var s = String(numStr).replace(/[^\d,.]/g, ''), last = s;
+    var m = /[,.](\d+)$/.exec(s); if (m && /,/.test(s)) last = m[1]; // Türkçe ondalık: "12,5" → "beş"
+    last = last.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    if (!last || /^0+$/.test(last)) return 'ı';
+    var d = last.length - 1, z = 0;
+    while (d >= 0 && last[d] === '0') { z++; d--; }
+    if (z === 0) return DIGIT_SFX[+last[last.length - 1]];
+    if (z === 1) return TENS_SFX[+last[last.length - 2]];
+    if (z === 2) return 'ü';            // yüz
+    if (z <= 5) return 'i';             // bin, on bin, yüz bin
+    if (z <= 8) return 'u';             // milyon
+    return 'ı';                         // milyar
+  }
+  /* Bulunma eki (-de/-da/-te/-ta): "2051'de", "2060'ta", "2033'te" */
+  var DIGIT_LOC = ['da', 'de', 'de', 'te', 'te', 'te', 'da', 'de', 'de', 'da'], TENS_LOC = ['', 'da', 'de', 'da', 'ta', 'de', 'ta', 'te', 'de', 'da'];
+  function locSuffix(numStr) {
+    var last = String(numStr).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    if (!last || /^0+$/.test(last)) return 'da';
+    var d = last.length - 1, z = 0; while (d >= 0 && last[d] === '0') { z++; d--; }
+    if (z === 0) return DIGIT_LOC[+last[last.length - 1]];
+    if (z === 1) return TENS_LOC[+last[last.length - 2]];
+    if (z === 2) return 'de'; if (z <= 5) return 'de'; if (z <= 8) return 'da'; return 'da';
+  }
+  /* "%52'si" gibi: yüzde metnine doğru eki ekler */
+  function withSuffix(txt) { return txt + "'" + numSuffix(txt); }
+  function formatBpSfx(bp, digits) { return withSuffix(formatBp(bp, digits)); }
   function ratioBp(a, b) { if (!b) return 0; return mulRatio(10000, a, b); }
 
   return { parse: parse, format: format, formatShort: formatShort, formatBp: formatBp, add: add, sum: sum, sub: sub,
-    mulRatio: mulRatio, mulBp: mulBp, mulFloat: mulFloat, allocate: allocate, assertKurus: assertKurus, fromTL: fromTL, ratioBp: ratioBp };
+    mulRatio: mulRatio, mulBp: mulBp, mulFloat: mulFloat, satAdd: satAdd, satMulFloat: satMulFloat, clampK: clampK, isCapped: isCapped, CAP: CAP,
+    numSuffix: numSuffix, locSuffix: locSuffix, withSuffix: withSuffix, formatBpSfx: formatBpSfx, parseInfo: parseInfo, allocate: allocate, assertKurus: assertKurus, fromTL: fromTL, ratioBp: ratioBp };
 });

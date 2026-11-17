@@ -126,9 +126,11 @@
     return reg(key, o.h || 260, o.label, function (t) {
       return anim({
         tooltip: baseTooltip(t, { trigger: 'item', formatter: function (p) { return p.dataType === 'edge' ? esc(p.data.source) + ' → ' + esc(p.data.target) + '<br><b>' + tl(p.value) + '</b>' : '<b>' + esc(p.name) + '</b><br>' + tl(p.value); } }),
-        series: [{ type: 'sankey', left: 4, right: (t.width || 999) < 520 ? 92 : 130, top: 8, bottom: 8, nodeWidth: 14, nodeGap: 14, draggable: false, layoutIterations: 0, nodeAlign: 'left',
+        series: [{ type: 'sankey', left: 4, right: (t.width || 999) < 520 ? 96 : 130, top: 8, bottom: 8, nodeWidth: 14, nodeGap: (t.width || 999) < 520 ? 26 : 14, draggable: false, layoutIterations: 0, nodeAlign: 'left',
           emphasis: { focus: 'adjacency' }, lineStyle: { color: 'gradient', opacity: t.dark ? 0.45 : 0.35, curveness: 0.5 },
-          label: { color: t.ink, fontSize: 12, formatter: function (p) { return (p.data && p.data.depth === 2) || (t.width || 999) < 520 ? p.name + ' {v|' + short(p.value) + '}' : p.name + '\n{v|' + short(p.value) + '}'; }, rich: { v: { color: t.muted, fontSize: 11 } } },
+          // Dar ekranda (360–390px) etiketler iki satır ve sınırlı genişlikte: kesilmez, taşmaz
+          label: (t.width || 999) < 520 ? { color: t.ink, fontSize: 11, width: 88, overflow: 'truncate', lineHeight: 14, formatter: function (p) { return p.name + '\n{v|' + short(p.value) + '}'; }, rich: { v: { color: t.muted, fontSize: 10.5 } } }
+            : { color: t.ink, fontSize: 12, formatter: function (p) { return (p.data && p.data.depth === 2) ? p.name + ' {v|' + short(p.value) + '}' : p.name + '\n{v|' + short(p.value) + '}'; }, rich: { v: { color: t.muted, fontSize: 11 } } },
           data: o.nodes.map(function (n, i) { var c = col(t, n.color, t.pal[i % t.pal.length]); var d = { name: n.name, itemStyle: { color: c, borderColor: c } }; if (n.depth != null) d.depth = n.depth; return d; }),
           links: o.links.filter(function (l) { return l.value > 0; }) }]
       });

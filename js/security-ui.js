@@ -189,8 +189,15 @@
     }
 
     /* ---------- Uygulama kilidi ---------- */
-    function fails() { try { return JSON.parse(localStorage.getItem(FAILS_KEY) || '{"n":0,"until":0}'); } catch (e) { return { n: 0, until: 0 }; } }
-    function setFails(f) { try { localStorage.setItem(FAILS_KEY, JSON.stringify(f)); } catch (e) { /* */ } }
+    /* Hatalı PIN sayacı: localStorage + IndexedDB (Store.getFails/setFails) — büyük olan geçerli; yalnızca birini silmek sayacı sıfırlamaz.
+     * Sınır: tarayıcı verisinin tamamını silen biri sayacı da siler; ama o zaman şifreli veri de gider. PIN'in asıl koruması PBKDF2 (600.000 tur). */
+    var failCache = { n: 0, until: 0 };
+    function fails() {
+      var ls = null; try { ls = JSON.parse(localStorage.getItem(FAILS_KEY) || 'null'); } catch (e) { ls = null; }
+      ls = ls && typeof ls.n === 'number' ? ls : { n: 0, until: 0 };
+      return { n: Math.max(ls.n, failCache.n), until: Math.max(ls.until || 0, failCache.until || 0) };
+    }
+    function setFails(f) { failCache = { n: f.n, until: f.until }; try { localStorage.setItem(FAILS_KEY, JSON.stringify(f)); } catch (e) { /* */ } if (window.Store.setFails) window.Store.setFails(f); }
     function bioAvailable() {
       if (!window.PublicKeyCredential || !secureCtx() || !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return Promise.resolve(false);
       return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(function () { return false; });
@@ -294,6 +301,7 @@
         }
         function done(key) { setFails({ n: 0, until: 0 }); try { sessionStorage.removeItem('finans-pusulasi:locked-by'); } catch (e) { /* */ } root.remove(); document.body.classList.remove('locked'); lockUi = null; resolve(key); }
         document.body.appendChild(root); lockUi = root; draw();
+        if (window.Store.getFails) window.Store.getFails().then(function (f) { if (f.n > failCache.n || f.until > failCache.until) { failCache = f; draw(); } });
       });
     }
 

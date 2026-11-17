@@ -105,7 +105,9 @@
     'metal:XAG': { label: 'Gram gümüş (TL)', cur: 'TRY', kind: 'metal' },
     'fx:USD': { label: 'ABD doları (TL)', cur: 'TRY', kind: 'fx' },
     'fx:EUR': { label: 'Euro (TL)', cur: 'TRY', kind: 'fx' },
-    'idx:XU100': { label: 'BIST 100 endeksi (puan)', cur: 'PT', kind: 'index' }
+    'idx:XU100': { label: 'BIST 100 endeksi (puan)', cur: 'PT', kind: 'index' },
+    'idx:KATLM': { label: 'Katılım 50 endeksi (KATLM, puan — elle/CSV)', cur: 'PT', kind: 'index' },
+    'idx:XKTUM': { label: 'Katılım Tüm endeksi (XKTUM, puan)', cur: 'PT', kind: 'index' }
   };
   function keyInfo(key) {
     if (!key) return null;
@@ -357,7 +359,10 @@
       return { date: d, value: v, flow: flowsByDate[d] || 0 };
     });
     var flows = Object.keys(flowsByDate).sort().filter(function (d) { return flowsByDate[d] !== 0; }).map(function (d) { return { date: d, amount: flowsByDate[d] }; });
-    return { points: pts, flows: flows };
+    // Brüt ayrım (etiketler için): alımlar, satışlar ve temettüler ayrı ayrı (aynı gün netleşmeden)
+    var gross = { bought: 0, sold: 0, dividends: 0 };
+    all.forEach(function (t) { var f = tradeFlow(t); if (!f) return; var v = tradeTL(t, f); if (v > 0) gross.bought = M.add(gross.bought, v); else if (t.side === 'div') gross.dividends = M.add(gross.dividends, -v); else gross.sold = M.add(gross.sold, -v); });
+    return { points: pts, flows: flows, gross: gross };
   }
 
   /* ---------- Enflasyon (TÜFE aylık % değişim, bp) ---------- */
@@ -397,10 +402,14 @@
     var xf = flows.map(function (f) { return { date: f.date, amount: -f.amount }; }).concat([{ date: todayYmd, amount: finalV }]);
     return { ok: true, finalTL: finalV, xirr: xirr(xf), units: units, priceNow: now, clipped: clipped, approx: maxUsedGap > 7, maxGapDays: maxUsedGap };
   }
+  /* Kıyaslar. Varsayılan helal kıyas: Katılım 50 (KATLM) — ücretsiz otomatik kaynağı yok, geçmişi elle/CSV ile girilir.
+   * Katılım Tüm (XKTUM) TradingView'den otomatik gelir. BIST 100 faizli şirketleri de içerdiği için yalnızca bilgi amaçlıdır. */
   var BENCHMARKS = [
-    { key: 'metal:XAU', label: 'Gram altın', unit: 'gram' },
+    { key: 'idx:KATLM', label: 'Katılım 50 endeksi (helal kıyas)', unit: 'endeks payı', halal: true, primary: true },
+    { key: 'idx:XKTUM', label: 'Katılım Tüm endeksi', unit: 'endeks payı', halal: true },
+    { key: 'metal:XAU', label: 'Gram altın', unit: 'gram', halal: true },
     { key: 'fx:USD', label: 'ABD doları', unit: 'USD' },
-    { key: 'idx:XU100', label: 'BIST 100', unit: 'endeks payı' }
+    { key: 'idx:XU100', label: 'BIST 100 (faizli şirketler dahil)', unit: 'endeks payı', detailOnly: true }
   ];
   function returnsReport(state, todayYmd) {
     var vs = valuationSeries(state, todayYmd);
@@ -414,9 +423,9 @@
     var benches = BENCHMARKS.map(function (b) {
       var pts = b.key === 'fx:USD' ? fxPoints(state, 'USD') : points(state, b.key);
       var sim = simulateBenchmark(vs.flows, pts, todayYmd);
-      return { key: b.key, label: b.label, sim: sim };
+      return { key: b.key, label: b.label, sim: sim, halal: !!b.halal, primary: !!b.primary, detailOnly: !!b.detailOnly };
     });
-    return { empty: false, series: vs.points, flows: vs.flows, first: first, valueNow: last.value, invested: invested, withdrawn: withdrawn,
+    return { empty: false, series: vs.points, flows: vs.flows, first: first, valueNow: last.value, invested: invested, withdrawn: withdrawn, gross: vs.gross,
       gainTL: M.sub(M.add(last.value, withdrawn), invested), twr: t, xirr: xr, inflation: inf,
       realTwr: t && inf.factor ? realReturn(t.period, inf.factor) : null,
       realXirr: xr != null && inf.factor && t && t.days > 0 ? Math.pow(1 + realReturn(Math.pow(1 + xr, t.days / 365) - 1, inf.factor), 365 / t.days) - 1 : null,
@@ -451,9 +460,9 @@
       var start = M.allocate(cur, mix), horizon = Math.max(monthsLeft, 12) + 24, proj = {};
       Object.keys(sc).forEach(function (k) {
         var series = C.project({ start: { safe: start[0], medium: start[1], risky: start[2] }, reserveStart: 0, monthlyContribution: contribParts[i], emergencyTopUp: emParts[i],
-          months: horizon, monthsToGoal: monthsLeft, returnsBp: sc[k].returnsBp, inflationBp: state.settings.inflationBp, glide: glide });
+          emergencyShareBp: C.emergencyShareBp(state), blockRiskyUntilEmergency: C.riskyBlocked(state, an.emergency), months: horizon, monthsToGoal: monthsLeft, returnsBp: sc[k].returnsBp, inflationBp: state.settings.inflationBp, glide: glide });
         var at = series[Math.min(monthsLeft, series.length - 1)];
-        proj[k] = { label: sc[k].label, returnsBp: sc[k].returnsBp, series: series, atGoal: at.invest, atGoalNominal: at.nominalInvest, reachMonth: C.firstMonthReaching(series, g.target) };
+        proj[k] = { label: sc[k].label, returnsBp: sc[k].returnsBp, series: series, atGoal: at.invest, atGoalNominal: at.nominalInvest, capped: !!series.capped, reachMonth: C.firstMonthReaching(series, g.target) };
       });
       var remaining = Math.max(0, M.sub(g.target, cur));
       return { goal: g, assigned: assigned[g.id], fromPool: poolParts[i], current: cur, monthly: contribParts[i], monthsLeft: monthsLeft,
@@ -513,6 +522,13 @@
   }
 
   /* ---------- Dengeleme: önce yeni parayla, satış emri yok ("gözden geçir") ---------- */
+  /* Dengeleme adedi için makul ondalık: tam lot (hisse/ETF) 0, fon payı 0, altın/gümüş (gram) 2, kripto 6, diğer 4 */
+  function qtyDecimals(pos) {
+    if (!pos || pos.lot === 'whole') return 0;
+    var a = pos.asset, kind = a ? kindFor(assetKey(a), a) : 'other';
+    return kind === 'stock' || kind === 'etf' ? 0 : kind === 'fund' ? 0 : kind === 'metal' ? 2 : kind === 'crypto' ? 6 : 4;
+  }
+  function roundQty(q, pos) { var step = Math.pow(10, 8 - qtyDecimals(pos)); return Math.floor(q / step) * step; }
   var GENERIC = { safe: 'Katılım hesabı / kira sertifikası (sukuk) fonu', medium: 'Altın veya altın katılım fonu', risky: 'Katılım hisse fonu veya helal ETF' };
   function rebalance(pos, target, newMoney, opts) {
     opts = opts || {};
@@ -552,8 +568,7 @@
     rows.forEach(function (r, i) {
       r.buyTL = buys[i];
       if (r.buyTL > 0 && r.pos.priceTL) {
-        var q = qtyForAmount(r.buyTL, r.pos.priceTL, true);
-        if (r.pos.lot === 'whole') q = Math.floor(q / QS) * QS;
+        var q = roundQty(qtyForAmount(r.buyTL, r.pos.priceTL, true), r.pos);
         r.units = q; r.unitCostTL = valueMinor(q, r.pos.priceTL); r.cashLeft = M.sub(r.buyTL, r.unitCostTL);
         if (r.pos.currency !== 'TRY' && r.pos.price) r.buyNative = valueMinor(q, r.pos.price.p);
         leftoverCash = M.add(leftoverCash, r.cashLeft);
@@ -563,7 +578,7 @@
       var totalBp = total ? M.ratioBp(r.after, total) : 0, tgtBp = total ? M.ratioBp(r.target, total) : 0;
       r.afterBp = totalBp; r.targetBp = tgtBp; r.driftBp = totalBp - tgtBp;
       r.review = !r.keep && r.excess > 0 && (r.pos.halal === 'uygun_degil' || r.pos.halal === 'supheli' || r.driftBp > assetBand);
-      if (r.review && r.pos.priceTL) { var rq = qtyForAmount(r.excess, r.pos.priceTL, true); if (r.pos.lot === 'whole') rq = Math.floor(rq / QS) * QS; r.reviewUnits = rq; }
+      if (r.review && r.pos.priceTL) { r.reviewUnits = roundQty(qtyForAmount(r.excess, r.pos.priceTL, true), r.pos); }
       r.reason = r.pos.halal === 'uygun_degil' ? 'Helal uygun değil' : r.pos.halal === 'supheli' ? 'Helal uygunluğu şüpheli' : r.review ? 'Hedef payının üstünde' : '';
     });
     var tiers = TIERS.map(function (k, ti) {
@@ -590,10 +605,10 @@
     out.push(big.length ? { id: 'maxAsset', level: big.some(function (b) { return b.bp > R.maxAssetBp * 3 / 2; }) ? 'danger' : 'warn', title: 'Tek varlık sınırı (%' + R.maxAssetBp / 100 + ')', text: big.map(function (b) { return b.p.name + ' %' + (b.bp / 100).toFixed(1).replace('.', ','); }).join(', ') + ' — tek bir varlık portföyün çok büyük kısmı.', items: big }
       : { id: 'maxAsset', level: 'ok', title: 'Tek varlık sınırı (%' + R.maxAssetBp / 100 + ')', text: 'Hiçbir varlık sınırı aşmıyor.' });
     var risky = M.sum(pos.filter(function (p) { return p.tier === 'risky'; }).map(function (p) { return p.valueTL; })), rbp = total ? M.ratioBp(risky, total) : 0;
-    out.push({ id: 'maxRisky', level: rbp > R.maxRiskyBp ? 'warn' : 'ok', title: 'Riskli varlık sınırı (%' + R.maxRiskyBp / 100 + ')', text: 'Riskli varlıklar portföyün %' + (rbp / 100).toFixed(1).replace('.', ',') + '\'i.' + (rbp > R.maxRiskyBp ? ' Sınırın üstünde.' : ''), valueBp: rbp });
+    out.push({ id: 'maxRisky', level: rbp > R.maxRiskyBp ? 'warn' : 'ok', title: 'Riskli varlık sınırı (%' + R.maxRiskyBp / 100 + ')', text: 'Riskli varlıklar portföyün ' + M.withSuffix('%' + (rbp / 100).toFixed(1).replace('.', ',')) + '.' + (rbp > R.maxRiskyBp ? ' Sınırın üstünde.' : ''), valueBp: rbp });
     var hh = 0n; pos.forEach(function (p) { if (total) { var w = BigInt(M.ratioBp(p.valueTL, total)); hh += w * w; } });
     var effN = hh > 0n ? Number(100000000n * 100n / hh) / 100 : 0, top = pos.slice().sort(function (a, b) { return b.valueTL - a.valueTL; })[0];
-    out.push({ id: 'concentration', level: total && effN < R.minPositions ? 'warn' : 'ok', title: 'Çeşitlendirme', text: total ? 'Etkin varlık sayısı ' + effN.toFixed(1).replace('.', ',') + (top ? '; en büyük: ' + top.name + ' %' + (M.ratioBp(top.valueTL, total) / 100).toFixed(1).replace('.', ',') : '') + (effN < R.minPositions ? '. Para birkaç varlıkta toplanmış.' : '.') : 'Portföy boş.', effN: effN });
+    out.push({ id: 'concentration', level: total && effN < R.minPositions ? 'warn' : 'ok', title: 'Çeşitlendirme', text: total ? 'Paran yaklaşık ' + effN.toFixed(1).replace('.', ',') + ' varlığa yayılmış gibi' + (top ? '; en büyük: ' + top.name + ' %' + (M.ratioBp(top.valueTL, total) / 100).toFixed(1).replace('.', ',') : '') + (effN < R.minPositions ? '. Para birkaç varlıkta toplanmış.' : '.') : 'Portföy boş.', effN: effN });
     var bad = pos.filter(function (p) { return p.halal === 'uygun_degil'; }), sus = pos.filter(function (p) { return p.halal === 'supheli'; }), unk = pos.filter(function (p) { return p.halal === 'bilinmiyor' && !p.synthetic; });
     out.push(bad.length ? { id: 'halal', level: 'danger', title: 'Helal uygunluk', text: 'Uygun olmayan varlık: ' + bad.map(function (p) { return p.name; }).join(', ') + '. Önerilere girmez; elden çıkarmayı gözden geçir.' + (sus.length ? ' Şüpheli: ' + sus.map(function (p) { return p.name; }).join(', ') + '.' : '') }
       : sus.length ? { id: 'halal', level: 'warn', title: 'Helal uygunluk', text: 'Uygunluğu şüpheli: ' + sus.map(function (p) { return p.name; }).join(', ') + '. Önerilere girmez; bir uzmana danış.' }
@@ -799,7 +814,7 @@
 
   return { QS: QS, PS: PS, TIERS: TIERS, HALAL: HALAL, LOTS: LOTS, PRICE_KINDS: PRICE_KINDS, GLIDES: GLIDES, BENCHMARKS: BENCHMARKS, DEFAULT_RULES: DEFAULT_RULES, JUMP_BP: JUMP_BP, STALE_DAYS: STALE_DAYS, GENERIC: GENERIC,
     isInt: isInt, mulDiv: mulDiv, valueMinor: valueMinor, qtyForAmount: qtyForAmount, toTL: toTL, priceToTL: priceToTL, fxKurusFromPrice: fxKurusFromPrice, fxPriceFromKurus: fxPriceFromKurus, changeBp: changeBp,
-    parseScaled: parseScaled, formatScaled: formatScaled, fmtQty: fmtQty, fmtPrice: fmtPrice,
+    qtyDecimals: qtyDecimals, roundQty: roundQty, parseScaled: parseScaled, formatScaled: formatScaled, fmtQty: fmtQty, fmtPrice: fmtPrice,
     halalOf: halalOf, keyInfo: keyInfo, assetKey: assetKey, kindFor: kindFor,
     points: points, lastPoint: lastPoint, addPricePoint: addPricePoint, priceAt: priceAt, mergePoints: mergePoints,
     checkPrice: checkPrice, staleness: staleness, crossCheck: crossCheck, gramFromOunce: gramFromOunce,

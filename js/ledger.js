@@ -149,6 +149,8 @@
       var expected = pending[cat] || 0, projected = M.add(spent, expected);
       st.category = cat; st.expected = expected; st.projected = projected; st.projectedLevel = limitLevel(projected, lim);
       st.pace = day > 0 && day < dim ? M.mulRatio(spent, dim, day) : spent; // doğrusal tahmin (bilgi amaçlı)
+      // Tek ay sonu tahmini (temkinli): "harcanan + bekleyen düzenli ödemeler" ile "bu hızla" tahmininden büyük olanı
+      st.estimate = Math.max(projected, st.pace); st.estimateLevel = limitLevel(st.estimate, lim);
       out.push(st);
     });
     var rank = { over: 0, warn: 1, ok: 2 };

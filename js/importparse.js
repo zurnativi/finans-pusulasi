@@ -65,27 +65,67 @@
     ['Banka masrafı', ['masraf', 'komisyon', 'kart aidatı', 'bsmv', 'kkdf']]
   ];
   var CATEGORIES = CATEGORY_RULES.map(function (r) { return r[0]; }).filter(function (c, i, a) { return a.indexOf(c) === i; }).concat(['Diğer']);
+  /* Türkçe duyarlı, tam kelime eşleşmesi. "taksi" artık "TAKSİT" içinde eşleşmez; kelimeye gelen yaygın ekler ("kirası", "marketler") kabul edilir.
+   * Önce taksit ibareleri ("TAKSİT 3/6", "(1/4)", "3. taksit") açıklamadan çıkarılır: kategori işyerine göre belirlenir. */
+  function catFold(x) { return fold(x).replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/â/g, 'a').replace(/î/g, 'i').replace(/û/g, 'u'); }
+  var SFX = '(?:lari|leri|lar|ler|si|su|sı|nin|nun|in|un|dan|den|tan|ten|da|de|ta|te|ya|ye|a|e|i|u)?';
+  var kwCache = {};
+  function kwRe(kw) {
+    if (kwCache[kw]) return kwCache[kw];
+    var k = catFold(kw).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return (kwCache[kw] = new RegExp('(^|[^a-z0-9])' + k + SFX + '(?=$|[^a-z0-9])'));
+  }
+  function stripInstallment(d) {
+    return d.replace(/\btaksit(?:li|i|ler)?\b\s*\d{0,2}\s*\/?\s*\d{0,2}/g, ' ').replace(/\(\s*\d{1,2}\s*\/\s*\d{1,2}\s*\)/g, ' ').replace(/\b\d{1,2}\s*\/\s*\d{1,2}\b/g, ' ').replace(/\s+/g, ' ');
+  }
   function suggestCategory(desc, amount) {
-    var d = ' ' + fold(desc) + ' ';
+    var d = ' ' + stripInstallment(catFold(desc)) + ' ';
     for (var i = 0; i < CATEGORY_RULES.length; i++) {
       var rule = CATEGORY_RULES[i];
       if (rule[0] === 'Gelir' && amount < 0) continue;
-      for (var j = 0; j < rule[1].length; j++) if (d.indexOf(fold(rule[1][j])) >= 0) return rule[0];
+      for (var j = 0; j < rule[1].length; j++) if (kwRe(rule[1][j]).test(d)) return rule[0];
     }
     return amount > 0 ? 'Gelir' : 'Diğer';
   }
 
+  /* ---------- Kredi kartı ekstresi tespiti ----------
+   * İpuçları: "EKSTRE", "SON ÖDEME", "HESAP KESİM", "DÖNEM BORCU", "ASGARİ ÖDEME", "ÖDEME - TEŞEKKÜR", maskeli kart numarası (5528 79** **** 1234).
+   * En az iki ipucu (veya maskeli kart no + bir ipucu) → kart ekstresi. */
+  function detectCardStatement(text) {
+    var t = catFold(text || ''), hits = [];
+    [['ekstre', /ekstre/], ['son ödeme', /son\s*odeme/], ['hesap kesim', /hesap\s*kesim|kesim\s*tarihi/], ['dönem borcu', /donem\s*borcu/], ['asgari ödeme', /asgari\s*odeme/],
+      ['ödeme-teşekkür', /odeme\s*[-–—]?\s*tesekkur/], ['kredi kartı', /kredi\s*karti/]].forEach(function (x) { if (x[1].test(t)) hits.push(x[0]); });
+    if (/\b\d{4}[\s-]?(?:\d{2}|[*xX]{2})[*xX]{2}[\s-]?[*xX]{4}[\s-]?\d{4}\b|[*xX]{4}[\s-]?[*xX]{4}[\s-]?[*xX]{4}[\s-]?\d{4}|\b\d{6}[*xX]{6}\d{4}\b/.test(String(text || ''))) hits.push('maskeli kart no');
+    return { isCard: hits.length >= 2, hits: hits };
+  }
+  /* Ekstre satırlarının işareti: harcamalar artı yazılmışsa (çoğunluk artı) çevrilmesi gerekir */
+  function looksPositiveExpenses(rows) {
+    var pos = 0, neg = 0, posSum = 0, negSum = 0;
+    rows.forEach(function (r) { if (!Number.isInteger(r.amount) || r.amount === 0) return; if (r.amount > 0) { pos++; posSum += r.amount; } else { neg++; negSum -= r.amount; } });
+    return pos > neg || (pos === neg && posSum > negSum);
+  }
+  function isCardPayment(desc) { var d = catFold(desc); return /odeme\s*[-–—]?\s*tesekkur|tesekkur\s*ederiz|kart\s*(borcu\s*)?odeme|hesaptan\s*odeme|otomatik\s*odeme/.test(d); }
+
   /* ---------- Mükerrer tespiti (aynı tarih + aynı tutar + aynı açıklama) ---------- */
   function normDesc(s) { return fold(s).replace(/[^a-z0-9çğıöşü]+/g, ' ').trim(); }
   function dupKey(t) { return (t.date || '') + '|' + t.amount + '|' + normDesc(t.description); }
+  function looseKey(t) { return (t.date || '') + '|' + t.amount; }
+  /* existing: kayıtlı işlemler (her hesaptan). Aynı tarih+tutar+açıklama → mükerrer (seçilmez).
+   * Aynı tarih+tutar ama farklı açıklama/hesap → "olası mükerrer" uyarısı (seçili kalır, kullanıcı karar verir).
+   * Farklı hesaptan aynı tutar (ör. kart ekstresi + banka dökümünde aynı ödeme) da bu yolla işaretlenir. */
   function markDuplicates(rows, existing) {
-    var seen = {};
-    (existing || []).forEach(function (t) { seen[dupKey(t)] = 'existing'; });
+    var seen = {}, loose = {};
+    (existing || []).forEach(function (t) { seen[dupKey(t)] = 'existing'; if (t.date && Number.isInteger(t.amount)) (loose[looseKey(t)] = loose[looseKey(t)] || []).push(t); });
     rows.forEach(function (r) {
       var k = dupKey(r);
+      r.possibleDup = null;
       if (seen[k] === 'existing') r.duplicate = 'Kayıtlı bir işlemle aynı (tarih+tutar+açıklama)';
       else if (seen[k] === 'batch') r.duplicate = 'Bu dosyada aynı satır birden fazla var';
-      else { r.duplicate = null; seen[k] = 'batch'; }
+      else {
+        r.duplicate = null; seen[k] = 'batch';
+        var lk = r.date && Number.isInteger(r.amount) ? loose[looseKey(r)] : null;
+        if (lk && lk.length) r.possibleDup = 'Aynı gün aynı tutarda kayıtlı işlem var: "' + String(lk[0].description || '').slice(0, 40) + '"' + (lk[0].accountId ? ' (başka bir hesapta)' : '') + '. Aynı işlemse seçimi kaldır.';
+      }
     });
     return rows;
   }
@@ -100,6 +140,8 @@
     else if (Math.abs(r.amount) > 1000000000) warnings.push('Çok büyük tutar (10 milyon TL üstü), kontrol et');
     if (!r.description || !String(r.description).trim()) warnings.push('Açıklama boş');
     if (r.duplicate) warnings.push('Mükerrer olabilir');
+    else if (r.possibleDup) warnings.push('Olası mükerrer');
+    if (r.amountWarn && r.amountWarn.length) r.amountWarn.forEach(function (w) { warnings.push(w); });
     r.errors = errors; r.warnings = warnings;
     return r;
   }
@@ -155,7 +197,8 @@
       var r = rows[i] || [];
       if (!r.some(function (c) { return c != null && String(c).trim() !== ''; })) continue;
       var amount = null;
-      if (map.amount >= 0) { var a = M.parse(r[map.amount]); if (a != null) amount = a * sign; }
+      var aw = [];
+      if (map.amount >= 0) { var pi = M.parseInfo(typeof r[map.amount] === 'string' ? r[map.amount] : r[map.amount]); var a = pi.value; aw = pi.warnings; if (a != null) amount = a * sign; }
       if (amount == null && (map.debit >= 0 || map.credit >= 0)) {
         var d = map.debit >= 0 ? M.parse(r[map.debit]) : null, c = map.credit >= 0 ? M.parse(r[map.credit]) : null;
         if (d || c) amount = (c ? Math.abs(c) : 0) - (d ? Math.abs(d) : 0);
@@ -164,7 +207,7 @@
       var desc = map.desc >= 0 ? String(r[map.desc] == null ? '' : r[map.desc]).trim() : '';
       if (isTotalLine(desc) || (rawDate == null && amount == null)) continue;
       if (!parseDate(rawDate) && amount == null) continue;
-      out.push({ date: parseDate(rawDate), rawDate: rawDate == null ? '' : String(rawDate), description: desc, amount: amount, source: 'tablo' });
+      out.push({ date: parseDate(rawDate), rawDate: rawDate == null ? '' : String(rawDate), description: desc, amount: amount, source: 'tablo', amountWarn: aw.length ? aw : undefined });
     }
     return out;
   }
@@ -335,7 +378,10 @@
   }
 
   /* ---------- Toplam kontrolü ---------- */
-  function totalsCheck(rows, docTotal) {
+  /* opts.expectExpenses: belge harcama belgesi (kart ekstresi / fiş). Bu durumda Transfer dışı gelir satırları giderlerden fazlaysa
+   * işaretler şüphelidir (ör. harcamalar gelir sayılmış): "Tutuyor" asla gösterilmez. */
+  function totalsCheck(rows, docTotal, opts) {
+    opts = opts || {};
     var sel = rows.filter(function (r) { return r.include && Number.isInteger(r.amount); });
     var income = 0, expense = 0, rowSum = 0;
     sel.forEach(function (r) {
@@ -364,6 +410,13 @@
       res.docTotal = docTotal; res.match = d1 === 0 || (income > 0 && expense > 0 && d2 === 0);
       res.diff = res.match ? 0 : M.sub(computed, docTotal); res.byNet = d1 !== 0 && res.match;
     }
+    if (opts.expectExpenses && sel.length) {
+      // Şüpheli işaret: gelir görünen (Transfer dışı) satırlar giderden çok/fazla, ya da kart ödemesi ("ödeme - teşekkür") eksi yazılmış
+      var ntInc = 0, posN = 0, negN = 0, payNeg = false;
+      sel.forEach(function (r) { if (r.amount > 0 && r.category !== 'Transfer') { ntInc = M.add(ntInc, r.amount); posN++; } else if (r.amount < 0) { negN++; if (isCardPayment(r.description)) payNeg = true; } });
+      if ((ntInc > 0 && ntInc >= expense) || (posN > negN) || payNeg) res.suspicious = 'Bu bir harcama belgesi (kart ekstresi/fiş) ama satırların çoğu GELİR görünüyor. Harcamalar eksi (−) olmalı. "Seçililerde gelir ↔ gider çevir" ile düzelt.';
+    }
+    if (res.suspicious) { res.matchRaw = res.match; res.match = false; }
     return res;
   }
 
@@ -390,6 +443,6 @@
   }
 
   return { parseDate: parseDate, suggestCategory: suggestCategory, CATEGORIES: CATEGORIES, markDuplicates: markDuplicates, dupKey: dupKey,
-    validateRow: validateRow, detectColumns: detectColumns, rowsFromTable: rowsFromTable, parseTextLines: parseTextLines, totalsCheck: totalsCheck,
+    validateRow: validateRow, detectCardStatement: detectCardStatement, looksPositiveExpenses: looksPositiveExpenses, isCardPayment: isCardPayment, stripInstallment: stripInstallment, detectColumns: detectColumns, rowsFromTable: rowsFromTable, parseTextLines: parseTextLines, totalsCheck: totalsCheck,
     rowsFromAiJson: rowsFromAiJson, parseReceiptText: parseReceiptText, receiptFallbackRows: receiptFallbackRows, cleanOcrLine: cleanOcrLine, fold: fold, trLower: trLower, isValidYmd: isValidYmd };
 });

@@ -12,7 +12,7 @@
     function pcfg() { try { return JSON.parse(localStorage.getItem(PCFG_KEY) || '{}') || {}; } catch (e) { return {}; } }
     function savePcfg(c) { try { localStorage.setItem(PCFG_KEY, JSON.stringify(c)); } catch (e) { X.toast('Ayar kaydedilemedi'); } }
     function sbp1(bp) { return (bp > 0 ? '+' : bp < 0 ? '−' : '') + '%' + (Math.abs(bp) / 100).toFixed(1).replace('.', ','); }
-    function pctF(x, dec) { if (x == null || !isFinite(x)) return '—'; var v = x * 100; return (v > 0 ? '+' : v < 0 ? '−' : '') + '%' + Math.abs(v).toFixed(dec == null ? 1 : dec).replace('.', ','); }
+    function pctF(x, dec) { if (x == null || !isFinite(x)) return '—'; var v = x * 100; if (dec == null) dec = Math.abs(v) < 1 ? 2 : 1; return (v > 0 ? '+' : v < 0 ? '−' : '') + '%' + Math.abs(v).toFixed(dec).replace('.', ','); }
     function plCls(v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : ''; }
     function signTl(v) { return (v > 0 ? '+' : '') + tl(v); }
     function pill(level, text) { var c = level === 'ok' ? 'ok' : level === 'warn' ? 'warn' : level === 'danger' ? 'err' : 'info'; return '<span class="pill ' + c + '">' + esc(text) + '</span>'; }
@@ -73,10 +73,13 @@
     /* ---------- PORTFÖY: alt sayfalar ---------- */
     var SUBS = [['', 'Genel bakış'], ['varliklar', 'Varlıklar'], ['islemler', 'Alım-satım'], ['dengeleme', 'Dengeleme'], ['getiri', 'Getiri'], ['hedefler', 'Hedefler'], ['risk', 'Risk ve helal'], ['fiyatlar', 'Fiyatlar']];
     function renderPortfolio() {
-      var sub = X.sub(), h = '<h1>Portföy Yönetimi</h1>' + X.subtabs('portfoy', SUBS), c = calc();
+      var sub = X.sub(), h = '<h1>Portföy Yönetimi</h1>' + X.subtabs('portfoy', SUBS), c;
       if (st().isExample) h += '<p class="hint">Örnek portföydeki fiyatlar <b>ÖRNEK</b>tir, gerçek piyasa fiyatı değildir. Gerçek fiyat için Fiyatlar → "Fiyatları güncelle".</p>';
       var f = { '': pOverview, varliklar: pAssets, islemler: pTrades, dengeleme: pRebalance, getiri: pReturns, hedefler: pGoals, risk: pRisk, fiyatlar: pPrices }[sub] || pOverview;
-      return h + f(c);
+      // Bölüm hatası tüm sayfayı kilitlemez: hedefler her durumda düzenlenebilir
+      function errBox(e) { console.warn(e); return '<div class="notice warn section-err">Bu bölüm gösterilemedi (' + esc(e.message) + '). Verilerin güvende.</div>'; }
+      try { c = calc(); } catch (e) { return h + errBox(e) + goalsEditOnly(); }
+      try { return h + f(c); } catch (e2) { return h + errBox(e2) + (sub === 'hedefler' || sub === '' || sub === 'dengeleme' ? goalsEditOnly() : ''); }
     }
     function renderAnalysis() {
       return '<h1>Portföy Analizi</h1><section class="card"><h2>Yakında</h2><p>Bu alan hazırlanıyor: varlıkların piyasa analizi, haber ve trend özetleri, senaryo testleri burada olacak.</p>' +
@@ -84,6 +87,13 @@
     }
 
     /* Portföy panosu: değer eğrisi (zaman aralıklı) ve varlık dağılımı halkası */
+    /* Seçilen aralıkta gerçek kazanç = değer değişimi − net yatırılan para değişimi (para girişleri kazanç sayılmaz) */
+    function rangeGain(val, inv, r, today, rr) {
+      var CD = window.ChartData, v = CD.inRange(val, r, today), i = CD.inRange(inv, r, today);
+      if (r === 'Tümü' || v.length < 2) { var dvAll = v.length ? v[v.length - 1].v : 0; return { gain: rr.gainTL, dv: dvAll, di: M.sub(dvAll, rr.gainTL) }; }
+      var dv = M.sub(v[v.length - 1].v, v[0].v), di = M.sub(i[i.length - 1].v, i[0].v);
+      return { gain: M.sub(dv, di), dv: dv, di: di };
+    }
     function pVisuals(c) {
       var CH = window.Charts; if (!CH) return '';
       var s = c.s, rr = null; try { rr = PF.returnsReport(s, c.today); } catch (e) { console.error(e); }
@@ -94,7 +104,9 @@
         h += '<section class="card hero"><div class="label">Yatırımlarının değeri ' + tip('Alım-satımla izlenen varlıkların değeri (ay sonları ve işlem günleri). Kesikli çizgi: net yatırdığın para. Aralığı üstteki düğmelerle değiştir; üzerine gelince o günün tutarlarını görürsün.') + '</div>' +
           '<div class="hero-v">' + CH.counter('p-val', rr.valueNow) + '</div>' +
           CH.area('p-val', { h: 220, label: 'Portföy değeri ve net yatırılan para', today: c.today, ranges: true, defaultRange: 'Tümü', legend: true, series: [{ name: 'Değer', data: val, color: 'brand' }, { name: 'Net yatırılan', data: inv, dashed: true }],
-            caption: function (r) { var ch = window.ChartData.change(window.ChartData.inRange(val, r, c.today)); var up = ch.abs > 0; return '<span class="chg ' + plCls(ch.abs) + '">' + (up ? '▲ +' : ch.abs < 0 ? '▼ ' : '') + esc(tl(ch.abs)) + '</span> <span class="muted">değer değişimi (' + esc(r) + ', para giriş-çıkışları dahil)</span> · kazanç toplamı <b class="' + plCls(rr.gainTL) + '">' + esc(signTl(rr.gainTL)) + '</b>'; } }) + '</section>';
+            caption: function (r) { var g = rangeGain(val, inv, r, c.today, rr); var up = g.gain > 0;
+              return '<span class="chg big ' + plCls(g.gain) + '">' + (up ? '▲ +' : g.gain < 0 ? '▼ ' : '') + esc(tl(g.gain)) + '</span> <span class="muted">gerçek kazanç (' + esc(r) + ')</span>' +
+                '<div class="hint">Değer değişimi ' + esc(signTl(g.dv)) + ' = kazanç ' + esc(signTl(g.gain)) + ' + senin yatırdığın para ' + esc(signTl(g.di)) + '</div>'; } }) + '</section>';
       } else h += '<section class="card hero"><div class="label">Yatırımlarının değeri</div><p class="hint">Alım-satım girince değer eğrin burada canlı çizilir. <a href="#portfoy/islemler">Alım-satım ekle</a></p></section>';
       var items = c.pos.filter(function (p) { return p.valueTL > 0; }).sort(function (a, b) { return b.valueTL - a.valueTL; });
       var tot = M.sum(items.map(function (p) { return p.valueTL; }));
@@ -119,7 +131,7 @@
       if (sm.missing.length) h += '<div class="notice warn">Fiyatı veya kuru olmayan varlık: ' + esc(sm.missing.join(', ')) + '. Değeri kalan maliyetle sayıldı. <a href="#portfoy/fiyatlar">Fiyat gir</a></div>';
       else if (sl.length) h += '<div class="notice warn">' + sl.length + ' fiyat eski: ' + sl.map(function (x) { return esc(x.asset.name); }).join(', ') + '. <a href="#portfoy/fiyatlar">Fiyatları güncelle</a></div>';
       // Bu ay ne alınmalı
-      var rb = PF.rebalance(c.pos, an.targetAlloc, newMoneyDefault(an), { tierBandBp: s.settings.rebalance.tierBandBp, assetBandBp: s.settings.rebalance.assetBandBp, blockRisky: s.settings.riskRules.emergencyFirst && an.emergency.shortfall > 0 });
+      var rb = PF.rebalance(c.pos, an.targetAlloc, newMoneyDefault(an), { tierBandBp: s.settings.rebalance.tierBandBp, assetBandBp: s.settings.rebalance.assetBandBp, blockRisky: C.riskyBlocked(s, an.emergency) });
       h += '<div class="grid two" style="margin-top:14px"><section class="card"><h2>Bu ay yeni parayla ne alınır? ' + tip('Hedef dağılımdan en çok geride kalan helal varlıklara öncelik verilir. Satış önerilmez.') + '</h2>';
       if (an.emergency.shortfall > 0 && an.plan.toEmergency) h += '<p>Önce <b>' + tl(an.plan.toEmergency) + '</b> acil durum fonuna.</p>';
       if (!rb.buys.length) h += '<p class="muted">Bu ay yatırıma ayrılan para yok veya alınacak uygun varlık yok.</p>';
@@ -128,7 +140,7 @@
       h += '<section class="card"><h2>Risk ve helal kontrolü</h2><ul class="rules">' + c.risk.items.map(function (i) { return '<li class="lv-' + i.level + '">' + pill(i.level, i.level === 'ok' ? 'Tamam' : i.level === 'danger' ? 'Önemli' : i.level === 'info' ? 'Bilgi' : 'Dikkat') + ' <b>' + esc(i.title) + '</b><div class="hint">' + esc(i.text) + '</div></li>'; }).join('') + '</ul></section></div>';
       // Varlık listesi
       var total = M.sum(c.pos.map(function (p) { return p.valueTL; }));
-      h += '<section class="card" style="margin-top:14px"><h2>Neyim var? ' + tip('Acil durum fonuna ayrılan kısım hariç, yatırım için tutulan her şey. Pay: bu toplam içindeki yüzde.') + '</h2><div class="tablewrap"><table class="holdings"><thead><tr><th>Varlık</th><th>Risk</th><th class="r">Değer</th><th class="r">Pay</th><th class="r">Kâr/zarar</th><th>Helal</th></tr></thead><tbody>';
+      h += '<section class="card" style="margin-top:14px"><h2>Neyim var? ' + tip('Acil durum fonuna ayrılan kısım hariç, yatırım için tutulan her şey. Pay: bu toplam içindeki yüzde.') + '</h2><div class="tablewrap"><table class="holdings stack"><thead><tr><th>Varlık</th><th>Risk</th><th class="r">Değer</th><th class="r">Pay</th><th class="r">Kâr/zarar</th><th>Helal</th></tr></thead><tbody>';
       var byId = {}; sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
       c.pos.slice().sort(function (a, b) { return b.valueTL - a.valueTL; }).forEach(function (p) {
         var r = byId[p.id];
@@ -319,14 +331,14 @@
     var rbMoney = null;
     function pRebalance(c) {
       var s = c.s, an = c.an, rs = s.settings.rebalance, money = rbMoney == null ? newMoneyDefault(an) : rbMoney;
-      var block = s.settings.riskRules.emergencyFirst && an.emergency.shortfall > 0;
+      var block = C.riskyBlocked(s, an.emergency);
       var rb = PF.rebalance(c.pos, an.targetAlloc, money, { tierBandBp: rs.tierBandBp, assetBandBp: rs.assetBandBp, blockRisky: block });
       var h = '<section class="card"><h2>Dengeleme: önce yeni parayla ' + tip('Hedef dağılımdan sapma varsa, önce bu ay yatıracağın yeni parayla en geride kalan helal varlıklar alınır. Hiçbir zaman otomatik satış önerilmez: hedefin üstündekiler "gözden geçir" olarak listelenir; satış kararı ayrı analiz gerektirir.') + '</h2>';
       h += '<div class="grid three">' + fieldRow('Bu ay yatırılacak yeni para (TL)', '<input id="rb-money" class="money" type="text" inputmode="decimal" value="' + esc(M.format(money, { symbol: false })) + '">', 'Varsayılan: aylık fazla − acil fona giden kısım (' + tl(newMoneyDefault(an)) + ').') +
         '<div class="detail-only">' + fieldRow('Kademe sapma bandı (%)', '<input type="number" min="0" max="50" step="1" data-pfset="tierBandBp" value="' + rs.tierBandBp / 100 + '">', 'Güvenli/orta/riskli payı hedeften bu kadar puan saparsa "dengeleme gerekli" denir.') + '</div>' +
         '<div class="detail-only">' + fieldRow('Varlık sapma bandı (%)', '<input type="number" min="0" max="50" step="1" data-pfset="assetBandBp" value="' + rs.assetBandBp / 100 + '">', 'Bir varlık hedef payını bu kadar puan aşarsa "gözden geçir" listesine girer.') + '</div></div>';
       h += '<p>' + (rb.needsRebalance ? pill('warn', 'Hedeften sapma var') : pill('ok', 'Dağılım hedefe yakın')) + ' Hedef dağılım: ' + TIERS.map(function (k) { return C.RISK[k] + ' ' + pct1(an.targetAlloc[k]); }).join(' · ') + (c.rep.goals.length > 1 ? ' <span class="hint">(hedeflerin ağırlıklı ortalaması)</span>' : '') + '</p>';
-      h += '<div class="tablewrap"><table><thead><tr><th>Kademe</th><th class="r">Şu an</th><th class="r">Hedef</th><th class="r">Sapma</th><th class="r">Alımdan sonra</th></tr></thead><tbody>' + rb.tiers.map(function (t) {
+      h += '<div class="tablewrap"><table><thead><tr><th>Grup</th><th class="r">Şu an</th><th class="r">Hedef</th><th class="r">Fark</th><th class="r">Alımdan sonra</th></tr></thead><tbody>' + rb.tiers.map(function (t) {
         return '<tr><td><i class="dotc" style="background:' + RISKCOL[t.tier] + '"></i> ' + C.RISK[t.tier] + '</td><td class="r num">' + tl(t.now) + ' <span class="hint">' + pct1(t.nowBp) + '</span></td><td class="r num">' + pct1(t.targetBp) + '</td><td class="r num ' + (Math.abs(t.driftBp) > rs.tierBandBp ? 'neg' : '') + '">' + X.sbp(t.driftBp) + '</td><td class="r num">' + pct1(t.afterBp) + '</td></tr>';
       }).join('') + '</tbody></table></div></section>';
       h += '<section class="card" style="margin-top:14px"><h2>Alınacaklar (yeni parayla)</h2>';
@@ -370,10 +382,11 @@
       if (rr.empty) return '<section class="card"><h2>Getiri</h2><p>Getiri ölçümü için alım-satım gir. <a href="#portfoy/islemler">Alım-satım ekle</a> veya <a href="#veri" data-act="pf-import-mode" data-mode="trades">dökümden aktar</a>.</p></section>' + cpiCard(c, null);
       var t = rr.twr, inf = rr.inflation;
       h += '<div class="grid kpis">';
-      h += X.kpi('Yatırılan (net)', tl(M.sub(rr.invested, rr.withdrawn)), 'Alımlar ' + tl(rr.invested) + ' − satışlar ' + tl(rr.withdrawn), 'Alım-satımla izlenen varlıklara giren ve çıkan para (komisyon dahil, TL).');
+      var gr = rr.gross || { bought: rr.invested, sold: rr.withdrawn, dividends: 0 };
+      h += X.kpi('Yatırılan (net)', tl(M.sub(rr.invested, rr.withdrawn)), 'Alımlar ' + tl(gr.bought) + ' − satışlar ' + tl(gr.sold) + (gr.dividends ? ' − temettüler ' + tl(gr.dividends) : ''), 'Alım-satımla izlenen varlıklara giren ve çıkan para (komisyon dahil, TL). Satışlar ve temettüler ayrı gösterilir; ikisi de cebine dönen paradır.');
       h += X.kpi('Bugünkü değer', tl(rr.valueNow), 'Alım-satımla izlenen varlıklar · kazanç: <b class="' + plCls(rr.gainTL) + '">' + signTl(rr.gainTL) + '</b>', 'Yalnızca alım-satım kaydı olan varlıkların bugünkü değeri (adet × son fiyat). Banka hesapları ve tutar olarak girilen varlıklar getiri hesabına girmez; onlar Genel bakış\'taki toplam birikimde. Kazanç = bugünkü değer + satışlardan çekilen − yatırılan.');
-      h += X.kpi('Yıllık getirin (para ağırlıklı)', '<span class="' + plCls(rr.xirr) + '">' + pctF(rr.xirr) + '</span>', 'Enflasyondan arındırılmış: ' + (rr.realXirr != null ? '<b class="' + plCls(rr.realXirr) + '">' + pctF(rr.realXirr) + '</b>' : '<span class="muted">TÜFE gir</span>'), 'XIRR: paranı ne zaman, ne kadar yatırdığını hesaba katan yıllık bileşik getiri. Senin gerçek deneyimindir.');
-      h += X.kpi('Zaman ağırlıklı getiri', '<span class="' + plCls(t.period) + '">' + pctF(t.period) + '</span>', (t.annualized != null ? 'Yıllık ' + pctF(t.annualized) + ' · ' : '') + X.monthsLabel(Math.round(t.days / 30.44)) + (rr.realTwr != null ? ' · reel ' + pctF(rr.realTwr) : ''), 'TWR: para giriş-çıkışlarının etkisini çıkarır; seçtiğin varlıkların performansını ölçer. 1 yıldan kısa sürede yıllıklandırılmaz.');
+      h += X.kpi('Yıllık getirin<span class="detail-only"> (para ağırlıklı, XIRR)</span>', '<span class="' + plCls(rr.xirr) + '">' + pctF(rr.xirr) + '</span>', 'Enflasyondan arındırılmış: ' + (rr.realXirr != null ? '<b class="' + plCls(rr.realXirr) + '">' + pctF(rr.realXirr) + '</b>' : '<span class="muted">TÜFE gir</span>'), 'Paranı ne zaman, ne kadar yatırdığını hesaba katan yıllık getiri: senin cebine yansıyan gerçek sonuç. (Teknik adı: para ağırlıklı getiri, XIRR.)');
+      h += X.kpi('<span class="simple-only">Seçtiğin varlıkların performansı</span><span class="detail-only">Zaman ağırlıklı getiri (TWR)</span>', '<span class="' + plCls(t.period) + '">' + pctF(t.period) + '</span>', (t.annualized != null ? 'Yıllık ' + pctF(t.annualized) + ' · ' : '') + X.monthsLabel(Math.round(t.days / 30.44)) + (rr.realTwr != null ? ' · enflasyondan sonra ' + pctF(rr.realTwr) : ''), 'Ne zaman para eklediğinden bağımsız olarak, seçtiğin varlıkların kendisi ne kadar kazandırdı. 1 yıldan kısa sürede yıllığa çevrilmez. (Teknik adı: zaman ağırlıklı getiri, TWR.)');
       h += '</div>';
       if (inf.factor == null) h += '<div class="notice warn">Enflasyondan arındırılmış getiri için ' + esc(rr.first.slice(0, 7)) + ' ayından bu yana aylık TÜFE değerlerini aşağıya gir.' + (inf.missing.length ? ' Eksik: ' + esc(inf.missing.slice(0, 6).join(', ')) + (inf.missing.length > 6 ? '…' : '') : '') + '</div>';
       else if (inf.partial) h += '<p class="hint">Reel getiri ' + esc(inf.upTo) + ' ayına kadarki TÜFE ile hesaplandı (' + esc(inf.missing.join(', ')) + ' henüz girilmedi). Dönemdeki toplam enflasyon: ' + pctF(inf.factor - 1) + '.</p>';
@@ -385,17 +398,18 @@
       h += '<section class="card" style="margin-top:14px"><h2>Portföy değeri ' + tip('Mavi çizgi: alım-satımla izlenen varlıkların ay sonu değerleri. Kesikli çizgi: net yatırdığın para. Üzerine gelince o günün tutarlarını görürsün.') + '</h2>' +
         (CH && pts.length >= 2 ? CH.area('r-val', { h: 260, label: 'Portföy değeri ve yatırılan para', today: c.today, ranges: true, defaultRange: 'Tümü', legend: true, series: [{ name: 'Değer', data: pts.map(function (p) { return { d: p.d, v: p.v }; }), color: 'brand' }, { name: 'Net yatırılan', data: pts.map(function (p) { return { d: p.d, v: p.c }; }), dashed: true }] }) : lineChart(pts, 'Portföy değeri ve yatırılan para')) + '<p class="hint detail-only">Mavi: değer · kesikli: net yatırılan.</p></section>';
       // Kıyas
-      h += '<section class="card" style="margin-top:14px"><h2>Kıyas: aynı parayı başka yere koysaydın ' + tip('Her alımda ve satımda aynı TL tutarı aynı gün altına, dolara veya BIST 100\'e koysaydın bugün ne olurdu? Fiyat geçmişi gerekir.') + '</h2><div class="tablewrap"><table><thead><tr><th>Seçenek</th><th class="r">Bugünkü değer</th><th class="r">Yıllık getiri</th><th class="r">Fark</th></tr></thead><tbody>';
+      h += '<section class="card" style="margin-top:14px"><h2>Kıyas: aynı parayı başka yere koysaydın ' + tip('Her alımda ve satımda aynı TL tutarı aynı gün Katılım 50 endeksine (varsayılan helal kıyas), altına veya dolara koysaydın bugün ne olurdu? Fiyat geçmişi gerekir. BIST 100 faizli şirketleri de içerdiği için yalnızca detaylı görünümde, bilgi amaçlı gösterilir.') + '</h2><div class="tablewrap"><table><thead><tr><th>Seçenek</th><th class="r">Bugünkü değer</th><th class="r">Yıllık getiri</th><th class="r">Fark</th></tr></thead><tbody>';
       h += '<tr><td><b>Senin portföyün</b></td><td class="r num"><b>' + tl(rr.valueNow) + '</b></td><td class="r num">' + pctF(rr.xirr) + '</td><td></td></tr>';
       var needHist = false;
       rr.benchmarks.forEach(function (b) {
-        if (!b.sim.ok) { needHist = true; h += '<tr><td>' + esc(b.label) + '</td><td colspan="3" class="hint">Fiyat geçmişi eksik (' + esc(b.sim.missing.slice(0, 3).map(X.dateLabel).join(', ')) + (b.sim.missing.length > 3 ? '…' : '') + ')</td></tr>'; return; }
+        var trc = b.detailOnly ? ' class="detail-only"' : b.primary ? ' class="bench-primary"' : '';
+        if (!b.sim.ok) { needHist = true; h += '<tr' + trc + '><td>' + esc(b.label) + (b.primary ? ' <span class="pill info">varsayılan</span>' : '') + '</td><td colspan="3" class="hint">Fiyat geçmişi eksik (' + esc(b.sim.missing.slice(0, 3).map(X.dateLabel).join(', ')) + (b.sim.missing.length > 3 ? '…' : '') + ')</td></tr>'; return; }
         var diff = M.sub(rr.valueNow, b.sim.finalTL);
-        h += '<tr><td>' + esc(b.label) + (b.sim.approx ? ' <span class="pill info" title="Bazı günler için en yakın önceki fiyat kullanıldı (en çok ' + b.sim.maxGapDays + ' gün)">yaklaşık</span>' : '') + '</td><td class="r num">' + tl(b.sim.finalTL) + '</td><td class="r num">' + pctF(b.sim.xirr) + '</td><td class="r num ' + plCls(diff) + '">' + (diff >= 0 ? 'portföyün ' + tl(diff) + ' önde' : 'portföyün ' + tl(-diff) + ' geride') + '</td></tr>';
+        h += '<tr' + trc + '><td>' + (b.primary ? '<b>' + esc(b.label) + '</b> <span class="pill ok">varsayılan</span>' : esc(b.label)) + (b.sim.approx ? ' <span class="pill info" title="Bazı günler için en yakın önceki fiyat kullanıldı (en çok ' + b.sim.maxGapDays + ' gün)">yaklaşık</span>' : '') + '</td><td class="r num">' + tl(b.sim.finalTL) + '</td><td class="r num">' + pctF(b.sim.xirr) + '</td><td class="r num ' + plCls(diff) + '">' + (diff >= 0 ? 'portföyün ' + tl(diff) + ' önde' : 'portföyün ' + tl(-diff) + ' geride') + '</td></tr>';
       });
       h += '</tbody></table></div>';
-      h += '<div class="row" style="margin-top:8px"><button class="btn small" data-act="pf-hist"' + (fetching ? ' disabled' : '') + '>Geçmiş fiyatları indir (dolar, altın, kripto)</button><a class="btn small" href="#portfoy/fiyatlar">BIST 100 geçmişini gir</a></div>' +
-        (histMsg ? '<div class="hint" role="status">' + histMsg + '</div>' : '') + '<p class="hint">Dolar: Avrupa Merkez Bankası kurları (Frankfurter). Altın: Currency API (ons altın ÷ 31,1035). BIST 100 için ücretsiz tarayıcı kaynağı yok; geçmişi Fiyatlar\'dan elle veya CSV ile girebilirsin. Hiçbir fiyat uydurulmaz.</p>' + (needHist ? '' : '') + '</section>';
+      h += '<div class="row" style="margin-top:8px"><button class="btn small" data-act="pf-hist"' + (fetching ? ' disabled' : '') + '>Geçmiş fiyatları indir (dolar, altın, kripto)</button><a class="btn small" href="#portfoy/fiyatlar">Katılım 50 geçmişini gir</a></div>' +
+        (histMsg ? '<div class="hint" role="status">' + histMsg + '</div>' : '') + '<p class="hint"><span class="detail-only">Dolar: Avrupa Merkez Bankası kurları (Frankfurter). Altın: Currency API (ons altın ÷ 31,1035). </span> Katılım 50 (KATLM) ve BIST 100 geçmişi için ücretsiz tarayıcı kaynağı yok; Fiyatlar\'dan elle veya CSV ile girebilirsin. Katılım Tüm endeksinin güncel değeri "Fiyatları güncelle" ile TradingView\'den gelir ve her güncellemede geçmişe eklenir. Hiçbir fiyat uydurulmaz.</p>' + (needHist ? '' : '') + '</section>';
       h += cpiCard(c, rr.first);
       h += '<p class="hint detail-only">Formüller: TWR = Π (Vᵢ − Akışᵢ) ÷ Vᵢ₋₁ − 1 (değerlemeler ay sonu ve işlem günlerinde). XIRR: Σ akış ÷ (1+r)^(gün/365) = 0 denklemini çözen r (ikiye bölme yöntemi). Reel = (1 + nominal) ÷ TÜFE çarpanı − 1; TÜFE çarpanı aylık değişimlerin gün ağırlıklı bileşimi.</p>';
       return h;
@@ -412,6 +426,22 @@
     }
 
     /* ---------- HEDEFLER ---------- */
+    /* Hedef düzenleme alanları: projeksiyon hesaplanamasa bile (ör. aşırı değerler) her zaman gösterilir */
+    function goalEditor(g, canDelete, open) {
+      var id = esc(g.id);
+      return '<details' + (open ? ' open' : '') + '><summary>Düzenle</summary><div class="grid two">' +
+          fieldRow('Ad', '<input type="text" maxlength="60" data-pfg="name" data-id="' + id + '" value="' + esc(g.name) + '">') +
+          fieldRow('Hedef tutar (bugünün parasıyla, TL)', '<input class="money" type="text" inputmode="decimal" data-pfg="target" data-id="' + id + '" value="' + esc(M.format(g.target, { symbol: false })) + '">') +
+          fieldRow('Hedef tarih (ay)', '<input type="month" data-pfg="targetYm" data-id="' + id + '" value="' + esc(g.targetYm) + '">') +
+          fieldRow('Aylık birikimden pay (%)', '<input type="number" min="0" max="100" step="1" data-pfg="shareBp" data-id="' + id + '" value="' + g.shareBp / 100 + '">', 'Her ay artan paranın (acil fon sonrası) bu hedefe giden yüzdesi. Mevcut ortak birikim de bu oranla paylaştırılır.') +
+          fieldRow('Risk profili (süzülme yolu)', '<select data-pfg="glide" data-id="' + id + '">' + Object.keys(PF.GLIDES).map(function (k) { return opt(k, PF.GLIDES[k].label, g.glide); }).join('') + '</select>', 'Hedefe yaklaştıkça riskli payın ne hızla azalacağı. Temkinli: kısa vadeli, kaybı kaldıramayacağın hedefler. Büyüme: emeklilik gibi uzun vadeli hedefler.') +
+          '</div>' + (canDelete ? '<button class="btn small danger" data-act="pf-del-goal" data-id="' + id + '">Hedefi sil</button>' : '') + '</details>';
+    }
+    function goalsEditOnly() {
+      var gs = st().goals || [];
+      return '<section class="card"><h2>Hedeflerini düzenle</h2><p class="hint">Tahminler şu an hesaplanamadı; hedef tutarını, tarihini veya Ayarlar\'daki enflasyonu düzelterek sorunu giderebilirsin.</p>' +
+        gs.map(function (g) { return '<div class="card goal"><b>' + esc(g.name) + '</b>' + goalEditor(g, gs.length > 1, true) + '</div>'; }).join('') + '</section>';
+    }
     function pGoals(c) {
       var s = c.s, rep = c.rep, h = '<p class="hint">Birden fazla hedefin olabilir. Her hedef aylık birikimden bir pay alır; istersen bir varlığı doğrudan bir hedefe bağlarsın (Varlıklar). Tutarları <b>bugünün parasıyla</b> yaz.</p>';
       h += '<div class="notice ' + (rep.shareTotalBp > 10000 ? 'danger' : 'info') + '">Payların toplamı: <b>' + pct(rep.shareTotalBp) + '</b>' + (rep.shareTotalBp < 10000 ? ' · kalan ' + pct(10000 - rep.shareTotalBp) + ' (' + tl(rep.unallocatedMonthly) + '/ay) hiçbir hedefe ayrılmadı; uzun vadeli dengeli birikim sayılır.' : '') + ' Ortak havuz: ' + tl(rep.unassigned) + ' (acil fon hariç, bir hedefe bağlanmamış birikim).</div>';
@@ -422,15 +452,10 @@
         h += '<div class="goal-top">' + (CH ? CH.ring('pg-' + gi, { h: 104, bp: r.progressBp, color: r.onTrack ? 'safe' : 'medium', label: g.name + ' hedefi: yüzde ' + Math.round(r.progressBp / 100) }) : '') + '<div class="grow">' +
           '<div class="value num" style="font-size:1.4rem;font-weight:700">' + (CH ? CH.counter('pg-' + gi, r.current) : tl(r.current)) + ' <span class="muted" style="font-size:1rem">/ ' + tl(g.target) + '</span></div>' + X.progress(r.progressBp) + X.monthsLabel(r.monthsLeft) + ' kaldı (' + esc(X.ymLabel(g.targetYm)) + ')</div></div>';
         h += '<p class="hint">Aylık payı: <b>' + tl(r.monthly) + '</b> · getirisiz gereken: ' + tl(r.neededMonthly) + '/ay · bağlı varlıklar ' + tl(r.assigned) + ' + havuzdan ' + tl(r.fromPool) + '</p>';
+        if (sc.base.capped || sc.optimistic.capped) h += '<div class="notice warn">Tahmin çok büyük çıktı (10 trilyon TL üstü, "çok büyük" yazıyor). Çok uzak hedef tarihi veya çok yüksek enflasyon/getiri varsayımını kontrol et.</div>';
         h += '<p class="hint">Temel senaryoda hedef tarihinde: <b>' + tl(sc.base.atGoal) + '</b>' + (sc.base.reachMonth != null ? ' · hedefe ' + X.monthsLabel(sc.base.reachMonth) + ' sonra ulaşılır' : ' · ufuk içinde ulaşılmıyor') + '<span class="detail-only"> · kötümser ' + tl(sc.pessimistic.atGoal) + ' · iyimser ' + tl(sc.optimistic.atGoal) + '</span></p>';
         h += '<p class="hint">Önerilen dağılım (' + esc(PF.GLIDES[g.glide].label) + '): ' + TIERS.map(function (k) { return C.RISK[k] + ' ' + pct(r.targetAlloc[k]); }).join(' · ') + '</p>';
-        h += '<details><summary>Düzenle</summary><div class="grid two">' +
-          fieldRow('Ad', '<input type="text" maxlength="60" data-pfg="name" data-id="' + id + '" value="' + esc(g.name) + '">') +
-          fieldRow('Hedef tutar (bugünün parasıyla, TL)', '<input class="money" type="text" inputmode="decimal" data-pfg="target" data-id="' + id + '" value="' + esc(M.format(g.target, { symbol: false })) + '">') +
-          fieldRow('Hedef tarih (ay)', '<input type="month" data-pfg="targetYm" data-id="' + id + '" value="' + esc(g.targetYm) + '">') +
-          fieldRow('Aylık birikimden pay (%)', '<input type="number" min="0" max="100" step="1" data-pfg="shareBp" data-id="' + id + '" value="' + g.shareBp / 100 + '">', 'Her ay artan paranın (acil fon sonrası) bu hedefe giden yüzdesi. Mevcut ortak birikim de bu oranla paylaştırılır.') +
-          fieldRow('Risk profili (süzülme yolu)', '<select data-pfg="glide" data-id="' + id + '">' + Object.keys(PF.GLIDES).map(function (k) { return opt(k, PF.GLIDES[k].label, g.glide); }).join('') + '</select>', 'Hedefe yaklaştıkça riskli payın ne hızla azalacağı. Temkinli: kısa vadeli, kaybı kaldıramayacağın hedefler. Büyüme: emeklilik gibi uzun vadeli hedefler.') +
-          '</div>' + (rep.goals.length > 1 ? '<button class="btn small danger" data-act="pf-del-goal" data-id="' + id + '">Hedefi sil</button>' : '') + '</details></section>';
+        h += goalEditor(g, rep.goals.length > 1) + '</section>';
       });
       h += '</div><button class="btn" data-act="pf-add-goal">+ Hedef ekle</button>';
       h += '<section class="card detail-only" style="margin-top:14px"><h2>Süzülme yolu profilleri</h2><div class="tablewrap"><table><thead><tr><th>Hedefe kalan</th>' + Object.keys(PF.GLIDES).map(function (k) { return '<th class="r">' + esc(PF.GLIDES[k].label) + '<div class="hint">güvenli / orta / riskli</div></th>'; }).join('') + '</tr></thead><tbody>';
@@ -445,7 +470,7 @@
       h += '<h3>Sınırları ayarla</h3><div class="grid two">' +
         fieldRow('Tek varlık en fazla (%)', '<input type="number" min="5" max="100" step="1" data-pfrule="maxAssetBp" value="' + R.maxAssetBp / 100 + '">', 'Tek bir varlık (hesap dahil) yatırım toplamının bu yüzdesini geçerse uyarır.') +
         fieldRow('Riskli varlıklar en fazla (%)', '<input type="number" min="0" max="100" step="1" data-pfrule="maxRiskyBp" value="' + R.maxRiskyBp / 100 + '">') +
-        fieldRow('En az etkin varlık sayısı', '<input type="number" min="1" max="20" step="1" data-pfrule="minPositions" value="' + R.minPositions + '">', 'Etkin sayı = 1 ÷ Σ(payᵢ²). Paralar birkaç varlıkta toplanmışsa düşük çıkar.') +
+        fieldRow('En az kaç farklı varlığa yayılsın', '<input type="number" min="1" max="20" step="1" data-pfrule="minPositions" value="' + R.minPositions + '">', 'Paran birkaç varlıkta toplanmışsa uyarır. (Detay: etkin varlık sayısı = 1 ÷ Σ(payᵢ²).) Paralar birkaç varlıkta toplanmışsa düşük çıkar.') +
         fieldRow('Önce acil durum fonu', '<label class="row"><input type="checkbox" data-pfrule="emergencyFirst"' + (R.emergencyFirst ? ' checked' : '') + '> Acil fon tamamlanmadan riskli alım önerme</label>') + '</div></section>';
       // Helal tablo
       var rows = c.pos.filter(function (p) { return !p.synthetic; });
@@ -459,7 +484,7 @@
     function usedKeys(s) {
       var keys = [];
       (s.assets || []).forEach(function (a) { if (a.tracking === 'trades') { var k = PF.assetKey(a); if (keys.indexOf(k) < 0) keys.push(k); } });
-      ['fx:USD', 'fx:EUR', 'metal:XAU', 'idx:XU100'].forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
+      ['fx:USD', 'fx:EUR', 'metal:XAU', 'idx:KATLM', 'idx:XKTUM', 'idx:XU100'].forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
       Object.keys(s.prices || {}).forEach(function (k) { if (keys.indexOf(k) < 0 && PF.keyInfo(k)) keys.push(k); });
       return keys;
     }
@@ -485,11 +510,11 @@
           '<td class="detail-only">' + (lp ? '<button class="btn small danger" data-act="pf-del-pt" data-key="' + esc(k) + '" data-d="' + lp.d + '">Son fiyatı sil</button>' : '') + '</td></tr>' + qpRow(k, 6, c.today);
       });
       h += '</tbody></table></div><p class="hint">Eskime sınırı: kripto 2 gün, döviz/altın 3 gün, endeks 4 gün, ETF/hisse/fon 5 gün, diğer 31 gün. Eski fiyat uyarı verir ama silinmez.</p>';
-      h += '<details class="detail-only"><summary>Geçmiş fiyatları toplu yapıştır (ör. BIST 100)</summary><p class="hint">Her satıra "tarih fiyat" yaz (ör. <code>31.10.2026 11.250,40</code>). Kıyas ve getiri grafiği için kullanılır.</p><div class="grid two">' + fieldRow('Ne için?', '<select id="pp-bulk-key">' + keys.map(function (k) { return opt(k, keyLabel(k, assetByKey(k)), 'idx:XU100'); }).join('') + '</select>') + '</div><textarea id="pp-bulk" rows="5" style="width:100%"></textarea><button class="btn small" data-act="pf-bulk-prices">Kaydet</button></details></section>';
+      h += '<details><summary>Geçmiş fiyatları toplu yapıştır (ör. Katılım 50)</summary><p class="hint">Her satıra "tarih fiyat" yaz (ör. <code>31.10.2026 11.250,40</code>). Kıyas ve getiri grafiği için kullanılır.</p><div class="grid two">' + fieldRow('Ne için?', '<select id="pp-bulk-key">' + keys.map(function (k) { return opt(k, keyLabel(k, assetByKey(k)), 'idx:KATLM'); }).join('') + '</select>') + '</div><textarea id="pp-bulk" rows="5" style="width:100%"></textarea><button class="btn small" data-act="pf-bulk-prices">Kaydet</button></details></section>';
       // Ayar ve kaynaklar
-      h += '<section class="card" style="margin-top:14px"><h2>Kaynaklar ve ayarlar</h2><div class="field"><label for="td-key">Twelve Data API anahtarı (ABD ETF/hisse için, isteğe bağlı) ' + tip('twelvedata.com\'dan ücretsiz hesapla alınır (günde 800 istek). Anahtar yalnızca bu cihazda saklanır, yedeğe girmez.') + '</label><div class="row"><input id="td-key" type="password" autocomplete="off" value="' + esc(cfg.twelveKey || '') + '" style="max-width:340px" placeholder="anahtar yoksa ETF fiyatını elle gir"><button class="btn small" data-act="pf-td-save">Kaydet</button>' + (cfg.twelveKey ? '<button class="btn small danger" data-act="pf-td-del">Sil</button>' : '') + '</div></div>';
+      h += '<section class="card" style="margin-top:14px"><h2>Kaynaklar ve ayarlar</h2><div class="field"><label for="td-key">Twelve Data anahtarı (ABD ETF/hisse için, isteğe bağlı) ' + tip('twelvedata.com\'dan ücretsiz hesapla alınır (günde 800 istek). Anahtar yalnızca bu cihazda saklanır, yedeğe girmez.') + '</label><div class="row"><input id="td-key" type="password" autocomplete="off" value="' + esc(window.Store.apiKeys().twelve || '') + '" style="max-width:340px" placeholder="anahtar yoksa ETF fiyatını elle gir"><button class="btn small" data-act="pf-td-save">Kaydet</button>' + (window.Store.apiKeys().twelve ? '<button class="btn small danger" data-act="pf-td-del">Sil</button>' : '') + '</div></div>';
       h += '<div class="tablewrap"><table><thead><tr><th>Kaynak</th><th>Ne için</th></tr></thead><tbody>' + Object.keys(PR.SOURCES).map(function (k) { var x = PR.SOURCES[k]; return '<tr><td>' + esc(x.label) + '<div class="hint">' + esc(x.site) + '</div></td><td class="hint">' + esc(x.what) + '</td></tr>'; }).join('') + '</tbody></table></div>';
-      h += '<p class="hint">Hepsi ücretsizdir ve tarayıcıdan doğrudan erişilir (Kasım 2026\'da test edildi). TCMB, tefas.gov.tr, Borsa İstanbul, İş Yatırım ve Yahoo tarayıcı erişimini (CORS) engellediği için doğrudan kullanılamıyor; TEFAS fonları TEFAS verisini yayınlayan ücretsiz bir ara servisten, BIST hisseleri TradingView\'in herkese açık tarayıcısından (resmi değil, 15 dk gecikmeli) alınır. Bir kaynak çalışmazsa eski fiyat aynen kalır; uygulama hiçbir zaman fiyat uydurmaz.</p></section>';
+      h += '<p class="hint">Hepsi ücretsizdir (Kasım 2026\'da test edildi). <span class="detail-only">TCMB, tefas.gov.tr, Borsa İstanbul, İş Yatırım ve Yahoo tarayıcı erişimini (CORS) engellediği için doğrudan kullanılamıyor; </span>TEFAS fonları TEFAS verisini yayınlayan ücretsiz bir ara servisten, BIST hisseleri TradingView\'in herkese açık tarayıcısından (resmi değil, 15 dk gecikmeli) alınır. Bir kaynak çalışmazsa eski fiyat aynen kalır; uygulama hiçbir zaman fiyat uydurmaz.</p></section>';
       return h;
     }
     function fmtAt(iso) { var d = new Date(iso); if (isNaN(d)) return iso; return d.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (TSİ)'; }
@@ -511,7 +536,7 @@
     function startFetch() {
       if (fetching) return; fetching = true; priceRun = null; X.render();
       var s = st(), keys = autoKeys(s);
-      PR.fetchAll(keys, { twelveKey: pcfg().twelveKey }).then(function (res) {
+      PR.fetchAll(keys, { twelveKey: window.Store.apiKeys().twelve || '' }).then(function (res) {
         var s2 = st(), today = X.today();
         res.candidates.forEach(function (c2) {
           var a = assetByKey(c2.key), old = PF.lastPoint(s2, c2.key);
@@ -957,8 +982,8 @@
         'pf-run-cancel': function () { priceRun = null; X.render(); },
         'pf-del-pt': function () { var k = t.dataset.key, d = t.dataset.d; if (!confirm(keyLabel(k) + ' için ' + X.dateLabel(d) + ' fiyatı silinsin mi?')) return; X.mutate(function (s) { var h = s.prices[k]; h.points = h.points.filter(function (p) { return p.d !== d; }); if (!h.points.length) delete s.prices[k]; }, 'Fiyat silindi.'); },
         'pf-bulk-prices': bulkPrices,
-        'pf-td-save': function () { var c = pcfg(), v = document.getElementById('td-key').value.trim(); if (v) c.twelveKey = v; else delete c.twelveKey; savePcfg(c); X.toast(v ? 'Anahtar bu cihaza kaydedildi.' : 'Anahtar silindi.'); X.render(); },
-        'pf-td-del': function () { var c = pcfg(); delete c.twelveKey; savePcfg(c); X.toast('Anahtar silindi.'); X.render(); },
+        'pf-td-save': function () { var v = document.getElementById('td-key').value.trim(); window.Store.apiKeys().twelve = v; window.Store.saveApiKeys(); X.toast(v ? 'Anahtar bu cihaza kaydedildi.' : 'Anahtar silindi.'); X.render(); },
+        'pf-td-del': function () { window.Store.apiKeys().twelve = ''; window.Store.saveApiKeys(); X.toast('Anahtar silindi.'); X.render(); },
         'pf-hist': fetchHistory,
         'pf-cpi-bulk': function () {
           var lines = document.getElementById('cpi-bulk').value.split(/\r?\n/), add = [], bad = 0;

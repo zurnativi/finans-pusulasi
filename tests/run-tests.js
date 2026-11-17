@@ -709,8 +709,15 @@
     require('./run-tests-v5.js').run().then(function (r5) {
       var p5 = r5.filter(function (r) { return r.ok; }).length;
       r5.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
-      console.log('\n' + p5 + '/' + r5.length + ' v5 testi geçti · toplam ' + (passed + p5) + '/' + (results.length + r5.length));
+      console.log('\n' + p5 + '/' + r5.length + ' v5 testi geçti');
       if (p5 !== r5.length) process.exit(1);
+      console.log('\n— v6 (denetim düzeltmeleri: kart ekstresi, acil fon, taşma, ortak risk kuralı, örnek veri/eşitleme, ekler) —');
+      return require('./run-tests-v6.js').run().then(function (r6) {
+        var p6 = r6.filter(function (r) { return r.ok; }).length;
+        r6.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+        console.log('\n' + p6 + '/' + r6.length + ' v6 testi geçti · toplam ' + (passed + p5 + p6) + '/' + (results.length + r5.length + r6.length));
+        if (p6 !== r6.length) process.exit(1);
+      });
     });
   } else { root.TEST_RESULTS = results; }
 })(typeof self !== 'undefined' ? self : this);

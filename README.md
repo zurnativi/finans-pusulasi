@@ -1,4 +1,4 @@
-# Finans Pusulası — v5.0
+# Finans Pusulası — v6.0
 
 Bütçe, birikim ve **helal (faizsiz)** yatırım planı için kişisel finans uygulaması.
 Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir, tek klasör hâlinde her yere taşınabilir.
@@ -7,11 +7,24 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 
 - **Sade görünüm:** finans bilmeyen biri de anlar.
 - **Detaylı görünüm:** formüller, oranlar, enflasyonlu/enflasyonsuz değerler, varsayımlar.
-- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 135 otomatik birim testi + tarayıcıda uçtan uca testler var.
+- **Hatasız hesap:** tüm para hesapları tam sayı **kuruş** ile yapılır (0,1 + 0,2 = 0,3; ondalık hata yok). 160 otomatik birim testi + tarayıcıda uçtan uca testler var.
 - **Canlı grafikler (v4):** Ana sayfa, Bütçe ve Portföy Yönetimi açılışında hareketli, dokunmatik grafikler: net varlık eğrisi (1A/3A/6A/1Y/Tümü), birikim halkası, gelir → gider → birikim akışı, hedef halkaları, 6 aylık gelir/harcama çubukları, sayılarda sayaç animasyonu. Üzerine gelince ya da dokununca kuruşu kuruşuna tutar görünür; veri değişince grafik yumuşak geçişle anında güncellenir. Sistem "hareketi azalt" ayarında animasyonlar kapanır.
 - **Yedek, eşitleme ve kilit (v5):** ana sayfada görsel "Veri güvenliği" kutuları (son yedek halkası, eşitleme, kilit, kalıcı depo) ve tek dokunuşla **💾 Yedeği indir**; haftalık (ayarlanabilir) yedek hatırlatması; otomatik kopyalar (son 10 sürüm, geri yüklenebilir); **uçtan uca şifreli cihazlar arası eşitleme** (kendi GitHub hesabındaki gizli Gist, ücretsiz); isteğe bağlı **PIN/parola kilidi** (veri cihazda şifreli, hareketsizlikte otomatik kilit, destekleyen cihazda parmak izi/yüz ile açma).
 - **Temettü, bedelsiz, bedelli (v5):** yeni işlem türleri kâr/zarara, maliyete ve getiri hesabına (XIRR/TWR) doğru girer.
 - **Otomatik TEFAS ve BIST fiyatı (v5):** TEFAS fonları ücretsiz bir TEFAS veri servisinden, BIST hisseleri TradingView'in herkese açık tarayıcısından (15 dk gecikmeli) çekilir; olmazsa liste yapıştır / ekran görüntüsünden oku / ✎ ile tek dokunuşla düzelt.
+
+### v6.0 — denetim düzeltmeleri
+- **Kart ekstresi doğru kaydedilir:** ekstre otomatik tanınır (ekstre, son ödeme, hesap kesim, dönem borcu, asgari, "ödeme-teşekkür", maskeli kart no — en az ikisi). Artı yazılmış harcamalar gidere (−) çevrilir, "ödeme / teşekkür" satırları **Transfer** sayılır (kart seçildiğinde de). Kontrol tablosunda tutarlar renklidir (▲ gelir yeşil, ▼ gider kırmızı, ⇄ transfer gri). İşaretler şüpheliyse (harcama belgesinde gelir ağırlıklı) yeşil "Tutuyor" **asla** gösterilmez; kaydetmeden önce ayrıca uyarılır.
+- **Acil fon:** "tamam" yalnızca eksik gerçekten 0 iken yazılır; yatırım yokken "dağılım sapmış" önerisi verilmez. **Tek risk kuralı:** acil fon dolmadan riskli alım ne ana sayfada ne Portföy/Dengeleme'de önerilir (`Calc.riskyBlocked`). Gelecek tahmini de acil fon payını (Ayarlar) kullanır.
+- **Taşma koruması:** çok uzak hedef / çok yüksek enflasyonda tutarlar "çok büyük (10 trilyon TL üstü)" yazılır; hiçbir ekran çökmez, bir bölüm hata verse bile hedefler düzenlenebilir kalır.
+- **Örnek veri gerçek verinin üzerine yazılmaz:** eşitleme açıkken "Örnek veriyi yükle" reddedilir; gerçek kayıt varsa iki kez onay + önce otomatik kopya. Eşitleme, örnek veriyi buluttaki gerçek verinin üzerine hiçbir modda göndermez.
+- **Anahtarlar şifreli:** yapay zekâ, Twelve Data ve eşitleme anahtarları IndexedDB'de şifreli durur (kilit açıksa PIN'den türeyen anahtarla, kapalıysa tarayıcının dışa aktarılamayan cihaz anahtarıyla). Eski açık metin anahtarlar ilk açılışta taşınır (önce şifreli kopya yazılır, sonra eski silinir).
+- **Ana sayfa sadeleşti:** önce grafikler, en önemli 3 öneri; Bütçe özeti, Risk/yatırım planı ve Gelecek tahmini katlanır bölümlerde (detaylı görünümde açık). Sade görünümde teknik terimler yerine günlük Türkçe; terimler detaylı görünümde/ipuçlarında.
+- **Mobil:** 360–390 px'te Düzenli ödemeler, Hesaplar, taksit, transfer ve varlık tabloları kart satırlarına dönüşür; akış grafiği etiketleri kesilmez; dokunmatikte ?, ✎ ve onay kutuları en az 40 px.
+- **Portföy:** başlıkta gerçek kazanç (yatırdığın para hariç), değer değişimi ikincil. Getiri: alımlar − satışlar − temettüler ayrı; küçük yüzdeler 2 haneli (+%0,13). Varsayılan helal kıyas **Katılım 50 (KATLM)** — ücretsiz otomatik kaynak olmadığından geçmişi Fiyatlar'dan elle/CSV ile girilir; **Katılım Tüm (XKTUM)** TradingView'den otomatik gelir. BIST 100 (faizli şirketler dahil) yalnızca detaylı görünümde.
+- **Küçükler:** Türkçe yüzde ekleri (%52'si, %14'ü); gelecek tarihli içe aktarma satırları varsayılan seçilmez; "-1,234" ve "1.234,567" uyarıyla okunur; farklı hesapta aynı gün + aynı tutar "olası mükerrer" uyarısı; dengeleme adedi varlık türüne göre yuvarlanır (hisse/fon tam, altın 0,01, kripto 0,000001); Sınırlar'da tek "Ay sonu tahmini"; renk kontrastı ≥ 4,5:1 (açık/koyu).
+- **Çevrimdışı ve güvenlik:** servis çalışanı (`sw.js`, sürümlü önbellek) internet yokken uygulamayı açar; yeni sürümde "Yeni sürüm hazır — Yenile" sorar (kendiliğinden geçmez); yalnızca http(s)'te kaydedilir, dosyadan açılışta kaydedilmez. İçerik Güvenlik Politikası (CSP) yalnızca kullanılan ücretsiz kaynaklara izin verir. Kilit deneme sayacı hem localStorage'da hem IndexedDB'de tutulur (biri silinince sıfırlanmaz).
+- Şema değişmedi (v4); taşıma gerekmedi. Gizli anahtar taşıması ayrı ve geri alınabilir sırayla yapılır.
 
 ## 1. Nasıl açılır?
 
@@ -199,14 +212,17 @@ Uygulama derleme gerektirmez; klasör olduğu gibi yayınlanır. Verilerin yine 
 ## 7. Testler
 
 - Tarayıcıda: `tests/tests.html` dosyasını aç (veya Ayarlar > Detaylı görünüm > "Hesap testlerini çalıştır").
-- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 135 test: 105 temel + 30 v5 (`tests/run-tests-v5.js`: şifreleme gidiş-dönüş, yanlış parola/bozuk veri reddi, rastgele tuz/IV; kilit oluştur/aç/yanlış PIN/PIN değiştir, biyometrik sarma, deneme sınırı; eşitleme damgaları, birleştirme, çakışma ve "diğer sürüm", silme izi, silme×değiştirme, fiyat serisi birleşimi, sahte Gist ile iki cihaz turu, yanlış eşitleme parolası; bedelsiz/birleşme/temettü/bedelli hesapları ve XIRR/TWR akışları; v3→v4 taşıma; TEFAS/TradingView ayrıştırıcıları; yapıştırılan fiyat listesi). Önceki 105 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme, kumbara, karşılaştırma, v1→v2→v3 dönüştürme, yedek doğrulama; v3: ortalama maliyet ve K/Z, fazla satış reddi, XIRR, TWR, reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat sıçrama/eskime kontrolü, aracı kurum dökümü ve toplam kontrolü, fiyat kaynağı ayrıştırıcıları; v4: net varlık geçmişi kaydı, aralık ve değişim hesabı, örnek geçmişin bugünün değeriyle tam bitmesi).
+- Komut satırında (Node.js varsa): `node tests/run-tests.js` → 160 test: 105 temel + 30 v5 + 25 v6 (`tests/run-tests-v6.js`: denetimdeki her hata için regresyon — kart ekstresi algılama/çevirme/1.854,39 toplamı, şüpheli işaret, taksi≠TAKSİT, acil fon 0'da "tamam" yok, taşma, ortak risk kuralı, acil fon payı, örnek veri/eşitleme koruması, Türkçe ekler, tutar uyarıları, olası mükerrer, adet yuvarlama, temettü ayrımı, ay sonu tahmini, Katılım 50 kıyası) (`tests/run-tests-v5.js`: şifreleme gidiş-dönüş, yanlış parola/bozuk veri reddi, rastgele tuz/IV; kilit oluştur/aç/yanlış PIN/PIN değiştir, biyometrik sarma, deneme sınırı; eşitleme damgaları, birleştirme, çakışma ve "diğer sürüm", silme izi, silme×değiştirme, fiyat serisi birleşimi, sahte Gist ile iki cihaz turu, yanlış eşitleme parolası; bedelsiz/birleşme/temettü/bedelli hesapları ve XIRR/TWR akışları; v3→v4 taşıma; TEFAS/TradingView ayrıştırıcıları; yapıştırılan fiyat listesi). Önceki 105 test (para, bütçe, içe aktarma, kur, taksit, kart, sınır, düzenli ödeme, kumbara, karşılaştırma, v1→v2→v3 dönüştürme, yedek doğrulama; v3: ortalama maliyet ve K/Z, fazla satış reddi, XIRR, TWR, reel getiri, kıyas, dengeleme, çoklu hedef, risk kuralları, fiyat sıçrama/eskime kontrolü, aracı kurum dökümü ve toplam kontrolü, fiyat kaynağı ayrıştırıcıları; v4: net varlık geçmişi kaydı, aralık ve değişim hesabı, örnek geçmişin bugünün değeriyle tam bitmesi).
 - v5 uçtan uca testi (`e2e_v5.py`, 390 px mobil, dosyadan ve http'den; **GitHub API sahte** — gerçek hesaba dokunulmaz): eşitleme sihirbazı, gizli ve şifreli Gist, iki cihaz arasında birleştirme, ayar çakışması ve "diğer sürümü kullan", yedek durumu ve indirme, temettü/bedelsiz formu, fiyat listesi yapıştırma, ✎ hızlı düzeltme, kilit (uyarı onayı, diskte şifreli, kilit ekranı, yanlış/doğru PIN), konsol hatası yok: 45 kontrol.
 - Uçtan uca testler (Chrome, dosyadan ve http'den, 390 px mobil, canlı fiyat kaynaklarıyla ve onlarsız) ayrı bir klasörde Playwright ile çalıştırıldı: 62 kontrol (canlıda 68), konsol hatası yok. v4 grafik testi (`e2e_v4.py`): grafiklerin çizilmesi, sayaçların tam tutara oturması, aralık düğmeleri, ipuçları, veri değişince anında güncelleme, koyu tema, hareketi azalt, 390 px mobil ve dış ağ kapalıyken (çevrimdışı) çalışma.
+
+- v6 uçtan uca regresyon (`fix6/e2e_v6.py <adres>`; dosyadan, http'den ve canlı adreste): denetim betiklerindeki tüm senaryolar (kart ekstresi içe aktarma ve kaydetme, açık bütçe, ortak risk kuralı, Türkçe ekler, enflasyon %60 + 2066, saat dilimi/ay sınırı, örnek veri koruması, şifreli anahtarlar) + 1280/390/360 px ve koyu tema: yatay taşma, ana sayfa uzunluğu, kontrast ≥ 4,5:1, kart satırları, dokunma hedefleri, çevrimdışı açılış, konsol/CSP hatası yok.
 
 ## 8. Klasör yapısı
 
 ```
-index.html            Uygulama
+index.html            Uygulama (CSP meta etiketi)
+sw.js                 Çevrimdışı uygulama kabuğu (sürümlü önbellek, onaylı güncelleme)
 css/style.css         Tasarım (açık/koyu tema, mobil uyumlu)
 js/money.js           Kuruş hassasiyetinde para işlemleri, TR/EN sayı okuma
 js/calc.js            Bütçe, acil fon, süzülme yolu, aylık plan, projeksiyon
@@ -250,7 +266,9 @@ ornek-dosyalar/       Denemelik CSV, Excel, PDF, fiş görseli (hepsi örnek ver
 - Fiş okunamazsa bile kontrol tablosunda düzenlenebilir bir satır ve okunan ham metin gösterilir; tutarı elle yazıp kaydedebilirsin.
 - Site dosyadan (file://) açıldığında OCR motoru jsDelivr CDN'den yüklenir (tarayıcı yerel worker'a izin vermez).
 - (v5) Eşitleme için GitHub hesabı ve gist izinli anahtar gerekir. Google Drive seçeneği yok: tarayıcıdan Drive'a yazmak için kayıtlı bir Google OAuth istemci kimliği gerekir (bu da ücretsiz ama Google Cloud'da proje açmayı ister). Çakışmada "yeni" kararı cihaz saatine göre verilir; cihaz saatleri çok farklıysa yanlış sürüm kazanabilir (kaybolmaz, Çakışmalar'da durur). Eşitleme iki cihaz aynı anda yazarsa bir sonraki turda düzelir.
-- (v5) Kilit, yapay zekâ anahtarlarını şifrelemez (ayrı saklanır). Biyometrik açma yalnızca https'te ve WebAuthn PRF destekleyen tarayıcılarda (güncel Chrome/Android, Safari 18+/iOS 18+, Windows Hello) görünür. Kilit tarayıcı/cihaz düzeyinde bir önlemdir; açıkken ekrana bakan biri veriyi görebilir.
+- (v6) Kilit kapalıyken anahtarlar tarayıcının cihaz anahtarıyla şifrelenir: diske/yedeğe açık metin düşmez, ama bu tarayıcı profiline tam erişimi olan biri (ör. aynı bilgisayarda oturum açmış kişi) uygulamayı açıp kullanabilir; gerçek koruma PIN kilididir. Kilit deneme sayacı tüm site verisi silinerek sıfırlanabilir — ama bu, şifreli verinin kendisini de siler.
+- (v6) Katılım 50 (KATLM) için ücretsiz otomatik geçmiş kaynağı yok: elle/CSV girilir (girilmezse kıyas "veri yok" der). CSP nedeniyle Ollama yalnızca localhost/127.0.0.1 adresinde çalışır.
+- (v5) Biyometrik açma yalnızca https'te ve WebAuthn PRF destekleyen tarayıcılarda (güncel Chrome/Android, Safari 18+/iOS 18+, Windows Hello) görünür. Kilit tarayıcı/cihaz düzeyinde bir önlemdir; açıkken ekrana bakan biri veriyi görebilir.
 - (v5) PIN unutulursa ve yedek/eşitleme yoksa veri kurtarılamaz (tasarım gereği).
 
 Bu uygulama bir planlama aracıdır, yatırım tavsiyesi değildir.

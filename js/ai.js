@@ -1,5 +1,5 @@
 /* ai.js — Yapay zekâ sağlayıcıları. Her biri resmi REST API'si ile doğrudan tarayıcıdan çağrılır.
- * API anahtarları yalnızca bu cihazda (localStorage) saklanır; başka hiçbir yere gönderilmez (yalnızca seçilen sağlayıcıya). */
+ * API anahtarları yalnızca bu cihazda, şifreli gizli kayıtta (Store.setSecret: kilit açıksa PIN anahtarıyla, değilse cihaz anahtarıyla) saklanır; yalnızca seçilen sağlayıcıya gönderilir. */
 (function (root) {
   'use strict';
   var PROVIDERS = {

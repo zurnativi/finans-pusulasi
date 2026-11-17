@@ -94,13 +94,24 @@
 
   /* ---------- Bu ayın planı ----------
    * Sıra: 1) acil fon eksikse fazlanın belirlenen payı acil fona; 2) kalan, hedef dağılıma göre. Kuruşu kuruşuna dağıtılır. */
+  /* Ortak kural (Ana sayfa planı, projeksiyon ve Portföy dengelemesi aynı kuralı kullanır):
+   * "Önce acil durum fonu" risk kuralı açıksa ve acil fon eksikse riskli alım önerilmez; o pay güvenli/orta kovaya kayar. */
+  function riskyBlocked(state, em) {
+    var rr = (state && state.settings && state.settings.riskRules) || {};
+    return rr.emergencyFirst !== false && !!em && em.shortfall > 0;
+  }
+  function shareBp(state) { var v = state && state.settings ? state.settings.emergencyShareBp : null; return typeof v === 'number' && v >= 0 && v <= 10000 ? v : 5000; }
   function monthlyPlan(state, b, em, alloc) {
     var surplus = Math.max(0, b.surplus);
     var toEmergency = 0;
-    if (em.shortfall > 0 && surplus > 0) toEmergency = Math.min(em.shortfall, M.mulBp(surplus, state.settings.emergencyShareBp));
+    if (em.shortfall > 0 && surplus > 0) toEmergency = Math.min(em.shortfall, M.mulBp(surplus, shareBp(state)));
     var toInvest = M.sub(surplus, toEmergency);
-    var parts = M.allocate(toInvest, [alloc.safe, alloc.medium, alloc.risky]);
+    var blocked = riskyBlocked(state, em);
+    var w = blocked ? [alloc.safe, alloc.medium, 0] : [alloc.safe, alloc.medium, alloc.risky];
+    if (blocked && w[0] + w[1] === 0) w = [1, 0, 0];
+    var parts = M.allocate(toInvest, w);
     return { surplus: surplus, toEmergency: toEmergency, toInvest: toInvest, safe: parts[0], medium: parts[1], risky: parts[2],
+      riskyBlocked: blocked, riskyHeld: blocked ? M.allocate(toInvest, [alloc.safe, alloc.medium, alloc.risky])[2] : 0,
       deficit: b.surplus < 0 ? -b.surplus : 0 };
   }
 
@@ -122,28 +133,39 @@
   function monthlyRate(annualBp) { return Math.pow(1 + annualBp / 10000, 1 / 12) - 1; }
   function project(opts) {
     // opts: start{safe,medium,risky} (acil fon HARİÇ yatırım kovaları), reserveStart (acil fon), monthlyContribution,
-    //       emergencyTopUp (acil fona tamamlanacak toplam), months, monthsToGoal, returnsBp{safe,medium,risky}, inflationBp
+    //       emergencyTopUp (acil fona tamamlanacak toplam), emergencyShareBp (acil fon dolana kadar katkının acile giden payı; yoksa %100),
+    //       blockRiskyUntilEmergency (acil fon dolana kadar riskli pay güvenli/orta kovaya), months, monthsToGoal, returnsBp{safe,medium,risky}, inflationBp
     // Acil fon reel olarak sabit kabul edilir (katılım hesabı ≈ enflasyon kadar kâr payı varsayımı).
-    var bal = { safe: opts.start.safe, medium: opts.start.medium, risky: opts.start.risky };
-    var reserve = opts.reserveStart || 0;
+    // Taşma koruması: tüm toplamlar doymalı (M.satAdd); 10 trilyon TL üstü "çok büyük" olarak işaretlenir, hesap asla hata atmaz.
+    var S = M.satAdd, F = M.satMulFloat;
+    var bal = { safe: M.clampK(opts.start.safe), medium: M.clampK(opts.start.medium), risky: M.clampK(opts.start.risky) };
+    var reserve = M.clampK(opts.reserveStart || 0);
     var r = { safe: monthlyRate(opts.returnsBp.safe), medium: monthlyRate(opts.returnsBp.medium), risky: monthlyRate(opts.returnsBp.risky) };
-    var series = [], infM = monthlyRate(opts.inflationBp), infFactor = 1;
-    var emLeft = opts.emergencyTopUp || 0;
+    var series = [], infM = monthlyRate(opts.inflationBp || 0), infFactor = 1, capped = false;
+    var emLeft = M.clampK(opts.emergencyTopUp || 0);
+    var share = opts.emergencyShareBp == null ? 10000 : Math.max(0, Math.min(10000, Math.round(opts.emergencyShareBp)));
+    var contrib = M.clampK(opts.monthlyContribution || 0);
     function push(m) {
-      var inv = M.add(bal.safe, bal.medium, bal.risky), tot = M.add(inv, reserve);
-      series.push({ m: m, invest: inv, reserve: reserve, total: tot, nominalTotal: M.mulFloat(tot, infFactor), nominalInvest: M.mulFloat(inv, infFactor) });
+      var inv = S(bal.safe, bal.medium, bal.risky), tot = S(inv, reserve);
+      var p = { m: m, invest: inv, reserve: reserve, total: tot, nominalTotal: F(tot, infFactor), nominalInvest: F(inv, infFactor) };
+      if (M.isCapped(p.nominalTotal) || M.isCapped(tot)) { p.capped = true; capped = true; }
+      series.push(p);
     }
     push(0);
     for (var m = 1; m <= opts.months; m++) {
-      ['safe', 'medium', 'risky'].forEach(function (k) { bal[k] = M.add(bal[k], M.mulFloat(bal[k], r[k])); });
-      var c = opts.monthlyContribution;
-      var em = Math.min(emLeft, c); emLeft = M.sub(emLeft, em); reserve = M.add(reserve, em); c = M.sub(c, em);
+      ['safe', 'medium', 'risky'].forEach(function (k) { bal[k] = S(bal[k], F(bal[k], r[k])); });
+      var c = contrib;
+      var em = emLeft > 0 && c > 0 ? Math.min(emLeft, share >= 10000 ? c : M.mulBp(c, share)) : 0;
+      emLeft = emLeft - em; reserve = S(reserve, em); c = c - em;
       var al = targetAllocation(opts.monthsToGoal - m, opts.glide);
-      var parts = M.allocate(c, [al.safe, al.medium, al.risky]);
-      bal.safe = M.add(bal.safe, parts[0]); bal.medium = M.add(bal.medium, parts[1]); bal.risky = M.add(bal.risky, parts[2]);
-      infFactor *= (1 + infM);
+      var w = [al.safe, al.medium, al.risky];
+      if (opts.blockRiskyUntilEmergency && emLeft > 0) { w = [al.safe, al.medium, 0]; if (w[0] + w[1] === 0) w = [1, 0, 0]; }
+      var parts = M.allocate(c, w);
+      bal.safe = S(bal.safe, parts[0]); bal.medium = S(bal.medium, parts[1]); bal.risky = S(bal.risky, parts[2]);
+      infFactor *= (1 + infM); if (!isFinite(infFactor)) infFactor = Number.MAX_VALUE;
       push(m);
     }
+    series.capped = capped;
     return series;
   }
   function firstMonthReaching(series, target) {
@@ -188,9 +210,9 @@
     var sc = state.settings.scenarios || DEFAULT_SCENARIOS;
     Object.keys(sc).forEach(function (key) {
       var series = project({ start: startBuckets, reserveStart: em.current, monthlyContribution: plan.surplus, emergencyTopUp: em.shortfall,
-        months: horizon, monthsToGoal: g.monthsLeft, returnsBp: sc[key].returnsBp, inflationBp: state.settings.inflationBp });
+        emergencyShareBp: shareBp(state), blockRiskyUntilEmergency: riskyBlocked(state, em), months: horizon, monthsToGoal: g.monthsLeft, returnsBp: sc[key].returnsBp, inflationBp: state.settings.inflationBp });
       var atGoal = series[Math.min(g.monthsLeft, series.length - 1)];
-      scenarios[key] = { label: sc[key].label, returnsBp: sc[key].returnsBp, series: series, atGoal: atGoal.invest, atGoalNominal: atGoal.nominalInvest,
+      scenarios[key] = { label: sc[key].label, returnsBp: sc[key].returnsBp, series: series, atGoal: atGoal.invest, atGoalNominal: atGoal.nominalInvest, capped: !!series.capped,
         reachMonth: firstMonthReaching(series, g.target) };
     });
     // Sapma uyarıları (rebalans)
@@ -203,10 +225,12 @@
   function actions(an) {
     var out = [];
     if (an.budget.surplus < 0) out.push({ level: 'danger', text: 'Giderlerin gelirinden ' + M.format(-an.budget.surplus, { noDecimals: true }) + ' fazla. Önce değişken giderleri azalt; bu ay yatırım yapma.' });
-    if (an.plan.toEmergency > 0) out.push({ level: 'warn', text: 'Bu ay ' + M.format(an.plan.toEmergency, { noDecimals: true }) + ' tutarını acil durum fonuna (katılım hesabı / vadesiz TL) ayır. Kalan eksik: ' + M.format(an.emergency.shortfall, { noDecimals: true }) + '.' });
-    else if (an.emergency.target > 0) out.push({ level: 'ok', text: 'Acil durum fonun tamam (' + an.emergency.months + ' aylık gider). Harika!' });
-    if (an.plan.toInvest > 0) out.push({ level: 'info', text: 'Hedefin için ' + M.format(an.plan.toInvest, { noDecimals: true }) + ' yatır: güvenli ' + M.format(an.plan.safe, { noDecimals: true }) + ', orta ' + M.format(an.plan.medium, { noDecimals: true }) + ', riskli ' + M.format(an.plan.risky, { noDecimals: true }) + '.' });
-    var big = ['safe', 'medium', 'risky'].filter(function (k) { return Math.abs(an.drift[k]) >= 1000; });
+    var em = an.emergency;
+    if (an.plan.toEmergency > 0) out.push({ level: 'warn', text: 'Bu ay ' + M.format(an.plan.toEmergency, { noDecimals: true }) + ' tutarını acil durum fonuna (katılım hesabı / vadesiz TL) ayır. Kalan eksik: ' + M.format(em.shortfall, { noDecimals: true }) + '.' });
+    else if (em.shortfall > 0) out.push({ level: 'warn', text: 'Acil durum fonunda ' + M.format(em.shortfall, { noDecimals: true }) + ' eksik var' + (an.budget.surplus <= 0 ? '. Bu ay artan para olmadığı için ayrılamıyor; önce açığı kapat.' : '. Ayarlar\'da acil fona giden payı artırabilirsin.') });
+    else if (em.target > 0) out.push({ level: 'ok', text: 'Acil durum fonun tamam (' + em.months + ' aylık gider). Harika!' });
+    if (an.plan.toInvest > 0) out.push({ level: 'info', text: 'Hedefin için ' + M.format(an.plan.toInvest, { noDecimals: true }) + ' yatır: güvenli ' + M.format(an.plan.safe, { noDecimals: true }) + ', orta ' + M.format(an.plan.medium, { noDecimals: true }) + (an.plan.riskyBlocked ? ' (acil fon dolana kadar riskliye yok).' : ', riskli ' + M.format(an.plan.risky, { noDecimals: true }) + '.') });
+    var big = (an.investTotal > 0) ? ['safe', 'medium', 'risky'].filter(function (k) { return Math.abs(an.drift[k]) >= 1000; }) : [];
     if (big.length) out.push({ level: 'info', text: 'Portföy dağılımın hedeften %10\'dan fazla sapmış (' + big.map(function (k) { return RISK[k] + (an.drift[k] > 0 ? ' fazla' : ' eksik'); }).join(', ') + '). Yeni yatırımları eksik olan tarafa yönlendirerek dengele.' });
     if (an.budget.income > 0 && an.budget.savingsRateBp < 1000 && an.budget.surplus >= 0) out.push({ level: 'warn', text: 'Tasarruf oranın %10\'un altında. Hedefe ulaşmak zorlaşabilir.' });
     return out;
@@ -215,5 +239,5 @@
   return { RISK: RISK, ASSET_CLASSES: ASSET_CLASSES, GLIDE: GLIDE, DEFAULT_SCENARIOS: DEFAULT_SCENARIOS,
     budget: budget, assets: assets, emergency: emergency, targetAllocation: targetAllocation, monthlyPlan: monthlyPlan,
     goalStatus: goalStatus, project: project, monthlyRate: monthlyRate, firstMonthReaching: firstMonthReaching, monthActuals: monthActuals,
-    analyze: analyze, actions: actions, monthIndex: monthIndex, ymFromIndex: ymFromIndex, monthsBetween: monthsBetween, currentYm: currentYm };
+    analyze: analyze, actions: actions, riskyBlocked: riskyBlocked, emergencyShareBp: shareBp, monthIndex: monthIndex, ymFromIndex: ymFromIndex, monthsBetween: monthsBetween, currentYm: currentYm };
 });

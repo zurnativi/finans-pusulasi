@@ -6,7 +6,7 @@
   'use strict';
   var SCHEMA_VERSION = 4;
   /* Resmi örnek veri sürümü: eski ÖRNEK kayıtlar (isExample) bu sayıdan küçükse yenilenir; gerçek kullanıcı verisine dokunulmaz. */
-  var EXAMPLE_REVISION = 3;
+  var EXAMPLE_REVISION = 4;
   /* v1 → v2: hesaplar, transferler, kurlar, kategori sınırları, düzenli ödemeler, taksitler, yıllık giderler eklendi. */
   var V2_DEFAULTS = { accounts: [], transfers: [], rates: {}, limits: {}, recurring: [], installments: [], sinkingFunds: [] };
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -28,6 +28,16 @@
     return s;
   }
 
+  /* Gerçek (örnek olmayan) kayıt var mı? Örnek veri yüklemeden önce mutlaka sorulur. Bir tek hesap, alım-satım, işlem vb. yeterlidir. */
+  var REAL_LISTS = ['incomes', 'expenses', 'assets', 'debts', 'transactions', 'accounts', 'recurring', 'installments', 'transfers', 'trades', 'sinkingFunds'];
+  function realRecordCount(s) {
+    if (!s || s.isExample) return 0;
+    var n = 0;
+    REAL_LISTS.forEach(function (k) { if (Array.isArray(s[k])) n += s[k].filter(function (x) { return !(x && x.source === 'örnek'); }).length; });
+    if (s.goals && s.goals.some(function (g) { return g && g.target > 0; })) n++;
+    if (s.goal && s.goal.target > 0) n++;
+    return n;
+  }
   /* ÖRNEK veri: her özelliği gösterir. today: "YYYY-AA-GG" (verilmezse bugün). Bu ayın işlemleri bugünden ileri tarihli olmaz. */
   function exampleState(nowYm, today) {
     today = today || (nowYm ? nowYm + '-' + String(Math.min(28, new Date().getDate())).padStart(2, '0') : todayYmd());
@@ -263,6 +273,8 @@
     series('fx:USD', 'TRY', '32,00', '42,50', 24);
     series('fx:EUR', 'TRY', '35,00', '49,00', 24);
     series('idx:XU100', 'PT', '9000', '11500', 24);
+    series('idx:KATLM', 'PT', '2800', '3900', 24);
+    series('idx:XKTUM', 'PT', '10500', '14900', 24);
     /* TÜFE (aylık % değişim, örnek seri) — son 24 ay, bu ay henüz açıklanmamış gibi */
     s.cpi = [];
     for (var i = 24; i >= 1; i--) s.cpi.push({ ym: addMonths(nowYm, -i), bp: 150 + ((i * 37) % 120) });
@@ -510,6 +522,6 @@
     PF.sync(s);
     return s;
   }
-  return { SCHEMA_VERSION: SCHEMA_VERSION, EXAMPLE_REVISION: EXAMPLE_REVISION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
+  return { realRecordCount: realRecordCount, SCHEMA_VERSION: SCHEMA_VERSION, EXAMPLE_REVISION: EXAMPLE_REVISION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
     defaultSettings: defaultSettings, addMonths: addMonths, todayYmd: todayYmd, shouldRefreshExample: shouldRefreshExample };
 });

@@ -1,0 +1,12 @@
+ÖRNEK BANK KREDİ KARTI EKSTRESİ (ÖRNEK VERİ)
+
+İşlem Tarihi   Açıklama                        Tutar (TL)
+
+02.11.2026     YEMEKSEPETI ISTANBUL                   349,90
+04.11.2026     LC WAIKIKI                           1.199,00
+09.11.2026     ECZANE SAGLIK                          245,50
+10.11.2026     ODEME - TESEKKUR EDERIZ             -2.000,00
+11.11.2026     SPOTIFY                                 59,99
+
+               Dönem Borcu                          1.854,39
+

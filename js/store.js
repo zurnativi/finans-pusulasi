@@ -37,6 +37,32 @@
     if (!k) return Promise.reject(lockedError());
     return root.CryptoBox.open(k, JSON.parse(txt)).then(function (j) { return JSON.parse(j); });
   }
+  /* Cihaz anahtarı: kilit KAPALIYKEN bile gizli kayıtlar (API anahtarları, eşitleme parolası/jetonu) açık metin yazılmaz.
+   * WebCrypto ile üretilen, DIŞA AKTARILAMAZ (extractable:false) AES-GCM anahtarı IndexedDB'de durur. Sınır: bu tarayıcı profiline
+   * tam erişimi olan biri (aynı profilde çalışan kod) yine çözebilir; asıl koruma uygulama kilidi (PIN) açıkken sağlanır. */
+  var devKeyP = null;
+  function deviceKey() {
+    if (devKeyP) return devKeyP;
+    devKeyP = idbGet('devkey').catch(function () { return null; }).then(function (k) {
+      if (k && typeof k === 'object' && k.algorithm && k.type === 'secret') return k;
+      var c = root.crypto && root.crypto.subtle; if (!c) return null;
+      return c.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']).then(function (nk) { return idbSet('devkey', nk).then(function () { return nk; }); });
+    }).catch(function () { devKeyP = null; return null; });
+    return devKeyP;
+  }
+  function isDk(txt) { return isEncText(txt) && txt.indexOf('"dk":1') > 0; }
+  function encodeSecret(obj) {
+    if (dek) return encode(obj);
+    return deviceKey().then(function (k) {
+      if (!k) return JSON.stringify(obj);
+      return root.CryptoBox.seal(k, JSON.stringify(obj), { noZip: true }).then(function (b) { return JSON.stringify({ fpEnc: 1, dk: 1, iv: b.iv, ct: b.ct, z: b.z || 0 }); });
+    });
+  }
+  function decodeSecret(txt, key) {
+    if (isDk(txt)) return deviceKey().then(function (k) { if (!k) throw new Error('Cihaz anahtarı yok'); return root.CryptoBox.open(k, JSON.parse(txt)).then(function (j) { return JSON.parse(j); }); });
+    return decode(txt, key);
+  }
+  var apiKeys = { ai: {}, twelve: '' }, PRICES_KEY = 'finans-pusulasi:prices';
   function rawState() {
     return idbGet(KEY).catch(function () { return null; }).then(function (v) {
       if (v) return v;
@@ -65,8 +91,8 @@
       return idbSet(KEY, '').catch(function () { });
     },
     /* Gizli küçük kayıtlar (eşitleme ayarı, çakışmalar): kilit açıksa şifreli; yedeğe girmez */
-    getSecret: function (name) { return idbGet('sec:' + name).catch(function () { return null; }).then(function (v) { return decode(v); }).catch(function (e) { if (e.code === 'LOCKED') throw e; return null; }); },
-    setSecret: function (name, obj) { if (obj == null) return idbDel('sec:' + name).catch(function () { }); return encode(obj).then(function (t) { return idbSet('sec:' + name, t); }); },
+    getSecret: function (name) { return idbGet('sec:' + name).catch(function () { return null; }).then(function (v) { return decodeSecret(v); }).catch(function (e) { if (e.code === 'LOCKED') throw e; return null; }); },
+    setSecret: function (name, obj) { if (obj == null) return idbDel('sec:' + name).catch(function () { }); return encodeSecret(obj).then(function (t) { return idbSet('sec:' + name, t); }); },
     /* ---------- Anlık görüntüler ---------- */
     snapKeep: snapKeep,
     setSnapKeep: function (n) { try { localStorage.setItem(SNAP_KEEP_KEY, String(n)); } catch (e) { /* */ } return Store.pruneSnapshots(); },
@@ -95,13 +121,13 @@
           return Promise.all((snaps || []).map(function (r) { return decode(r.data, oldKey).then(function (d) { return { r: r, d: d }; }, function () { return { r: r, d: undefined }; }); })).then(function (dec) {
             return tx(STORE, 'readonly', function (s) { return s.getAllKeys(); }).catch(function () { return []; }).then(function (keys) {
               var secKeys = (keys || []).filter(function (k) { return String(k).indexOf('sec:') === 0; });
-              return Promise.all(secKeys.map(function (k) { return idbGet(k).then(function (t) { return decode(t, oldKey); }).then(function (d) { return { k: k, d: d }; }, function () { return { k: k, d: undefined }; }); }));
+              return Promise.all(secKeys.map(function (k) { return idbGet(k).then(function (t) { return decodeSecret(t, oldKey); }).then(function (d) { return { k: k, d: d }; }, function () { return { k: k, d: undefined }; }); }));
             }).then(function (secs) {
               dek = newKey || null;
               var jobs = [];
               if (state) jobs.push(Store.save(state));
               dec.forEach(function (x) { if (x.d === undefined) return; jobs.push(encode(x.d).then(function (t) { x.r.data = t; x.r.enc = isEncText(t); x.r.size = t.length; return tx(SNAPS, 'readwrite', function (s) { s.put(x.r); }); })); });
-              secs.forEach(function (x) { if (x.d === undefined || x.d === null) return; jobs.push(encode(x.d).then(function (t) { return idbSet(x.k, t); })); });
+              secs.forEach(function (x) { if (x.d === undefined || x.d === null) return; jobs.push(encodeSecret(x.d).then(function (t) { return idbSet(x.k, t); })); });
               // Eski sürümlerin localStorage'da bıraktığı açık metin kopyalar: anlık görüntüye taşınır (kilit açıksa şifreli), sonra silinir
               if (newKey) { try { Object.keys(localStorage).forEach(function (k) { if (/^finans-pusulasi:(v\d+-oncesi-yedek|okunamayan-kayit-\d+)$/.test(k)) { var o = null; try { o = JSON.parse(localStorage.getItem(k)); } catch (e) { /* */ } if (o) jobs.push(Store.addSnapshot(o, 'Eski kopya (' + k.slice(16) + ')')); localStorage.removeItem(k); } }); } catch (e) { /* */ } }
               return Promise.all(jobs);
@@ -116,9 +142,50 @@
       dek = null;
       return openDb().then(function (db) { return new Promise(function (res) { var t = db.transaction([STORE, SNAPS], 'readwrite'); t.objectStore(STORE).clear(); t.objectStore(SNAPS).clear(); t.oncomplete = res; t.onerror = res; }); }).catch(function () { });
     },
-    loadAi: function () { try { return JSON.parse(localStorage.getItem(AI_KEY) || 'null') || {}; } catch (e) { return {}; } },
-    saveAi: function (cfg) { localStorage.setItem(AI_KEY, JSON.stringify(cfg)); },
-    clearAi: function () { localStorage.removeItem(AI_KEY); },
+    /* Yapay zekâ ayarları: sağlayıcı/model gibi gizli olmayanlar localStorage'da; API ANAHTARLARI gizli kayıtta ('api-keys'):
+     * kilit açıksa PIN anahtarıyla, değilse cihaz anahtarıyla şifreli. Eski sürümlerin localStorage'a yazdığı anahtarlar loadApiKeys'te taşınır. */
+    loadAi: function () { var c; try { c = JSON.parse(localStorage.getItem(AI_KEY) || 'null') || {}; } catch (e) { c = {}; } if (!c.keys) c.keys = apiKeys.ai; return c; },
+    saveAi: function (cfg) {
+      var plain = {}; Object.keys(cfg || {}).forEach(function (k) { if (k !== 'keys') plain[k] = cfg[k]; });
+      localStorage.setItem(AI_KEY, JSON.stringify(plain));
+      if (cfg && cfg.keys && cfg.keys !== apiKeys.ai) { apiKeys.ai = cfg.keys; }
+      return Store.setSecret('api-keys', apiKeys).catch(function (e) { console.error(e); });
+    },
+    clearAi: function () { localStorage.removeItem(AI_KEY); apiKeys.ai = {}; return Store.setSecret('api-keys', apiKeys); },
+    apiKeys: function () { return apiKeys; },
+    saveApiKeys: function () { return Store.setSecret('api-keys', apiKeys); },
+    /* Açılışta (kilit açıldıktan sonra): gizli anahtarları yükle; eski açık metin anahtarları önce şifreli kayda yaz, SONRA localStorage'dan sil. */
+    loadApiKeys: function () {
+      return Store.getSecret('api-keys').catch(function () { return null; }).then(function (v) {
+        apiKeys = v && typeof v === 'object' ? v : { ai: {}, twelve: '' }; if (!apiKeys.ai || typeof apiKeys.ai !== 'object') apiKeys.ai = {};
+        var ai = null, pc = null, moved = false;
+        try { ai = JSON.parse(localStorage.getItem(AI_KEY) || 'null'); } catch (e) { ai = null; }
+        try { pc = JSON.parse(localStorage.getItem(PRICES_KEY) || 'null'); } catch (e) { pc = null; }
+        if (ai && ai.keys && typeof ai.keys === 'object' && Object.keys(ai.keys).length) { Object.keys(ai.keys).forEach(function (k) { if (ai.keys[k] && !apiKeys.ai[k]) apiKeys.ai[k] = ai.keys[k]; }); moved = true; }
+        if (pc && pc.twelveKey) { if (!apiKeys.twelve) apiKeys.twelve = pc.twelveKey; moved = true; }
+        if (!moved) return apiKeys;
+        return Store.setSecret('api-keys', apiKeys).then(function () {
+          try { if (ai && ai.keys) { delete ai.keys; localStorage.setItem(AI_KEY, JSON.stringify(ai)); } if (pc && pc.twelveKey) { delete pc.twelveKey; localStorage.setItem(PRICES_KEY, JSON.stringify(pc)); } } catch (e) { /* */ }
+          return apiKeys;
+        });
+      });
+    },
+    /* Kilit kapalıyken eski sürümlerin açık metin yazdığı gizli kayıtları (eşitleme jetonu/parolası) cihaz anahtarıyla şifrele */
+    migrateSecrets: function () {
+      return tx(STORE, 'readonly', function (s) { return s.getAllKeys(); }).catch(function () { return []; }).then(function (keys) {
+        var sec = (keys || []).filter(function (k) { return String(k).indexOf('sec:') === 0; });
+        return Promise.all(sec.map(function (k) { return idbGet(k).then(function (t) { if (!t || isEncText(t)) return; var o; try { o = JSON.parse(t); } catch (e) { return; } return encodeSecret(o).then(function (nt) { return idbSet(k, nt); }); }).catch(function () { }); }));
+      });
+    },
+    /* PIN deneme sayacı: localStorage + IndexedDB'de (ikisinden büyük olan geçerli). Yalnızca localStorage'ı silmek sayacı sıfırlamaz. */
+    getFails: function () {
+      var ls = null; try { ls = JSON.parse(localStorage.getItem('finans-pusulasi:lock-fails') || 'null'); } catch (e) { ls = null; }
+      return idbGet('lockfails').catch(function () { return null; }).then(function (db) {
+        var a = ls && typeof ls.n === 'number' ? ls : { n: 0, until: 0 }, b = db && typeof db.n === 'number' ? db : { n: 0, until: 0 };
+        return { n: Math.max(a.n, b.n), until: Math.max(a.until || 0, b.until || 0) };
+      });
+    },
+    setFails: function (f) { try { localStorage.setItem('finans-pusulasi:lock-fails', JSON.stringify(f)); } catch (e) { /* */ } return idbSet('lockfails', f).catch(function () { }); },
     /* Kalıcı depolama: tarayıcı yer açmak için verini silmesin */
     persistStatus: function () { var n = root.navigator && navigator.storage; if (!n || !n.persisted) return Promise.resolve(null); return n.persisted().catch(function () { return null; }); },
     requestPersist: function () { var n = root.navigator && navigator.storage; if (!n || !n.persist) return Promise.resolve(null); return n.persisted().then(function (p) { return p || n.persist(); }).catch(function () { return null; }); },

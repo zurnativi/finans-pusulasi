@@ -130,7 +130,8 @@
     var tf = keys.filter(function (k) { return /^tefas:/.test(k); }), tfRes = {};
     tf.forEach(function (k) { jobs.push(fetchJson(URLS.tefas(k.slice(6))).then(function (j) { tfRes[k] = parseTefasApi(j, k.slice(6)); note('tefasapi', true); }, function (e) { tfRes[k] = { error: e.message }; note('tefasapi', false, e.message); })); });
     var bi = keys.filter(function (k) { return /^bist:/.test(k); }).map(function (k) { return k.slice(5); }), biRes = {};
-    if (bi.length) jobs.push(fetchJson(URLS.tvScan, 12000, tvBody(bi)).then(function (j) { biRes = parseTradingView(j, bi); note('tradingview', true); }, function (e) { note('tradingview', false, e.message); }));
+    var tvCodes = bi.concat(need['idx:XKTUM'] ? ['XKTUM'] : []);
+    if (tvCodes.length) jobs.push(fetchJson(URLS.tvScan, 12000, tvBody(tvCodes)).then(function (j) { biRes = parseTradingView(j, tvCodes); note('tradingview', true); }, function (e) { note('tradingview', false, e.message); }));
     return Promise.all(jobs).then(function () {
       var binJobs = [];
       cg.forEach(function (id) { if (!cgRes[id] && BINANCE[id]) binJobs.push(fetchJson(URLS.binance(BINANCE[id])).then(function (j) { var b = parseBinance(j); cgRes[id] = { p: b.p, at: new Date().toISOString(), date: isoToYmdIstanbul(new Date().toISOString()), viaBinance: true }; note('binance', true); }, function (e) { note('binance', false, e.message); })); });
@@ -157,6 +158,7 @@
         else res.errors.push('Gram gümüş fiyatı alınamadı');
       }
       if (need['idx:XU100']) { if (tg && tg.XU100) add('idx:XU100', 'PT', tg.XU100, tg.date, tg.at, SOURCES.truncgil.label + ' — BIST 100'); else res.errors.push('BIST 100 değeri alınamadı'); }
+      if (need['idx:XKTUM']) { var rk = biRes.XKTUM; if (rk && rk.p) add('idx:XKTUM', 'PT', rk.p, rk.date || isoToYmdIstanbul(now), rk.at, SOURCES.tradingview.label + ' — Katılım Tüm endeksi'); else res.errors.push('Katılım Tüm endeksi alınamadı'); }
       cg.forEach(function (id) { var r = cgRes[id]; if (r && r.p) add('cg:' + id, 'TRY', r.p, r.date, r.at, r.viaBinance ? SOURCES.binance.label : SOURCES.coingecko.label); else res.errors.push(id + ' fiyatı alınamadı'); });
       td.forEach(function (k) {
         if (!cfg.twelveKey) { res.errors.push(k.slice(3) + ': Twelve Data anahtarı girilmedi (ücretsiz alınır); fiyatı elle gir'); return; }
