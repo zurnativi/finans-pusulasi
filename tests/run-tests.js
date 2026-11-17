@@ -721,8 +721,15 @@
         return require('./run-tests-v7.js').run().then(function (r7) {
           var p7 = r7.filter(function (r) { return r.ok; }).length;
           r7.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
-          console.log('\n' + p7 + '/' + r7.length + ' v7 testi geçti · toplam ' + (passed + p5 + p6 + p7) + '/' + (results.length + r5.length + r6.length + r7.length));
+          console.log('\n' + p7 + '/' + r7.length + ' v7 testi geçti');
           if (p7 !== r7.length) process.exit(1);
+          console.log('\n— v7.1 (etiket yerleşimi, gün içi mumlar, KAP/haber önbelleği, Katılım endeksi, seviye uyarıları) —');
+          return require('./run-tests-v71.js').run().then(function (r71) {
+            var p71 = r71.filter(function (r) { return r.ok; }).length;
+            r71.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+            console.log('\n' + p71 + '/' + r71.length + ' v7.1 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length));
+            if (p71 !== r71.length) process.exit(1);
+          });
         });
       });
     });

@@ -15,7 +15,7 @@
     // Gelecek tarihler (Ichimoku bulutu) için boşluk: ECharts'ta '-' (null, mum/çubuk öğesinde hata verir)
     var pad = function (arr) { return arr.concat(fut.map(function () { return '-'; })); };
     var span = Math.min(n, RANGES[view.range] || 252), startPct = Math.max(0, (n - span) / N * 100);
-    var series = [], legend = [];
+    var series = [], legend = [], rail = []; // rail: sağ kenar seviye etiketleri (çakışmasız yerleşim, LabelLayout)
     // Ana fiyat serisi
     var main = closeOnly ? { name: 'Fiyat', type: 'line', data: pad(col.c), showSymbol: false, lineStyle: { width: 2, color: t.brand }, itemStyle: { color: t.brand }, z: 5 }
       : { name: 'Fiyat', type: 'candlestick', data: pad(col.c.map(function (c, i) { return [col.o[i], c, col.l[i], col.h[i]]; })), itemStyle: { color: up, color0: dn, borderColor: up, borderColor0: dn }, barMaxWidth: 12, z: 5 };
@@ -48,11 +48,13 @@
       var near = inside.concat(below, above);
       near.forEach(function (z) {
         var sup = z.hi < A.price || (z.role === 'inside' && z.mid < A.price), c = sup ? up : z.role === 'inside' ? t.medium : dn;
-        main.markArea.data.push([{ yAxis: z.lo, itemStyle: { color: hexA(c, z.touches >= 3 || z.extreme ? 0.16 : 0.08), borderColor: hexA(c, 0.35), borderWidth: 0.5 }, label: { show: !small, position: 'insideRight', color: c, fontSize: 10, formatter: (sup ? 'D ' : z.role === 'inside' ? '' : 'R ') + z.touches + '×' } }, { yAxis: z.hi }]);
+        main.markArea.data.push([{ yAxis: z.lo, itemStyle: { color: hexA(c, z.touches >= 3 || z.extreme ? 0.16 : 0.08), borderColor: hexA(c, 0.35), borderWidth: 0.5 }, label: { show: false } }, { yAxis: z.hi }]);
+        rail.push({ p: z.mid, c: c, pr: 20 + Math.min(z.touches, 9) + (z.extreme ? 5 : 0), t: (sup ? 'Destek ' : z.role === 'inside' ? 'Bölge ' : 'Direnç ') + z.touches + '×', ts: (sup ? 'D ' : z.role === 'inside' ? '' : 'R ') + z.touches + '×' });
       });
       ['support', 'resistance'].forEach(function (k) {
         var L = A.trendlines[k]; if (!L) return; var c = k === 'support' ? up : dn;
-        main.markLine.data.push([{ coord: [col.d[L.a.i], L.a.p], lineStyle: { color: c, width: 2, type: 'solid' }, label: { show: !small, formatter: (k === 'support' ? 'Trend desteği ' : 'Trend direnci ') + L.touches + '×', color: c, fontSize: 10, position: 'insideEndBottom' } }, { coord: [col.d[n - 1], L.value] }]);
+        main.markLine.data.push([{ coord: [col.d[L.a.i], L.a.p], lineStyle: { color: c, width: 2, type: 'solid' }, label: { show: false } }, { coord: [col.d[n - 1], L.value] }]);
+        rail.push({ p: L.value, c: c, pr: 60, t: (k === 'support' ? 'Trend desteği ' : 'Trend direnci ') + L.touches + '× ' + fmt(L.value), ts: (k === 'support' ? 'TD ' : 'TR ') + fmt(L.value) });
       });
       var ch = A.trendlines.channelFromSupport; if (ch && ch.valid && A.trendlines.support) { var L2 = A.trendlines.support; main.markLine.data.push([{ coord: [col.d[L2.a.i], L2.a.p + ch.offset], lineStyle: { color: up, width: 1, type: 'dashed' }, label: { show: false } }, { coord: [col.d[n - 1], L2.value + ch.offset] }]); }
       var zd = col.c.map(function () { return null; }); A.swings.forEach(function (s) { zd[s.i] = s.p; });
@@ -61,9 +63,10 @@
     }
     if (ov.fib && A.fib) {
       var F = A.fib; [{ r: 0, p: F.to.p }].concat(F.retr).concat([{ r: 1, p: F.from.p }]).forEach(function (x) {
-        main.markLine.data.push([{ coord: [col.d[Math.min(F.from.i, F.to.i)], x.p], lineStyle: { color: t.pal[2], width: 1, type: [4, 3], opacity: 0.8 }, label: { show: !small, position: 'end', formatter: 'Fib ' + (x.r * 100).toFixed(1).replace('.0', '').replace('.', ',') + '%', color: t.pal[2], fontSize: 10 } }, { coord: [col.d[n - 1], x.p] }]);
+        main.markLine.data.push([{ coord: [col.d[Math.min(F.from.i, F.to.i)], x.p], lineStyle: { color: t.pal[2], width: 1, type: [4, 3], opacity: 0.8 }, label: { show: false } }, { coord: [col.d[n - 1], x.p] }]);
+        rail.push({ p: x.p, c: t.pal[2], pr: 30, t: 'Fib %' + (x.r * 100).toFixed(1).replace('.0', '').replace('.', ','), ts: 'F ' + (x.r * 100).toFixed(1).replace('.0', '').replace('.', ',') });
       });
-      if (F.up) F.ext.slice(0, 2).forEach(function (x) { main.markLine.data.push([{ coord: [col.d[F.to.i], x.p], lineStyle: { color: t.pal[2], width: 1, type: 'dotted' }, label: { show: !small, position: 'end', formatter: 'Fib uzantı ' + String(x.r).replace('.', ','), color: t.pal[2], fontSize: 10 } }, { coord: [col.d[n - 1], x.p] }]); });
+      if (F.up) F.ext.slice(0, 2).forEach(function (x) { main.markLine.data.push([{ coord: [col.d[F.to.i], x.p], lineStyle: { color: t.pal[2], width: 1, type: 'dotted' }, label: { show: false } }, { coord: [col.d[n - 1], x.p] }]); rail.push({ p: x.p, c: t.pal[2], pr: 28, t: 'Fib uzantı ' + String(x.r).replace('.', ','), ts: 'FU ' + String(x.r).replace('.', ',') }); });
     }
     if (ov.patterns) {
       A.patterns.forEach(function (p) {
@@ -76,9 +79,11 @@
     }
     if (ov.plan && view.plan) {
       var P = view.plan, from = col.d[Math.max(0, n - Math.min(span, 60))];
-      main.markArea.data.push([{ name: 'Giriş', xAxis: from, yAxis: P.entryLo, itemStyle: { color: hexA(t.brand, 0.18), borderColor: t.brand, borderWidth: 1 }, label: { show: true, position: 'insideTopLeft', color: t.brand, fontSize: 11, formatter: 'Giriş ' + fmt(P.entryLo) + (P.entryHi !== P.entryLo ? '–' + fmt(P.entryHi) : '') } }, { xAxis: dates[N - 1], yAxis: P.entryHi === P.entryLo ? P.entryHi + A.atr * 0.08 : P.entryHi }]);
-      main.markLine.data.push([{ coord: [from, P.stop], lineStyle: { color: dn, width: 2, type: 'solid' }, label: { show: true, position: 'insideStartBottom', formatter: 'Stop ' + fmt(P.stop), color: dn, fontSize: 11 } }, { coord: [dates[N - 1], P.stop] }]);
-      P.targets.forEach(function (x, k) { main.markLine.data.push([{ coord: [from, x.p], lineStyle: { color: up, width: x.minor ? 1 : 2, type: x.minor ? 'dashed' : 'solid' }, label: { show: true, position: 'insideStartTop', formatter: 'Hedef ' + (k + 1) + ' ' + fmt(x.p) + (num(x.rr) ? ' (R/Ö ' + x.rr.toFixed(1).replace('.', ',') + ')' : ''), color: up, fontSize: 11 } }, { coord: [dates[N - 1], x.p] }]); });
+      main.markArea.data.push([{ name: 'Giriş', xAxis: from, yAxis: P.entryLo, itemStyle: { color: hexA(t.brand, 0.18), borderColor: t.brand, borderWidth: 1 }, label: { show: false } }, { xAxis: dates[N - 1], yAxis: P.entryHi === P.entryLo ? P.entryHi + A.atr * 0.08 : P.entryHi }]);
+      rail.push({ p: (P.entryLo + P.entryHi) / 2, c: t.brand, pr: 95, strong: true, t: 'Giriş ' + fmt(P.entryLo) + (P.entryHi !== P.entryLo ? '–' + fmt(P.entryHi) : ''), ts: 'Giriş ' + fmt(P.entryLo) });
+      main.markLine.data.push([{ coord: [from, P.stop], lineStyle: { color: dn, width: 2, type: 'solid' }, label: { show: false } }, { coord: [dates[N - 1], P.stop] }]);
+      rail.push({ p: P.stop, c: dn, pr: 100, strong: true, t: 'Stop ' + fmt(P.stop), ts: 'Stop ' + fmt(P.stop) });
+      P.targets.forEach(function (x, k) { main.markLine.data.push([{ coord: [from, x.p], lineStyle: { color: up, width: x.minor ? 1 : 2, type: x.minor ? 'dashed' : 'solid' }, label: { show: false } }, { coord: [dates[N - 1], x.p] }]); rail.push({ p: x.p, c: up, pr: 90 - k, strong: !x.minor, t: 'Hedef ' + (k + 1) + ' ' + fmt(x.p) + (num(x.rr) ? ' (R/Ö ' + x.rr.toFixed(1).replace('.', ',') + ')' : ''), ts: 'H' + (k + 1) + ' ' + fmt(x.p) }); });
     }
     // Son fiyat etiketi
     main.markLine.data.push({ yAxis: A.price, lineStyle: { color: t.ink, width: 1, type: 'dotted', opacity: 0.6 }, label: { show: true, position: 'end', formatter: fmt(A.price), color: t.card, backgroundColor: t.ink, padding: [2, 4], borderRadius: 3, fontSize: 11 } });
@@ -92,6 +97,24 @@
       lowSeries.push({ name: 'RSI', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: pad(I.rsi), showSymbol: false, lineStyle: { width: 1.5, color: t.pal[4] },
         markArea: { silent: true, itemStyle: { color: hexA(t.pal[4], 0.06) }, data: [[{ yAxis: 30 }, { yAxis: 70 }]] },
         markLine: { silent: true, symbol: 'none', label: { show: false }, data: [{ yAxis: 70, lineStyle: { color: dn, type: 'dashed' } }, { yAxis: 30, lineStyle: { color: up, type: 'dashed' } }].concat(dv.map(function (d) { var c = d.type === 'bull' ? up : dn; return [{ coord: [col.d[d.a.i], d.oa], lineStyle: { color: c, width: 2 } }, { coord: [col.d[d.b.i], d.ob] }]; })) } }); }
+    // Sağ kenar etiket rayı: tüm seviye etiketleri tek yerde, çakışmasız (LabelLayout). Yakınlaştırma/kaydırmada yeniden yerleşir.
+    var railItems = rail.filter(function (r) { return num(r.p); }), LL = window.LabelLayout, mctx = null, axisW = small ? 46 : 64;
+    if (small) railItems = railItems.filter(function (r) { return r.pr >= 60; }); // dar ekranda yalnız plan + trend çizgileri
+    function textW(s, fs, bold) { try { mctx = mctx || document.createElement('canvas').getContext('2d'); mctx.font = (bold ? '600 ' : '') + fs + 'px system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; return mctx.measureText(s).width; } catch (e) { return s.length * fs * 0.58; } }
+    var railW = railItems.length && LL ? Math.min(small ? 92 : 200, Math.ceil(Math.max.apply(null, railItems.map(function (r) { return textW(small ? r.ts : r.t, small ? 10 : 11, r.strong); })) + 22)) : 0;
+    if (railW) series.push({ name: '__rail', type: 'custom', xAxisIndex: 2, yAxisIndex: 0, data: [[0.5, A.price]], silent: true, clip: false, z: 20, tooltip: { show: false }, animation: false,
+      renderItem: function (params, api) {
+        var cs = params.coordSys, fs = small ? 10 : 11, gap = fs + 6, edge = cs.x + cs.width, x0 = edge + axisW;
+        var items = railItems.map(function (r) { return { y: api.coord([0.5, r.p])[1], pr: r.pr, r: r }; });
+        var res = LL.layout(items, cs.y + gap / 2, cs.y + cs.height - gap / 2, gap), kids = [];
+        res.placed.forEach(function (it) {
+          var r = it.r, txt = small ? r.ts : r.t, w = Math.min(railW - 6, textW(txt, fs, r.strong) + 10), yy = it.yy;
+          kids.push({ type: 'polyline', shape: { points: [[edge, it.y], [edge + 5, it.y], [x0 - 3, yy], [x0, yy]] }, style: { stroke: r.c, lineWidth: 1, opacity: 0.7, fill: null } });
+          kids.push({ type: 'rect', shape: { x: x0, y: yy - gap / 2 + 1, width: w, height: gap - 2, r: 3 }, style: { fill: r.strong ? r.c : hexA(t.card, 0.9), stroke: r.c, lineWidth: 1 } });
+          kids.push({ type: 'text', style: { x: x0 + 5, y: yy, text: txt, fill: r.strong ? '#fff' : r.c, font: (r.strong ? '600 ' : '') + fs + 'px system-ui, -apple-system, Segoe UI, Roboto, sans-serif', textVerticalAlign: 'middle', verticalAlign: 'middle' } });
+        });
+        return { type: 'group', children: kids };
+      } });
     var h1 = small ? '62%' : '66%';
     var o = {
       animation: !C.reduced(), animationDuration: 600, color: t.pal,
@@ -101,10 +124,11 @@
         if (i < n) { if (!closeOnly) s += '<br>A ' + fmt(col.o[i]) + ' · Y ' + fmt(col.h[i]) + ' · D ' + fmt(col.l[i]) + ' · K <b>' + fmt(col.c[i]) + '</b>'; else s += '<br>Kapanış <b>' + fmt(col.c[i]) + '</b>'; if (num(col.v[i])) s += '<br>Hacim ' + Math.round(col.v[i]).toLocaleString('tr-TR'); if (A.col.bars[i] && A.col.bars[i].live) s += '<br><i>canlı / gecikmeli fiyat</i>'; }
         ps.forEach(function (p) { if (p.seriesType === 'candlestick' || p.seriesName === 'Fiyat' || p.seriesName === 'Hacim' || /Bulut/.test(p.seriesName) || p.value == null || (typeof p.value === 'object')) return; var v = Array.isArray(p.value) ? p.value[1] : p.value; if (num(v)) s += '<br>' + p.marker + p.seriesName + ': ' + fmt(v); });
         return s; } }),
-      axisPointer: { link: [{ xAxisIndex: 'all' }] },
-      grid: [{ left: 8, right: small ? 50 : 70, top: legend.length && !small ? 28 : 10, height: h1, containLabel: false }, { left: 8, right: small ? 50 : 70, top: small ? '74%' : '77%', height: small ? '16%' : '15%' }],
+      axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
+      grid: [{ left: 8, right: (small ? 50 : 70) + railW, top: legend.length && !small ? 28 : 10, height: h1, containLabel: false }, { left: 8, right: (small ? 50 : 70) + railW, top: small ? '74%' : '77%', height: small ? '16%' : '15%' }],
       xAxis: [{ type: 'category', data: dates, boundaryGap: true, axisLine: { lineStyle: { color: t.line } }, axisLabel: { show: false }, axisTick: { show: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax' },
-        { type: 'category', gridIndex: 1, data: dates, boundaryGap: true, axisLine: { lineStyle: { color: t.line } }, axisLabel: { color: t.muted, hideOverlap: true, formatter: function (v) { var p = String(v).split('-'); return p[2] + '.' + p[1] + '.' + p[0].slice(2); } }, axisTick: { show: false } }],
+        { type: 'category', gridIndex: 1, data: dates, boundaryGap: true, axisLine: { lineStyle: { color: t.line } }, axisLabel: { color: t.muted, hideOverlap: true, formatter: function (v) { var p = String(v).split('-'); return p[2] + '.' + p[1] + '.' + p[0].slice(2); } }, axisTick: { show: false } },
+        { type: 'value', gridIndex: 0, show: false, min: 0, max: 1, axisPointer: { show: false } }],
       yAxis: [{ scale: true, position: 'right', axisLabel: { color: t.muted, formatter: function (v) { return fmt(v); } }, splitLine: { lineStyle: { color: t.line, opacity: 0.6 } } },
         { scale: true, gridIndex: 1, position: 'right', splitNumber: 2, name: lowName, nameLocation: 'end', nameGap: 4, nameTextStyle: { color: t.muted, fontSize: 10, align: 'right' }, axisLabel: { color: t.muted, fontSize: 10, formatter: function (v) { return Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(0) + 'M' : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(0) + 'B' : String(Math.round(v * 100) / 100).replace('.', ','); } }, splitLine: { show: false },
           min: lower === 'rsi' || lower === 'stoch' ? 0 : undefined, max: lower === 'rsi' || lower === 'stoch' ? 100 : undefined }],
