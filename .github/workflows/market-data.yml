@@ -1,0 +1,35 @@
+# Günlük piyasa verisi (BIST, endeks, altın/gümüş, döviz, helal ETF) — tarayıcıdan CORS ile alınamayan geçmiş mumlar.
+# Çıktı `market-data` dalına (tek commit, geçmiş tutulmaz) yazılır; site raw.githubusercontent.com'dan okur.
+# Not: GitHub, 60 gün hareketsiz depolarda zamanlanmış iş akışlarını durdurabilir; Actions sekmesinden yeniden açılır.
+name: market-data
+on:
+  schedule:
+    - cron: '40 15 * * 1-5'   # 18:40 TSİ — BIST kapanışından sonra
+    - cron: '30 7 * * 1-5'    # 10:30 TSİ — sabah tazeleme (ABD/emtia kapanışları)
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency: { group: market-data, cancel-in-progress: false }
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - name: Önceki veriyi al (alınamayan semboller için)
+        run: |
+          git fetch --depth=1 origin market-data:prev-data 2>/dev/null && git worktree add /tmp/prev prev-data || echo "önceki veri yok"
+      - name: Veriyi derle
+        env: { PREV_DIR: /tmp/prev, WORKERS: '5' }
+        run: python3 tools/fetch_market_data.py /tmp/out
+      - name: market-data dalına yaz
+        run: |
+          cd /tmp/out
+          git init -q -b market-data
+          git config user.name "market-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          printf '# Finans Pusulası piyasa verisi\nOtomatik üretilir (tools/fetch_market_data.py). Kişisel, ticari olmayan kullanım. Kaynaklar resmi değildir.\n' > README.md
+          git add -A
+          git commit -q -m "Piyasa verisi $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" market-data

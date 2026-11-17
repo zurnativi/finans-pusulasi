@@ -715,8 +715,15 @@
       return require('./run-tests-v6.js').run().then(function (r6) {
         var p6 = r6.filter(function (r) { return r.ok; }).length;
         r6.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
-        console.log('\n' + p6 + '/' + r6.length + ' v6 testi geçti · toplam ' + (passed + p5 + p6) + '/' + (results.length + r5.length + r6.length));
+        console.log('\n' + p6 + '/' + r6.length + ' v6 testi geçti');
         if (p6 !== r6.length) process.exit(1);
+        console.log('\n— v7 (Portföy Analizi: göstergeler TA-Lib referansı, grafik yapısı, veri doğrulama, skor/plan/sağlık/oluşturucu) —');
+        return require('./run-tests-v7.js').run().then(function (r7) {
+          var p7 = r7.filter(function (r) { return r.ok; }).length;
+          r7.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+          console.log('\n' + p7 + '/' + r7.length + ' v7 testi geçti · toplam ' + (passed + p5 + p6 + p7) + '/' + (results.length + r5.length + r6.length + r7.length));
+          if (p7 !== r7.length) process.exit(1);
+        });
       });
     });
   } else { root.TEST_RESULTS = results; }

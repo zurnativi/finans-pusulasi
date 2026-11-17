@@ -62,8 +62,7 @@
       h += '<a class="area card" href="#portfoy"><div class="area-h"><span class="area-ic" aria-hidden="true">📈</span><b>Portföy Yönetimi</b></div>' +
         '<div class="area-v">' + (window.Charts ? window.Charts.counter('a-tot', c.an.assets.total) : tl(c.an.assets.total)) + '</div><div class="hint">toplam birikim' + (tracked ? ' · kâr/zarar <b class="' + plCls(c.sm.totalPLTL) + '">' + signTl(c.sm.totalPLTL) + '</b>' : '') + '</div>' +
         '<div class="area-f">' + pill(worst, worst === 'ok' ? 'Risk kuralları tamam' : c.risk.items.filter(function (i) { return i.level !== 'ok'; }).length + ' risk uyarısı') + ' ' + pill(onTrack === c.rep.goals.length ? 'ok' : 'warn', onTrack + '/' + c.rep.goals.length + ' hedef yolunda') + '</div></a>';
-      h += '<a class="area card soon" href="#analiz"><div class="area-h"><span class="area-ic" aria-hidden="true">🔎</span><b>Portföy Analizi</b></div>' +
-        '<div class="area-v muted">Yakında</div><div class="hint">piyasa ve varlık analizleri</div><div class="area-f">' + pill('info', 'Hazırlanıyor') + '</div></a>';
+      h += X.analysisCard ? X.analysisCard() : '';
       h += '</div>';
       var warn = c.risk.items.filter(function (i) { return i.level !== 'ok'; });
       if (warn.length) h += '<div class="notice ' + (worst === 'danger' ? 'danger' : 'warn') + ' simple-risk"><b>Portföy uyarıları:</b> ' + warn.map(function (i) { return esc(i.title); }).join(' · ') + ' — <a href="#portfoy/risk">ayrıntı</a></div>';
@@ -1015,7 +1014,7 @@
         return l.join('\n');
       } catch (e) { return ''; }
     }
-    return { homeCards: homeCards, renderPortfolio: renderPortfolio, renderAnalysis: renderAnalysis, importModes: importModes, importKind: function () { return importKind; }, setImportKind: function (k) { importKind = k; },
+    return { homeCards: homeCards, calc: calc, renderPortfolio: renderPortfolio, renderAnalysis: renderAnalysis, importModes: importModes, importKind: function () { return importKind; }, setImportKind: function (k) { importKind = k; },
       handleFile: handleFile, hasReview: function () { return !!pReview; }, renderImportReview: renderImportReview, onChange: onChange, onInput: onInput, onSubmit: onSubmit, actions: actions,
       rateEdited: rateEdited, contextSummary: contextSummary, afterRender: function () { tradePreview(); } };
   };

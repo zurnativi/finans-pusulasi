@@ -1,7 +1,7 @@
 /* app.js — Arayüz. Hesaplar calc.js'te, para işlemleri money.js'te (tam sayı kuruş). */
 (function () {
   'use strict';
-  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
+  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, AUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
   var state = null, lastSaved = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
@@ -973,6 +973,7 @@
       var ins = L.insights(L.compareMonths(state.transactions, t), tl); l.push('Aylık karşılaştırma: ' + ins.map(function (x) { return x.text; }).join(' '));
     } catch (e) { /* özet eksik kalabilir */ }
     var pc = PUI.contextSummary(); if (pc) l.push(pc);
+    if (window.__analysisContext) l.push(window.__analysisContext);
     return l.join('\n');
   }
   var SYSTEM = 'Sen "Finans Pusulası" uygulamasının Türkçe kişisel finans asistanısın. Her zaman Türkçe, sade ve anlaşılır yaz; finans bilmeyen biri de anlamalı. ' +
@@ -1598,7 +1599,7 @@
   }
 
   /* ---------- Yönlendirme ve çizim ---------- */
-  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return PUI.renderAnalysis(); }, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); } };
+  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return AUI.render(); }, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); } };
   var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce', ayarlar: 'ayarlar', guvenlik: 'ayarlar' };
   var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit' };
   function areaNav() {
@@ -1620,6 +1621,7 @@
     if (tab === 'veri' && review) refreshReview();
     if (tab === 'hesaplar') trHint();
     if (tab === 'portfoy') PUI.afterRender();
+    if (AUI) AUI.afterRender();
     if (SUI) SUI.afterRender();
     updateBadge();
   }
@@ -1746,6 +1748,7 @@
     };
     var B = v2Actions(t); Object.keys(B).forEach(function (k) { A[k] = B[k]; });
     var PA = PUI.actions(t); Object.keys(PA).forEach(function (k) { A[k] = PA[k]; });
+    if (AUI) { var AA = AUI.actions(t); Object.keys(AA).forEach(function (k) { A[k] = AA[k]; }); }
     if (A[act]) A[act]();
   }
   function onChange(e) {
@@ -1840,6 +1843,7 @@
   }
   function onSubmit(e) {
     if (PUI.onSubmit(e)) return;
+    if (AUI && AUI.onSubmit(e)) return;
     if (e.target.id === 'tx-form') {
       e.preventDefault();
       var date = P.parseDate($('#tx-date').value), desc = $('#tx-desc').value.trim(), amt = M.parse($('#tx-amt').value), sign = Number($('#tx-type').value);
@@ -1871,7 +1875,13 @@
       state: function () { return state; }, mutate: mutate, render: render, toast: toast, esc: esc, tl: tl, tl2: tl2, tip: tip, pct: pct, sbp: sbp, kpi: kpi, progress: progress,
       dateLabel: dateLabel, ymLabel: ymLabel, monthsLabel: monthsLabel, today: today, nowYm: nowYm, eff: eff, sub: function () { return sub; }, subtabs: subtabs, debtsCard: debtsCard,
       loadScript: loadScript, decodeText: decodeText, loadPdfLib: loadPdfLib, pdfText: pdfText, pdfToImages: pdfToImages, readImage: readImage, getOcrWorker: getOcrWorker, ocrRecognize: ocrRecognize,
-      aiReady: aiReady, aiCfg: function () { return aiCfg; }, setStatus: setStatus, busy: busy
+      aiReady: aiReady, aiCfg: function () { return aiCfg; }, setStatus: setStatus, busy: busy,
+      analysisCard: function () { return AUI ? AUI.homeCard() : ''; }
+    });
+    if (window.AnalysisUI) AUI = window.AnalysisUI({
+      state: function () { return state; }, mutate: mutate, render: render, toast: toast, esc: esc, tl: tl, tip: tip, today: today, subtabs: subtabs,
+      sub: function () { return sub; }, tab: function () { return tab; }, calc: function () { return PUI.calc(); },
+      snapshot: function (r) { return SUI && SUI.snapshot ? SUI.snapshot(r) : Promise.resolve(); }
     });
     document.addEventListener('click', onClick);
     document.addEventListener('change', onChange);

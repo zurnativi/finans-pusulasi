@@ -275,6 +275,7 @@
   if (mqDark.addEventListener) mqDark.addEventListener('change', retheme);
   window.Charts = {
     area: area, donut: donut, bars: bars, sankey: sankey, ring: ring, spark: spark, lines: lines, counter: counter,
+    custom: function (key, h, label, build, cls) { return reg(key, h, label, build, cls); }, theme: theme, anim: anim, tooltip: baseTooltip, hexA: hexA,
     flush: flush, entering: function () { entry = true; }, isEntering: function () { return entry; }, setRange: setRange, range: function (k) { return ranges[k]; }, reduced: reduced, available: ok,
     _insts: insts
   };

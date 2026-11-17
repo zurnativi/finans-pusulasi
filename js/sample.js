@@ -519,9 +519,26 @@
     var d = defaultSettings();
     Object.keys(d).forEach(function (k) { if (s.settings[k] == null) s.settings[k] = d[k]; });
     Object.keys(d.riskRules).forEach(function (k) { if (s.settings.riskRules[k] == null) s.settings.riskRules[k] = d.riskRules[k]; });
+    if (s.analysis != null) s.analysis = cleanAnalysis(s.analysis);
     PF.sync(s);
     return s;
   }
-  return { realRecordCount: realRecordCount, SCHEMA_VERSION: SCHEMA_VERSION, EXAMPLE_REVISION: EXAMPLE_REVISION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
+  /* Portföy Analizi kullanıcı tercihleri (v7): izleme listesi + oluşturucu profili. Hatalı/eksik alanlar sessizce temizlenir (analiz önbelleği burada tutulmaz). */
+  var AKEY = /^(bist|tefas|cg|metal|fx|idx|us|macro|td|imp):[A-Za-z0-9._\-]{1,40}$/;
+  function cleanAnalysis(a) {
+    var out = { watchlist: [], profile: {} }; if (!a || typeof a !== 'object' || Array.isArray(a)) return out;
+    var seen = {};
+    (Array.isArray(a.watchlist) ? a.watchlist : []).forEach(function (w) {
+      if (!w || typeof w.key !== 'string' || !AKEY.test(w.key) || seen[w.key] || out.watchlist.length >= 50) return; seen[w.key] = true;
+      out.watchlist.push({ key: w.key, name: String(w.name || w.key).slice(0, 80), addedAt: /^\d{4}-\d{2}-\d{2}$/.test(w.addedAt || '') ? w.addedAt : null });
+    });
+    var p = a.profile && typeof a.profile === 'object' ? a.profile : {};
+    if (['short', 'medium', 'long'].indexOf(p.horizon) >= 0) out.profile.horizon = p.horizon;
+    if (['low', 'medium', 'high'].indexOf(p.risk) >= 0) out.profile.risk = p.risk;
+    if (typeof p.usd === 'boolean') out.profile.usd = p.usd;
+    out.profile.halal = true;
+    return out;
+  }
+  return { realRecordCount: realRecordCount, cleanAnalysis: cleanAnalysis, SCHEMA_VERSION: SCHEMA_VERSION, EXAMPLE_REVISION: EXAMPLE_REVISION, uid: uid, addDays: addDays, emptyState: emptyState, exampleState: exampleState, validateState: validateState, migrate: migrate,
     defaultSettings: defaultSettings, addMonths: addMonths, todayYmd: todayYmd, shouldRefreshExample: shouldRefreshExample };
 });
