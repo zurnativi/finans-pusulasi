@@ -42,11 +42,11 @@
   /* ---------- 2. Gün içi mumlar ---------- */
   var MD = require('../js/mdata.js'), AN = require('../js/analysis.js'), AL = require('../js/alerts.js'), S = require('../js/sample.js');
   function tsi(y, m, d, hh, mm) { return Date.UTC(y, m - 1, d, hh - 3, mm) / 1000; }
-  function bistHourly(days, seed) { // BIST: 09:30 … 17:30 + 18:00 (Yahoo 60 dk düzeni), iş günleri
+  function bistHourly(days, seed) { // BIST: 09:30 … 17:30 (Yahoo 60 dk düzeni), iş günleri
     var out = [], p = 100, dt = new Date(Date.UTC(2026, 6, 1)); seed = seed || 3; function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
-    while (out.length < days * 10) {
+    while (out.length < days * 9) {
       var w = dt.getUTCDay();
-      if (w !== 0 && w !== 6) { var hrs = [[9, 30], [10, 30], [11, 30], [12, 30], [13, 30], [14, 30], [15, 30], [16, 30], [17, 30], [18, 0]];
+      if (w !== 0 && w !== 6) { var hrs = [[9, 30], [10, 30], [11, 30], [12, 30], [13, 30], [14, 30], [15, 30], [16, 30], [17, 30]];
         hrs.forEach(function (h) { var o = p, c = p * (1 + (rnd() - 0.48) * 0.01), hi = Math.max(o, c) * (1 + rnd() * 0.003), lo = Math.min(o, c) * (1 - rnd() * 0.003); out.push([tsi(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate(), h[0], h[1]), o, hi, lo, c, 1000 + Math.round(rnd() * 5000)]); p = c; }); }
       dt.setUTCDate(dt.getUTCDate() + 1);
     }
@@ -54,10 +54,12 @@
   }
   test('Saatlik dosya ayrıştırma: TSİ etiketleri, sıra; 4S birleştirme BIST seans yarıları (13:30 öncesi/sonrası) ve UTC 4 saatlik dilimler', function () {
     var j = { bars: bistHourly(3), currency: 'TRY', fetchedAt: '2026-07-04T10:00:00Z' }, r = MD.parseH1(j);
-    eq(r.bars[0].d, '2026-07-01 09:30'); eq(r.bars[9].d, '2026-07-01 18:00'); eq(r.bars.length, 30);
-    var g = MD.aggregate(r.bars, 'bist'); eq(g.length, 6, 'günde 2 dilim'); eq(g[0].d, '2026-07-01 09:30'); eq(g[1].d, '2026-07-01 13:30'); eq(g[0].n, 4); eq(g[1].n, 6);
-    var day = r.bars.slice(0, 10), a = g[0], b = g[1];
-    eq(a.o, day[0].o); eq(a.c, day[3].c); eq(b.c, day[9].c); eq(a.h, Math.max.apply(null, day.slice(0, 4).map(function (x) { return x.h; }))); eq(b.l, Math.min.apply(null, day.slice(4).map(function (x) { return x.l; })));
+    eq(r.bars[0].d, '2026-07-01 09:30'); eq(r.bars[8].d, '2026-07-01 17:30'); eq(r.bars.length, 27);
+    var last = j.bars[j.bars.length - 1], snap = [last[0] + 1800, 77, 77, 77, 77, 0], r2 = MD.parseH1({ bars: j.bars.concat([snap]) });
+    eq(r2.bars.length, 27, 'Yahoo 18:00 hacimsiz kapanış mumu ayrı mum olmaz'); eq(r2.bars[26].c, 77, 'kapanış fiyatı son saatlik mumun kapanışı olur'); eq(r2.bars[26].h, Math.max(last[2], 77));
+    var g = MD.aggregate(r.bars, 'bist'); eq(g.length, 6, 'günde 2 dilim'); eq(g[0].d, '2026-07-01 09:30'); eq(g[1].d, '2026-07-01 13:30'); eq(g[0].n, 4); eq(g[1].n, 5);
+    var day = r.bars.slice(0, 9), a = g[0], b = g[1];
+    eq(a.o, day[0].o); eq(a.c, day[3].c); eq(b.c, day[8].c); eq(a.h, Math.max.apply(null, day.slice(0, 4).map(function (x) { return x.h; }))); eq(b.l, Math.min.apply(null, day.slice(4).map(function (x) { return x.l; })));
     eq(a.v, day.slice(0, 4).reduce(function (s2, x) { return s2 + x.v; }, 0), 'hacim toplamı');
     var fx = []; for (var i = 0; i < 24; i++) fx.push({ t: Date.UTC(2026, 6, 1, i) , d: MD.labelOfMs(Date.UTC(2026, 6, 1, i)), o: 1, h: 2, l: 0.5, c: 1 + i, v: null });
     var g2 = MD.aggregate(fx, '24h'); eq(g2.length, 6); eq(g2[0].c, 4); eq(g2[5].c, 24); eq(g2[0].d, '2026-07-01 03:00', 'UTC 00 → TSİ 03');
@@ -83,7 +85,7 @@
     ok(/xcheck|Gün içi/.test(A.xcheck.note), 'TradingView karşılaştırması gün içinde yapılmaz');
     // Yıllık oynaklık: günde 10 mum → 2520 periyot (252 kullanılsaydı ~3,16 kat düşük çıkardı)
     var ret = []; for (var i = h.length - 60; i < h.length; i++) ret.push(Math.log(h[i].c / h[i - 1].c)); var m = ret.reduce(function (s2, x) { return s2 + x; }, 0) / ret.length, sd = Math.sqrt(ret.reduce(function (s2, x) { return s2 + (x - m) * (x - m); }, 0) / (ret.length - 1));
-    var volTxt = A.scores.risk.vol; near(volTxt, sd * Math.sqrt(2520), sd * Math.sqrt(2520) * 0.02, 'yıllık oynaklık');
+    var volTxt = A.scores.risk.vol; near(volTxt, sd * Math.sqrt(2268), sd * Math.sqrt(2268) * 0.02, 'yıllık oynaklık');
     var D = AN.analyze({ key: 'bist:TEST', kind: 'stock', name: 'TEST', currency: 'TRY', bars: h.map(function (b, i) { return Object.assign({}, b, { d: '2025-' + String(1 + Math.floor(i / 28) % 12).padStart(2, '0') + '-' + String(1 + i % 28).padStart(2, '0') }); }).slice(0, 300).sort(function (a, b) { return a.d < b.d ? -1 : 1; }), checks: [] }, {});
     eq(D.tf, '1d'); ok(/günlük/.test(JSON.stringify(D.scores.trend.ev)), 'günlük metin geri döner');
   });

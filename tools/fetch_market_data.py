@@ -189,7 +189,18 @@ def yahoo_intraday(sym, rng):
 def merge_ts(old, new, cap):
     m = {b[0]: b for b in (old or [])}
     for b in new: m[b[0]] = b
-    return [m[k] for k in sorted(m)][-cap:]
+    return fold_sub_hour([m[k] for k in sorted(m)])[-cap:]
+
+def fold_sub_hour(bars):
+    # Yahoo son gün için seans kapanışında (ör. BIST 18:00) saat başına hizalı olmayan, hacimsiz bir 'kapanış' mumu ekler.
+    # Bu mum önceki saatlik mumun penceresi içindedir: ayrı mum olarak birikmesin, öncekiyle birleştirilir.
+    out = []
+    for b in bars:
+        p = out[-1] if out else None
+        if p and b[0] < p[0] + 3600:
+            out[-1] = [p[0], p[1], max(p[2], b[2]), min(p[3], b[3]), b[4], (p[5] or 0) + (b[5] or 0) if (p[5] is not None or b[5] is not None) else None]
+        else: out.append(list(b))
+    return out
 
 H1_CAP = 1200   # ~6 ay (BIST günde ~9 saatlik mum)
 def h1_job(kind, key, ysym, extra):
@@ -342,8 +353,10 @@ def news_fetch(rows, prio):
         except Exception as e: status[name] = {'ok': False, 'err': str(e)[:80]}
     gd = {'ok': 0, 'fail': 0}
     if MODE == 'full' and not SKIP_GDELT:
-        names = {r['s']: r['name'] for r in rows}
+        names = {r['s']: r['name'] for r in rows}; tg = time.time(); streak = 0
         for sym in prio:
+            # GDELT hız sınırı uygular: art arda 5 hata ya da 4 dakika → kalan semboller atlanır (iş akışı uzamasın; RSS ana kaynak)
+            if streak >= 5 or time.time() - tg > 240: gd['skipped'] = gd.get('skipped', 0) + 1; continue
             kw = keywords(sym, names.get(sym, ''))
             q = (kw[0] if kw else sym)
             url = 'https://api.gdeltproject.org/api/v2/doc/doc?query=%s&mode=artlist&format=json&maxrecords=20&timespan=7d&sort=datedesc' % urllib.request.quote('"%s" sourcecountry:turkey' % q.lower() if len(q.split()) > 1 else q.lower() + ' sourcecountry:turkey')
@@ -353,8 +366,8 @@ def news_fetch(rows, prio):
                     sd = a.get('seendate') or ''
                     at = ('%s-%s-%sT%s:%s:%sZ' % (sd[0:4], sd[4:6], sd[6:8], sd[9:11], sd[11:13], sd[13:15])) if len(sd) >= 15 else None
                     items.append({'title': (a.get('title') or '')[:240], 'url': (a.get('url') or '')[:400], 'src': 'GDELT · ' + (a.get('domain') or ''), 'at': at, 'gsym': sym})
-                gd['ok'] += 1
-            except Exception: gd['fail'] += 1
+                gd['ok'] += 1; streak = 0
+            except Exception: gd['fail'] += 1; streak += 1
             time.sleep(6)
     status['GDELT'] = gd
     # Önceki 14 günle birleştir (aynı bağlantı tek), 14 günden eskiler atılır
@@ -410,6 +423,7 @@ def run_side(rows, members):
         for f in cf.as_completed([ex.submit(h1_job, *j) for j in jobs]): res.append(f.result())
     h1 = {'ok': sum(1 for r in res if r[1] == 'ok'), 'stale': sum(1 for r in res if r[1] == 'stale'), 'fail': sorted(r[0] + ': ' + r[1] for r in res if r[1].startswith('fail'))[:50],
           'symbols': {'bist': sorted(r[0] for r in res if r[2] > 0 and r[0] in names), 'index': sorted(k for k in INDEX), 'macro': sorted(MACRO), 'us': sorted(US)}, 'seconds': round(time.time() - t1)}
+    t2 = time.time()
     try:
         kap, kn, kerr = kap_fetch(30)
         for sym, its in kap.items():
@@ -417,9 +431,11 @@ def run_side(rows, members):
             write(os.path.join(OUT, 'kap/%s.json' % sym), {'generatedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ'), 'symbol': sym, 'source': 'KAP — Kamuyu Aydınlatma Platformu (kap.org.tr bildirim sorgusu, son 30 gün)', 'items': its[:40]})
         kapst = {'ok': kn > 0, 'disclosures': kn, 'symbols': len(kap), 'list': sorted(kap.keys()), 'errors': kerr[:10], 'days': 30}
     except Exception as e: kapst = {'ok': False, 'error': str(e)[:120]}
+    kapst['seconds'] = round(time.time() - t2); t3 = time.time()
     prio = sorted(set(members.get('XK030', [])) | set(members.get('XU030', [])))
     try: nst = news_fetch(rows, prio)
     except Exception as e: nst = {'error': str(e)[:160]}
+    nst['seconds'] = round(time.time() - t3)
     return h1, kapst, nst
 
 def main_intraday():
@@ -463,6 +479,7 @@ def main():
         'stats': {'ok': len(ok), 'stale': len(stale), 'fail': len(fail), 'seconds': round(time.time() - t0)},
         'failed': sorted(r[0] + ': ' + r[1] for r in fail)[:200], 'staleList': sorted(r[0] for r in stale)[:200]
     }
+    t_daily = round(time.time() - t0)
     # Katılım endeksleri (gerçek endeks değerleri, saatlikten günlüğe) + bağımsız eşit ağırlık kontrolü
     kidx = {}
     for idx in KAT_IDX:
@@ -476,7 +493,8 @@ def main():
             print('Katılım endeksi alınamadı', idx, e)
     index['index'] = sorted(set(index['index']) | {k for k, v in kidx.items() if v == 'ok' or os.path.exists(os.path.join(OUT, 'index/%s.json' % k))})
     index['katilimIndex'] = kidx
-    h1, kapst, nst = run_side(rows, members)
+    t_k = time.time(); h1, kapst, nst = run_side(rows, members)
+    index['stats']['phases'] = {'daily': t_daily, 'side': round(time.time() - t_k)}
     index['intraday'] = dict(h1, generatedAt=NOW.strftime('%Y-%m-%dT%H:%M:%SZ')); index['kap'] = dict(kapst, generatedAt=NOW.strftime('%Y-%m-%dT%H:%M:%SZ')); index['news'] = nst
     index['intradayAt'] = NOW.strftime('%Y-%m-%dT%H:%M:%SZ')
     index['stats']['seconds'] = round(time.time() - t0)

@@ -360,7 +360,12 @@
   function labelOfMs(ms) { var d = new Date(ms + 3 * 3600000); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()); } // TSİ
   function parseH1(j) {
     if (!j || !Array.isArray(j.bars)) throw new Error('Saatlik veri dosyası biçimi tanınmadı');
-    var bars = j.bars.filter(function (b) { return num(b[0]) && num(b[4]) && b[4] > 0; }).map(function (b) { var t = b[0] * 1000; return { t: t, d: labelOfMs(t), o: b[1], h: b[2], l: b[3], c: b[4], v: num(b[5]) && b[5] > 0 ? b[5] : null }; });
+    var bars = j.bars.filter(function (b) { return num(b[0]) && num(b[4]) && b[4] > 0; }).map(function (b) { var t = b[0] * 1000; return { t: t, d: labelOfMs(t), o: b[1], h: b[2], l: b[3], c: b[4], v: num(b[5]) && b[5] > 0 ? b[5] : null }; })
+      .reduce(function (out, b) { // saat başına hizalı olmayan kapanış mumu (ör. BIST 18:00, hacimsiz) önceki saatlik mumun içindedir → birleştir
+        var p = out[out.length - 1];
+        if (p && b.t < p.t + 3600000) { p.h = Math.max(p.h, b.h); p.l = Math.min(p.l, b.l); p.c = b.c; if (b.v) p.v = (p.v || 0) + b.v; } else out.push(b);
+        return out;
+      }, []);
     return { bars: bars, currency: j.currency || null, fetchedAt: j.fetchedAt || null, source: j.source || 'Yahoo Finance 60 dk', stale: !!j.stale, lastError: j.lastError || null, name: j.name || null };
   }
   function parseBinanceIntraday(arr, nowMs) {
