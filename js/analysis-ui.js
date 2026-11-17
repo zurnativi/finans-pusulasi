@@ -581,7 +581,10 @@
         '<li><b>Temel oranlar, sektör medyanları ve Katılım endeksi üyeleri</b> (Katılım Tüm/100/50/30): TradingView tarayıcı.</li>' +
         '<li><b>TEFAS fonları</b>: fon.yourapiservice.com (TEFAS verisi: fiyat geçmişi, getiriler, risk, dağılım, portföy, İslami etiket).</li>' +
         '<li><b>Kripto</b>: Binance (USDT mumları, vadeli fonlama oranı), alternative.me (Korku & Açgözlülük), CoinGecko (arama).</li>' +
-        '<li><b>Haberler</b>: GDELT DOC 2.0 (isteğe bağlı; yanıt vermezse gösterilmez).</li>' +
+        '<li><b>Gün içi (1S/4S)</b>: BIST (Katılım Tüm ∪ BIST 100 ∪ BIST 30 üyeleri), endeksler, makro ve ABD ETF\'leri için Yahoo Finance saatlik mumları seans boyunca saatte bir derlenir; 4S mumlar seansın 10:00–13:30 / 13:30–18:00 TSİ yarılarından oluşturulur. Kripto gün içi doğrudan Binance\'tan. Gram altın gün içi XAU/USD × USD/TRY\'den türetilir (yalnız kapanış).</li>' +
+        '<li><b>Katılım endeksi geçmişi</b> (XKTUM/XK100/XK050/XK030): Yahoo bu endeksler için günlük geçmiş vermez; günlük mumlar, endeksin kendi 730 günlük saatlik verisinden (gün içi ilk açılış, en yüksek, en düşük, son kapanış) derlenir. Kontrol: üyelerin eşit ağırlıklı getirisiyle korelasyon (bugünkü üye listesi kullanıldığı için hayatta kalma yanlılığı içerir). Katılım hisselerinde göreli güç bu endekse göre ölçülür.</li>' +
+        '<li><b>KAP bildirimleri</b>: kap.org.tr\'nin web sitesinin kullandığı açık (resmî olmayan) uç noktadan son 30 gün, sunucu tarafında derlenir. Skora katılmaz.</li>' +
+        '<li><b>Haberler</b>: Türk ekonomi RSS akışları (Dünya, Habertürk, Ekonomim, TRT Haber, Bloomberg HT, Hürriyet, ForInvest, Borsa Gündem) — yalnız başlık ve bağlantı; başlıkta şirket adı/kodu geçenler eşleştirilir. GDELT DOC 2.0 isteğe bağlı ek arama (yanıt vermezse gösterilmez).</li>' +
         '<li>Kaynaklar resmî değildir; kesinti olursa veri "alınamadı" diye gösterilir, eski veri yeni gibi sunulmaz.</li></ul></section>';
       return h;
     }
