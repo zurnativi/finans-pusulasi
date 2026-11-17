@@ -415,7 +415,7 @@ def run_side(rows, members):
         for sym, its in kap.items():
             its.sort(key=lambda x: x.get('at') or '', reverse=True)
             write(os.path.join(OUT, 'kap/%s.json' % sym), {'generatedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ'), 'symbol': sym, 'source': 'KAP — Kamuyu Aydınlatma Platformu (kap.org.tr bildirim sorgusu, son 30 gün)', 'items': its[:40]})
-        kapst = {'ok': kn > 0, 'disclosures': kn, 'symbols': len(kap), 'errors': kerr[:10], 'days': 30}
+        kapst = {'ok': kn > 0, 'disclosures': kn, 'symbols': len(kap), 'list': sorted(kap.keys()), 'errors': kerr[:10], 'days': 30}
     except Exception as e: kapst = {'ok': False, 'error': str(e)[:120]}
     prio = sorted(set(members.get('XK030', [])) | set(members.get('XU030', [])))
     try: nst = news_fetch(rows, prio)

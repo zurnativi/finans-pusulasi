@@ -410,7 +410,10 @@
     if (opts.stale) add('stale', 'warn', 'Saatlik derleyici bu sembolü son çalıştırmada alamadı; önceki veri kullanılıyor.');
     return out;
   }
-  function loadH1(kind, sym) { return cached('h1:' + kind + ':' + sym, 5 * 60000, function () { return fetchJson(URL.h1(kind, sym), { timeout: 25000 }).then(parseH1, function (e) { if (e.status === 404) throw new Error('Bu varlık için gün içi veri derlenmiyor (saatlik veri: Katılım endeksi + BIST 100/30 hisseleri, endeksler, altın/gümüş, döviz, helal ETF\'ler; kripto Binance\'ten).'); throw e; }); }); }
+  var H1_MISSING = 'Bu varlık için gün içi veri derlenmiyor (saatlik veri: Katılım endeksi + BIST 100/30 hisseleri, endeksler, altın/gümüş, döviz, helal ETF\'ler; kripto Binance\'ten).';
+  // market-data dizini, hangi dosyaların var olduğunu söyler: listede olmayan dosya istenmez (gereksiz 404 yok)
+  function listedIn(listFn) { return mdIndex().then(function (ix) { var L = listFn(ix); return L == null ? null : L; }, function () { return null; }); }
+  function loadH1(kind, sym) { return cached('h1:' + kind + ':' + sym, 5 * 60000, function () { return listedIn(function (ix) { return ix.intraday && ix.intraday.symbols ? ix.intraday.symbols[kind] || [] : null; }).then(function (L) { if (L && L.indexOf(sym) < 0) throw new Error(H1_MISSING); return fetchJson(URL.h1(kind, sym), { timeout: 25000 }); }).then(parseH1, function (e) { if (e.status === 404) throw new Error(H1_MISSING); throw e; }); }); }
   function loadIntraday(key, tf, opts) {
     opts = opts || {}; if (!TF_MS[tf]) return Promise.reject(new Error('Bilinmeyen zaman dilimi: ' + tf));
     var d = describe(key), k = key.split(':')[0], s = key.slice(k.length + 1), now = opts.nowMs || Date.now();
@@ -449,13 +452,13 @@
 
   /* ---------- KAP bildirimleri ve önbelleklenmiş haberler (market-data dalı; iş akışı sunucu tarafında derler) ---------- */
   function notFoundEmpty(e) { if (e && e.status === 404) return { items: [], none: true }; throw e; }
-  function kap(sym) { return cached('kap:' + sym, 10 * 60000, function () { return fetchJson(URL.kap(sym), { timeout: 15000 }).catch(notFoundEmpty); }); }
+  function kap(sym) { return cached('kap:' + sym, 10 * 60000, function () { return listedIn(function (ix) { return ix.kap && ix.kap.list ? ix.kap.list : null; }).then(function (L) { if (L && L.indexOf(sym) < 0) return { items: [], none: true, generatedAt: null }; return fetchJson(URL.kap(sym), { timeout: 15000 }).catch(notFoundEmpty); }); }); }
   function newsTopicOf(key) { var k = key.split(':')[0]; return k === 'metal' || key === 'macro:XAUUSD' || key === 'macro:XAGUSD' ? 'gold' : k === 'fx' || key === 'macro:USDTRY' || key === 'macro:EURTRY' ? 'fx' : k === 'cg' ? 'crypto' : k === 'idx' ? 'market' : null; }
   function newsCached(key) {
     var k = key.split(':')[0], s = key.slice(k.length + 1), t = newsTopicOf(key);
     var url = k === 'bist' ? URL.newsSym(s) : t ? URL.newsTopic(t) : null;
     if (!url) return Promise.resolve(null);
-    return cached('news:' + key, 10 * 60000, function () { return fetchJson(url, { timeout: 15000 }).catch(notFoundEmpty).then(function (j) { return { at: j.generatedAt || null, none: !!j.none, topic: t, keywords: j.keywords || null, items: (j.items || []).map(function (x) { return { title: x.title, url: x.url, src: x.src, at: x.at, match: x.match || null }; }) }; }); });
+    return cached('news:' + key, 10 * 60000, function () { return (k === 'bist' ? listedIn(function (ix) { return ix.news && ix.news.symbols ? Object.keys(ix.news.symbols) : null; }) : Promise.resolve(null)).then(function (L) { if (L && L.indexOf(s) < 0) return { items: [], none: true, generatedAt: null }; return fetchJson(url, { timeout: 15000 }).catch(notFoundEmpty); }).then(function (j) { return { at: j.generatedAt || null, none: !!j.none, topic: t, keywords: j.keywords || null, items: (j.items || []).map(function (x) { return { title: x.title, url: x.url, src: x.src, at: x.at, match: x.match || null }; }) }; }); });
   }
   function news(q) { return fetchJson(URL.gdelt(q), { timeout: 15000 }).then(function (j) { return { at: new Date().toISOString(), source: 'GDELT DOC 2.0', items: (j.articles || []).map(function (a) { return { title: a.title, url: a.url, domain: a.domain, lang: a.language, d: a.seendate ? a.seendate.slice(0, 4) + '-' + a.seendate.slice(4, 6) + '-' + a.seendate.slice(6, 8) : null }; }) }; }); }
 

@@ -363,7 +363,7 @@
         '<div class="chips" role="group" aria-label="Göstergeler">' + chips.map(function (c) { return '<button type="button" class="chip" data-act="a-ov" data-v="' + c[0] + '" aria-pressed="' + !!ov[c[0]] + '">' + c[1] + '</button>'; }).join('') + '</div>' +
         (window.Charts ? window.Charts.custom('a-px', window.innerWidth < 560 ? 430 : 560, A.name + ' fiyat grafiği', function (t) { return TC.build(A, { range: intra ? (v.range in TC.RANGES_I ? v.range : '1A') : (v.range in TC.RANGES ? v.range : '1Y'), overlays: ov, lower: v.lower, plan: plan }, t); }, 'pxchart') : '<p class="muted">Grafik kütüphanesi yüklenemedi.</p>') +
         '<div class="seg low" role="group" aria-label="Alt panel">' + lowers.map(function (x) { return '<button type="button" data-act="a-lower" data-v="' + x[0] + '" aria-pressed="' + (v.lower === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>' +
-        '<p class="hint">' + A.n + (intra ? ' adet ' + esc(TF_LABEL[v.tf]) + ' mum (TSİ)' : ' günlük veri') + ' · son mum ' + esc(A.lastDate) + (last.live ? ' (canlı/gecikmeli)' : last.partial ? ' (gün içi, kapanmadı)' : '') + ' · ATR(14) ' + fp(A.atr) + (A.ind.atrApprox ? ' (yaklaşık: kapanış değişimlerinden)' : '') + '</p></section>';
+        '<p class="hint">' + A.n + (intra ? ' adet ' + esc(TF_LABEL[v.tf]) + ' mum (TSİ)' : ' günlük veri') + ' · son mum ' + esc(A.lastDate) + (last.live ? ' (canlı/gecikmeli)' : last.partial ? (intra ? ' (kapanmamış mum)' : ' (gün içi, kapanmadı)') : '') + ' · ATR(14) ' + fp(A.atr) + (A.ind.atrApprox ? ' (yaklaşık: kapanış değişimlerinden)' : '') + '</p></section>';
     }
     function evidenceCard(A) {
       var ks = Object.keys(AN.WEIGHTS[A.kind] || {}), all = [];
