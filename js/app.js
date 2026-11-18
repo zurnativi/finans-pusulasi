@@ -1,7 +1,7 @@
 /* app.js — Arayüz. Hesaplar calc.js'te, para işlemleri money.js'te (tam sayı kuruş). */
 (function () {
   'use strict';
-  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, AUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
+  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, AUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, HUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
   var state = null, lastSaved = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
@@ -123,8 +123,10 @@
     var ex = extraActions(), acts = ex.filter(function (x) { return x.level === 'danger'; }).concat(C.actions(an), ex.filter(function (x) { return x.level !== 'danger'; }));
     var h = '<h1>Ana sayfa <span class="muted" style="font-size:.9rem;font-weight:400">— ' + esc(ymLabel(an.nowYm)) + '</span></h1>';
     // 1) Önce görseller: net varlık eğrisi + birikim halkası, üç alan kartı
+    if (HUI) h += HUI.homeCards();
     h += safeSection(function () { return homeHero(an); });
     h += safeSection(function () { return PUI.homeCards(); });
+    if (HUI) h += HUI.homeMood();
     // 2) Bu ay ne yapmalıyım? (en önemli 3 öneri; kalanı katlanır)
     var top = acts.slice(0, 3), more = acts.slice(3);
     h += '<section class="card" style="margin-top:14px"><h2>Bu ay ne yapmalıyım?</h2><ul class="actions">' + top.map(actLi).join('') + '</ul>' +
@@ -1599,9 +1601,9 @@
   }
 
   /* ---------- Yönlendirme ve çizim ---------- */
-  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return AUI.render(); }, veri: renderImport, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); } };
+  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return AUI.render(); }, veri: renderImport, haberler: function () { return HUI ? HUI.render() : '<p class="muted">Haber merkezi yüklenemedi.</p>'; }, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); } };
   var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce', ayarlar: 'ayarlar', guvenlik: 'ayarlar' };
-  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit' };
+  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', haberler: 'Haberler ve bildirimler', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit' };
   function areaNav() {
     if (AREA[tab] === 'ayarlar') return '<nav class="areanav" aria-label="Ayar bölümleri">' + [['ayarlar', 'Genel ayarlar'], ['guvenlik', 'Yedek, eşitleme, kilit']].map(function (x) { return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
     if (AREA[tab] !== 'butce') return '';
@@ -1884,6 +1886,16 @@
       snapshot: function (r) { return SUI && SUI.snapshot ? SUI.snapshot(r) : Promise.resolve(); }
     });
     if (AUI && AUI.startAlerts) AUI.startAlerts();
+    if (window.HubUI && window.News && window.Events && window.Notify && window.Mood && window.HubData) {
+      try {
+        HUI = window.HubUI({
+          state: function () { return state; }, render: function () { if (state) render(); }, toast: toast, esc: esc, tl: tl, tip: tip, today: today,
+          sub: function () { return sub; }, tab: function () { return tab; }, calc: function () { return PUI.calc(); }, aui: function () { return AUI; },
+          quiet: function (fn) { if (!state) return; fn(state); persist(); }
+        });
+        if (AUI) AUI.setHub(HUI);
+      } catch (e) { console.error(e); HUI = null; }
+    }
     document.addEventListener('click', onClick);
     document.addEventListener('change', onChange);
     document.addEventListener('submit', onSubmit);
@@ -1956,6 +1968,7 @@
       if (recordNw()) persist();
       route();
       maybeNotify();
+      if (HUI) HUI.start();
       SUI.start();
       registerSW();
     });

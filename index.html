@@ -2,13 +2,13 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https://finans.truncgil.com https://api.frankfurter.dev https://api.gold-api.com https://api.coingecko.com https://data-api.binance.vision https://fon.yourapiservice.com https://scanner.tradingview.com https://raw.githubusercontent.com https://fapi.binance.com https://api.alternative.me https://api.gdeltproject.org https://api.twelvedata.com https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.groq.com https://api.x.ai https://openrouter.ai https://api.github.com https://cdn.jsdelivr.net http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https://finans.truncgil.com https://api.frankfurter.dev https://api.gold-api.com https://api.coingecko.com https://data-api.binance.vision https://fon.yourapiservice.com https://scanner.tradingview.com https://raw.githubusercontent.com https://fapi.binance.com https://api.alternative.me https://api.gdeltproject.org https://ntfy.sh https://api.twelvedata.com https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.groq.com https://api.x.ai https://openrouter.ai https://api.github.com https://cdn.jsdelivr.net http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="Finans Pusulası: bütçe, ödemeler ve kart takibi; helal portföy yönetimi (alım-satım, maliyet, getiri, dengeleme, çoklu hedef, risk kuralları, ücretsiz fiyat güncelleme). Veriler yalnızca bu cihazda.">
 <meta name="theme-color" content="#1a5fd0">
 <title>Finans Pusulası</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6feb'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial'%3E₺%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=7.1.0">
+<link rel="stylesheet" href="css/style.css?v=8.0.0">
 </head>
 <body>
 <a class="skip" href="#main">İçeriğe geç</a>
@@ -16,6 +16,7 @@
   <div class="top-in">
     <div class="logo"><span class="dot" aria-hidden="true">₺</span> Finans Pusulası</div>
     <span id="sync-chip" aria-live="polite"></span>
+    <div class="bellwrap"><button type="button" id="bell" class="bell" aria-label="Bildirimler" aria-haspopup="true" aria-expanded="false" aria-controls="bell-panel"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1l-2-2Z"/></svg><span id="bell-badge" class="bell-badge" hidden>0</span></button><div id="bell-panel" class="bell-panel" role="dialog" aria-label="Son bildirimler" hidden></div></div>
     <div class="switch" role="group" aria-label="Görünüm seçimi">
       <button type="button" id="view-simple" aria-pressed="true">Sade görünüm</button>
       <button type="button" id="view-detailed" aria-pressed="false">Detaylı görünüm</button>
@@ -26,6 +27,7 @@
     <a href="#butce" data-tab="butce">Bütçe</a>
     <a href="#portfoy" data-tab="portfoy">Portföy Yönetimi</a>
     <a href="#analiz" data-tab="analiz">Portföy Analizi</a>
+    <a href="#haberler" data-tab="haberler">Haberler</a>
     <a href="#veri" data-tab="veri">Veri ekle</a>
     <a href="#asistan" data-tab="asistan">Asistan</a>
     <a href="#ayarlar" data-tab="ayarlar">Ayarlar</a>
@@ -40,32 +42,39 @@
   Helal (faizsiz) uygunluk için ürünün ilgili kurumun danışma kurulu onayını ayrıca kontrol et. Verilerin bu cihazda saklanır; eşitlemeyi açarsan yalnızca senin parolanla şifrelenmiş kopyası kendi GitHub hesabına gider.
 </footer>
 <div id="toast-root" aria-live="assertive"></div>
-<script src="js/money.js?v=7.1.0" defer></script>
-<script src="js/calc.js?v=7.1.0" defer></script>
-<script src="js/ledger.js?v=7.1.0" defer></script>
-<script src="js/importparse.js?v=7.1.0" defer></script>
-<script src="js/portfolio.js?v=7.1.0" defer></script>
-<script src="js/prices.js?v=7.1.0" defer></script>
-<script src="js/alerts.js?v=7.1.0" defer></script>
-<script src="js/sample.js?v=7.1.0" defer></script>
-<script src="js/cryptobox.js?v=7.1.0" defer></script>
-<script src="js/syncmerge.js?v=7.1.0" defer></script>
-<script src="js/sync.js?v=7.1.0" defer></script>
-<script src="js/lock.js?v=7.1.0" defer></script>
-<script src="js/store.js?v=7.1.0" defer></script>
-<script src="js/ai.js?v=7.1.0" defer></script>
+<script src="js/money.js?v=8.0.0" defer></script>
+<script src="js/calc.js?v=8.0.0" defer></script>
+<script src="js/ledger.js?v=8.0.0" defer></script>
+<script src="js/importparse.js?v=8.0.0" defer></script>
+<script src="js/portfolio.js?v=8.0.0" defer></script>
+<script src="js/prices.js?v=8.0.0" defer></script>
+<script src="js/alerts.js?v=8.0.0" defer></script>
+<script src="js/sample.js?v=8.0.0" defer></script>
+<script src="js/cryptobox.js?v=8.0.0" defer></script>
+<script src="js/syncmerge.js?v=8.0.0" defer></script>
+<script src="js/sync.js?v=8.0.0" defer></script>
+<script src="js/lock.js?v=8.0.0" defer></script>
+<script src="js/store.js?v=8.0.0" defer></script>
+<script src="js/ai.js?v=8.0.0" defer></script>
 <script src="vendor/echarts.min.js" defer></script>
-<script src="js/chartdata.js?v=7.1.0" defer></script>
-<script src="js/charts.js?v=7.1.0" defer></script>
-<script src="js/ta.js?v=7.1.0" defer></script>
-<script src="js/structure.js?v=7.1.0" defer></script>
-<script src="js/mdata.js?v=7.1.0" defer></script>
-<script src="js/analysis.js?v=7.1.0" defer></script>
-<script src="js/labellayout.js?v=7.1.0" defer></script>
-<script src="js/tachart.js?v=7.1.0" defer></script>
-<script src="js/portfolio-ui.js?v=7.1.0" defer></script>
-<script src="js/analysis-ui.js?v=7.1.0" defer></script>
-<script src="js/security-ui.js?v=7.1.0" defer></script>
-<script src="js/app.js?v=7.1.0" defer></script>
+<script src="js/chartdata.js?v=8.0.0" defer></script>
+<script src="js/charts.js?v=8.0.0" defer></script>
+<script src="js/ta.js?v=8.0.0" defer></script>
+<script src="js/structure.js?v=8.0.0" defer></script>
+<script src="js/mdata.js?v=8.0.0" defer></script>
+<script src="js/analysis.js?v=8.0.0" defer></script>
+<script src="js/labellayout.js?v=8.0.0" defer></script>
+<script src="js/tachart.js?v=8.0.0" defer></script>
+<script src="js/portfolio-ui.js?v=8.0.0" defer></script>
+<script src="js/analysis-ui.js?v=8.0.0" defer></script>
+<script src="js/security-ui.js?v=8.0.0" defer></script>
+<script src="js/newsrules.js?v=8.0.0" defer></script>
+<script src="js/news.js?v=8.0.0" defer></script>
+<script src="js/events.js?v=8.0.0" defer></script>
+<script src="js/notify.js?v=8.0.0" defer></script>
+<script src="js/mood.js?v=8.0.0" defer></script>
+<script src="js/hubdata.js?v=8.0.0" defer></script>
+<script src="js/hub-ui.js?v=8.0.0" defer></script>
+<script src="js/app.js?v=8.0.0" defer></script>
 </body>
 </html>

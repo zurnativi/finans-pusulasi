@@ -320,6 +320,7 @@
       if (A.kind === 'fund' && S.fund) h += fundCardTefas(A);
       if (A.kind === 'crypto' && A.key.indexOf('cg:') === 0) h += cryptoCard(A);
       if (S.derived) h += '<p class="hint">Bu seri türetilmiştir: ' + esc(S.derived) + '. Mum (açılış/en yüksek/en düşük) yok; teknik analiz kapanışla sınırlıdır. Tam mum analizi için "ons altın" ara.</p>';
+      if (hubUI) { try { h += hubUI.assetCard(A); } catch (e) { console.error(e); } }
       h += '<div class="grid two">' + (A.key.indexOf('bist:') === 0 ? kapCard(A) + newsCard(A) : verifyCard(A) + newsCard(A)) + '</div>';
       if (A.key.indexOf('bist:') === 0) h += '<div class="grid two">' + verifyCard(A) + '<div></div></div>';
       return h;
@@ -705,6 +706,9 @@
         runAnalysis(cur.key).then(function () { if (X.tab() === 'analiz' && X.sub() === 'varlik' && !document.querySelector('.a-chart :focus')) X.render(); }, function () { afterRender(); });
       }, 60000);
     }
-    return { render: render, homeCard: homeCard, actions: actions, onSubmit: onSubmit, afterRender: afterRender, startAlerts: startAlerts, checkAlerts: checkAlerts, keyOfAsset: keyOfAsset, halalFor: halalFor, open: open, _cache: cacheA, _sums: sums };
+    var hubUI = null;
+    function setHub(h) { hubUI = h; }
+    function health() { try { var inp = healthInput(); return inp ? AN.health(inp) : null; } catch (e) { return null; } }
+    return { setHub: setHub, health: health, render: render, homeCard: homeCard, actions: actions, onSubmit: onSubmit, afterRender: afterRender, startAlerts: startAlerts, checkAlerts: checkAlerts, keyOfAsset: keyOfAsset, halalFor: halalFor, open: open, _cache: cacheA, _sums: sums };
   };
 })();

@@ -11,7 +11,7 @@
   'use strict';
   var LISTS = ['incomes', 'expenses', 'assets', 'debts', 'transactions', 'accounts', 'transfers', 'recurring', 'installments', 'sinkingFunds', 'trades', 'goals'];
   var MAPS = ['rates', 'limits', 'prices'];
-  var SKIP = { schema: 1, updatedAt: 1, _sync: 1, migratedFrom: 1, nwHistory: 1, cpi: 1, settings: 1 };
+  var SKIP = { schema: 1, updatedAt: 1, _sync: 1, migratedFrom: 1, nwHistory: 1, cpi: 1, settings: 1, notifLog: 1, notifSettings: 1, mood: 1 };
   var LABELS = { incomes: 'Gelir', expenses: 'Gider', assets: 'Varlık', debts: 'Borç', transactions: 'İşlem', accounts: 'Hesap', transfers: 'Transfer', recurring: 'Düzenli ödeme',
     installments: 'Taksit', sinkingFunds: 'Yıllık gider', trades: 'Alım-satım', goals: 'Hedef', rates: 'Kur', limits: 'Harcama sınırı', prices: 'Fiyat serisi', cpi: 'TÜFE', settings: 'Ayarlar', top: 'Genel bilgi' };
   var TOMB_KEEP_MS = 400 * 86400000;

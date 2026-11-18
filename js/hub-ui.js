@@ -349,9 +349,9 @@
     function homeMood() { try { return moodCard(); } catch (e) { console.error(e); return ''; } }
 
     /* ======================= VARLIK SAYFASI KARTI ======================= */
-    var KIND_GROUP = { stock: 'tr_equity', fund: 'tr_equity', etf: 'us_equity', crypto: 'crypto', metal: 'gold' };
+    var KIND_GROUP = { stock: 'tr_equity', fund: 'tr_equity', etf: 'us_equity', crypto: 'crypto' };
     function assetCard(A) {
-      var g = KIND_GROUP[A.kind] || (A.key === 'idx:XU100' ? 'tr_equity' : null), d = HD.get(); if (!g || !d || !d.calendar) return '';
+      var g = KIND_GROUP[A.kind] || (/^metal:XAU/.test(A.key || '') ? 'gold' : /^idx:/.test(A.key || '') ? 'tr_equity' : null), d = HD.get(); if (!g || !d || !d.calendar) return '';
       var hold = holdings(), evs = EV.upcoming(d.calendar, Date.now(), 45).filter(function (e) { return e.ti && e.impact === 'high' && e.phase !== 'past' && (N.TOPIC_GROUPS[e.ti.topic] || []).indexOf(g) >= 0; }).slice(0, 3);
       var procd = procNews(d, hold), now = Date.now(), nws = procd.filter(function (it) { return it.matches.some(function (m) { return m.h.key === A.key; }) || (it.imp.topics.some(function (t) { return (N.TOPIC_GROUPS[t] || []).indexOf(g) >= 0; }) && it.imp.level !== 'low'); }).sort(function (a, b) { return b.imp.rank - a.imp.rank; }).slice(0, 3);
       if (!evs.length && !nws.length) return '';
