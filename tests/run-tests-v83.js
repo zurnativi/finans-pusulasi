@@ -100,9 +100,9 @@
     var a = runTool(null); ok(a.r.status === 2 && !fs.existsSync(a.out));
     ['123456', 'kisa', 'sadece-rakam-yok1'.slice(0, 11), '12345678901234567'].forEach(function (p) { var b = runTool(p); ok(b.r.status === 3, 'zayıf reddedilmeli: ' + p.length + ' karakter'); ok(!fs.existsSync(b.out)); ok((b.r.stdout + b.r.stderr).indexOf(p) < 0, 'parola yazdırılmamalı'); });
   });
-  test('Betik: güçlü parolayla şifreler (2.000.000 tur), geri açılır, çıktı/günlükte parola ve düz metin yok', function () {
+  test('Betik: güçlü parolayla şifreler (6.000.000 tur), geri açılır, çıktı/günlükte parola ve düz metin yok', function () {
     var t = runTool(TESTPASS); ok(t.r.status === 0, t.r.stderr); var env = JSON.parse(fs.readFileSync(t.out, 'utf8'));
-    eq(env.kdf.iter, 2000000); ok(PD.validEnvelope(env)); ok(/^[0-9a-f]{16}$/.test(env.bundleId));
+    eq(env.kdf.iter, 6000000); ok(PD.validEnvelope(env)); ok(/^[0-9a-f]{16}$/.test(env.bundleId));
     var all = t.r.stdout + t.r.stderr + fs.readFileSync(t.out, 'utf8'); ok(all.indexOf(TESTPASS) < 0 && all.indexOf('GİZLİ') < 0 && all.indexOf('transactions') < 0);
     return PD.unlock(env, TESTPASS).then(function (o) { eq(o.transactions[0].desc, 'GİZLİ-HARCAMA-AÇIKLAMASI'); return rejects(PD.unlock(env, 'yanlis-parola-123456'), 'BAD_PASSWORD'); });
   });
@@ -117,7 +117,7 @@
     var d = path.join(ROOT, 'data'); if (!fs.existsSync(d)) return;
     fs.readdirSync(d).forEach(function (f) { eq(f, 'kisisel-veri.enc.json', 'data/ içinde yalnızca şifreli paket olmalı'); });
     var raw = fs.readFileSync(path.join(d, 'kisisel-veri.enc.json'), 'utf8'), env = JSON.parse(raw);
-    ok(PD.validEnvelope(env)); ok(env.kdf.iter >= 1000000, 'tur sayısı'); eq(env.alg, 'AES-256-GCM');
+    ok(PD.validEnvelope(env)); ok(env.kdf.iter >= 6000000, 'tur sayısı'); eq(env.alg, 'AES-256-GCM');
     ['"transactions"', '"accounts"', 'Ziraat', 'amount', 'isExample'].forEach(function (m) { ok(raw.indexOf(m) < 0, 'düz metin izi: ' + m); });
     return rejects(PD.unlock(env, 'yanlis-parola-123456'), 'BAD_PASSWORD');
   });

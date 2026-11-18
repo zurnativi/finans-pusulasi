@@ -5,7 +5,7 @@
 'use strict';
 var fs = require('fs'), path = require('path'), crypto = require('crypto');
 var CB = require('../js/cryptobox.js'), PD = require('../js/personal.js');
-var ITER = 2000000; // yüksek tur: herkese açık depoda çevrimdışı tahmin saldırısını yavaşlatır (telefonda ~1 sn)
+var ITER = 6000000; // yüksek tur: herkese açık depoda çevrimdışı tahmin saldırısını yavaşlatır (masaüstü ~1 sn, telefon ~2–5 sn; uygulama dosyadaki tur sayısını okur, en çok 10.000.000)
 var inp = process.argv[2], out = process.argv[3] || path.join(__dirname, '..', 'data', 'kisisel-veri.enc.json');
 var pass = process.env.FINANS_DATA_PASSWORD;
 if (!inp) { console.error('Kullanım: node tools/encrypt_personal.js <düz-yedek.json> [çıktı]'); process.exit(2); }
