@@ -100,7 +100,7 @@
       if (rr && !rr.empty && rr.series.length >= 2) {
         var cum = 0, flowsBy = {}; rr.flows.forEach(function (f) { flowsBy[f.date] = M.add(flowsBy[f.date] || 0, f.amount); });
         var val = [], inv = []; rr.series.forEach(function (p) { cum = M.add(cum, flowsBy[p.date] || 0); val.push({ d: p.date, v: p.value }); inv.push({ d: p.date, v: cum }); });
-        h += '<section class="card hero"><div class="label">Yatırımlarının değeri ' + tip('Alım-satımla izlenen varlıkların değeri (ay sonları ve işlem günleri). Kesikli çizgi: net yatırdığın para. Aralığı üstteki düğmelerle değiştir; üzerine gelince o günün tutarlarını görürsün.') + '</div>' +
+        h += '<section class="card hero"><div class="label">Yatırımlarının değeri ' + tip('Alım-satımla izlenen yatırımların değeri; banka nakdi ve borçlar dahil değildir (net varlık için Ana sayfa). Ay sonları ve işlem günleri. Kesikli çizgi: net yatırdığın para. Aralığı üstteki düğmelerle değiştir; üzerine gelince o günün tutarlarını görürsün.') + '</div>' +
           '<div class="hero-v">' + CH.counter('p-val', rr.valueNow) + '</div>' +
           CH.area('p-val', { h: 220, label: 'Portföy değeri ve net yatırılan para', today: c.today, ranges: true, defaultRange: 'Tümü', legend: true, series: [{ name: 'Değer', data: val, color: 'brand' }, { name: 'Net yatırılan', data: inv, dashed: true }],
             caption: function (r) { var g = rangeGain(val, inv, r, c.today, rr); var up = g.gain > 0;
@@ -120,7 +120,7 @@
     }
     function pOverview(c) {
       var s = c.s, an = c.an, sm = c.sm, CH = window.Charts, h = pVisuals(c) + '<div class="grid kpis">';
-      h += X.kpi('Toplam birikim', CH ? CH.counter('p-tot', an.assets.total) : tl(an.assets.total), 'Acil fon dahil; hesaplar ve varlıklar.', 'Hesaplar (kurla TL\'ye çevrilmiş) ve varlıkların bugünkü toplam değeri. Alım-satımla izlenen varlıklar son fiyat × adetle hesaplanır.');
+      h += X.kpi('Toplam birikim', CH ? CH.counter('p-tot', an.assets.total) : tl(an.assets.total), 'Acil fon dahil; hesaplar ve varlıklar. Borçlar düşülmemiştir (Ana sayfada net varlık).', 'Hesaplar (kurla TL\'ye çevrilmiş) ve varlıkların bugünkü toplam değeri. Alım-satımla izlenen varlıklar son fiyat × adetle hesaplanır.');
       h += X.kpi('Toplam kâr / zarar', sm.rows.length ? '<span class="' + plCls(sm.totalPLTL) + '">' + (sm.totalPLTL > 0 ? '+' : '') + (CH ? CH.counter('p-pl', sm.totalPLTL) : tl(sm.totalPLTL)) + '</span>' : '<span class="muted">—</span>', sm.rows.length ? 'Yatırılana göre ' + sbp1(sm.totalPLBp) + ' (gerçekleşen ' + tl(sm.realizedTL) + (sm.divTL ? ', temettü dahil ' + tl(sm.divTL) : '') + ')' : 'Alım-satım girince hesaplanır.', 'Alım-satımla izlenen varlıklarda: (bugünkü değer − kalan maliyet) + satışlardan gerçekleşen kâr. Komisyonlar maliyete dahildir.');
       h += X.kpi('Risk kuralları', c.risk.ok + '/' + c.risk.total + ' tamam', pill(c.risk.worst, c.risk.worst === 'ok' ? 'Sorun yok' : c.risk.worst === 'danger' ? 'Önemli uyarı var' : 'Dikkat'), 'Tek varlık sınırı, riskli varlık sınırı, önce acil fon, çeşitlendirme ve helal uygunluk kuralları.');
       var on = c.rep.goals.filter(function (g) { return g.onTrack; }).length;

@@ -125,15 +125,42 @@
     var out = cp.spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }); if (out.status !== 0) return;
     var bad = out.stdout.split('\n').filter(function (f) { return /gercek-veri|finans-yedek|finans-pusulasi-.*\.json$/.test(f) || (/^data\//.test(f) && !/kisisel-veri\.enc\.json$/.test(f)); }); eq(bad, []);
   });
-  test('Sürüm: index.html ve sw.js 8.3.0; personal.js hem sayfada hem çevrimdışı kabukta; paket dosyası önbelleğe alınmaz', function () {
+  test('Sürüm: index.html ve sw.js 8.3.1; personal.js hem sayfada hem çevrimdışı kabukta; paket dosyası önbelleğe alınmaz', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/js\/personal\.js\?v=8\.3\.0/.test(idx)); ok(idx.indexOf('8.2.1') < 0 && /VERSION = '8\.3\.0'/.test(sw)); ok(/'personal'/.test(sw));
+    ok(/js\/personal\.js\?v=8\.3\.1/.test(idx)); ok(idx.indexOf('8.2.1') < 0 && /VERSION = '8\.3\.1'/.test(sw)); ok(/'personal'/.test(sw));
     ok(idx.indexOf('personal.js') < idx.indexOf('js/app.js'), 'app.js\'ten önce yüklenmeli');
     ok(!/kisisel-veri/.test(sw), 'SW paketi önbelleğe almamalı (sürümsüz URL, ?v= yok)'); ok(/cache: 'no-store'/.test(fs.readFileSync(path.join(ROOT, 'js', 'personal.js'), 'utf8')));
   });
   test('Paket getirme: 404/ağ hatası/geçersiz içerik → null (uygulama normal açılır)', function () {
     var f1 = function () { return Promise.resolve({ ok: false }); }, f2 = function () { return Promise.reject(new Error('net')); }, f3 = function () { return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ a: 1 }); } }); };
     return Promise.all([PD.fetchBundle(f1), PD.fetchBundle(f2), PD.fetchBundle(f3)]).then(function (r) { eq(r, [null, null, null]); });
+  });
+
+
+  /* ---------- v8.3.1: Net varlık dökümü ---------- */
+  var L = require('../js/ledger.js'), C = require('../js/calc.js'), PF = require('../js/portfolio.js');
+  function nwState() { // gerçek veriye benzer: yatırımlar + banka + kart borcu + gelecek taksit
+    var s = S.emptyState(); s.isExample = false;
+    s.accounts.push({ id: 'bk', name: 'Banka', type: 'bank', currency: 'TRY', balance: 3103682, inNetWorth: true, emergency: true });
+    s.accounts.push({ id: 'kk', name: 'Kart', type: 'card', currency: 'TRY', balance: -3523397, inNetWorth: true, card: { statementDay: 14, dueDay: 24, limit: 20000000, statementDebt: 3523397, statementYm: '2026-11', paid: 0, remindDays: 3 } });
+    s.assets.push({ id: 'a1', name: 'Altın', cls: 'gold', risk: 'medium', value: 83250000, tracking: 'manual', currency: 'TRY' }, { id: 'a2', name: 'Fon', cls: 'katilim_fund', risk: 'safe', value: 5114788, tracking: 'manual', currency: 'TRY' });
+    s.installments.push({ id: 'i1', cardId: 'kk', description: 'Araç', category: 'Ulaşım', total: 16000000, count: 9, firstYm: '2026-08' });
+    return S.validateState(s);
+  }
+  test('Net varlık dökümü: yatırım + nakit = toplam birikim; − kart borcu − gelecek taksit = net varlık; uygulamadaki net varlıkla birebir aynı', function () {
+    var s = nwState(), T = '2026-11-18', b = L.netWorthBreakdown(s, T), an = C.analyze(L.effectiveState(s, T), '2026-11');
+    eq(b.investments, 83250000 + 5114788); eq(b.cash, 3103682); eq(b.gross, b.investments + b.cash); eq(b.cardDebt, 3523397);
+    ok(b.futureInstallments > 0, 'gelecek taksit var'); eq(b.debts, b.cardDebt + b.futureInstallments + b.otherDebts); eq(b.net, b.gross - b.debts);
+    eq(b.gross, an.assets.total, 'toplam birikim = Portföy Yönetimi kartı'); eq(b.debts, an.assets.debts); eq(b.net, an.assets.netWorth, 'net varlık = Ana sayfa');
+  });
+  test('Net varlık dökümü: hesap kuru yoksa dışarıda kalır ve söylenir; diğer borçlar ayrı satır; kartın artı bakiyesi nakit sayılır', function () {
+    var s = nwState(), T = '2026-11-18'; s.accounts.push({ id: 'usd', name: 'Dolar', type: 'cash', currency: 'USD', balance: 10000, inNetWorth: true }); s.debts.push({ id: 'd1', name: 'Borç', amount: 100000 });
+    var b = L.netWorthBreakdown(S.validateState(s), T), an = C.analyze(L.effectiveState(s, T), '2026-11'); eq(b.missingRates, ['Dolar']); eq(b.otherDebts, 100000); eq(b.net, an.assets.netWorth);
+  });
+  test('Net varlık dökümü: ekranda satırlar ve açıklama var (Ana sayfa) ve Portföy kartı net varlığa yönlendirir', function () {
+    var app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), pui = fs.readFileSync(path.join(ROOT, 'js', 'portfolio-ui.js'), 'utf8');
+    ok(/Net varlık nasıl hesaplandı\?/.test(app) && /netWorthBreakdownHtml\)/.test(app) && /Gelecek taksitler/.test(app) && /Kredi kartı borcu/.test(app) && /Toplam birikim/.test(app));
+    ok(/Borçlar düşülmemiştir/.test(pui) && /banka nakdi ve borçlar dahil değildir/.test(pui));
   });
 
   function run() {

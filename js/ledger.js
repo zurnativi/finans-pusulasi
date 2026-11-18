@@ -390,6 +390,25 @@
     return s;
   }
 
+  /* Net varlık dökümü (v8.3.1): Ana sayfadaki net varlık ile Portföy sayfasındaki tutarların nasıl ilişkili olduğunu gösterir.
+   * Toplamlar effectiveState ile AYNI kurallarla hesaplanır: net = yatırımlar + hesap nakdi − kart borcu − gelecek taksitler − diğer borçlar. */
+  function netWorthBreakdown(state, todayYmd) {
+    var nowYm = todayYmd.slice(0, 7), inv = M.sum((state.assets || []).map(function (a) { return a.value; })), cash = 0, cardDebt = 0, fut = 0, other = M.sum((state.debts || []).map(function (d) { return d.amount; }));
+    var accounts = [], cards = [], missing = [];
+    (state.accounts || []).forEach(function (a) {
+      var v = accountTL(a, state.rates); if (v == null) { missing.push(a.name); return; }
+      if (a.type === 'card') {
+        var f = futureInstallmentsForCard(state, a.id, nowYm), dn = Math.max(0, -v);
+        cardDebt = M.add(cardDebt, dn); fut = M.add(fut, f); if (v > 0) cash = M.add(cash, v);
+        cards.push({ id: a.id, name: a.name, debt: dn, future: f }); return;
+      }
+      if (a.inNetWorth === false) return;
+      var c = Math.max(0, v); cash = M.add(cash, c); accounts.push({ id: a.id, name: a.name, value: c });
+    });
+    var gross = M.add(inv, cash), debts = M.add(M.add(cardDebt, fut), other);
+    return { investments: inv, cash: cash, gross: gross, cardDebt: cardDebt, futureInstallments: fut, otherDebts: other, debts: debts, net: M.sub(gross, debts), accounts: accounts, cards: cards, missingRates: missing };
+  }
+
   return { CURRENCIES: CURRENCIES, ACCOUNT_TYPES: ACCOUNT_TYPES, FREQS: FREQS,
     daysInMonth: daysInMonth, ymdOf: ymdOf, dayIndex: dayIndex, daysBetween: daysBetween, addMonthsYm: addMonthsYm, isYm: isYm, isYmd: isYmd,
     toTRY: toTRY, formatCur: formatCur, rateAgeDays: rateAgeDays, accountTL: accountTL,
@@ -401,5 +420,5 @@
     generationPlan: generationPlan, applyGeneration: applyGeneration, reconcileImported: reconcileImported, upcoming: upcoming, badgeCount: badgeCount,
     sinkingPlan: sinkingPlan, sinkingTotals: sinkingTotals,
     actualsUntil: actualsUntil, monthSeries: monthSeries, compareMonths: compareMonths, insights: insights,
-    accountsSummary: accountsSummary, effectiveState: effectiveState };
+    accountsSummary: accountsSummary, effectiveState: effectiveState, netWorthBreakdown: netWorthBreakdown };
 });
