@@ -22,8 +22,9 @@ function log(m) { console.log('[portföy-izleme] ' + m); }
 
 function fetchGist(id) {
   if (process.env.BG_GIST_FILE) { try { return Promise.resolve({ content: fs.readFileSync(process.env.BG_GIST_FILE, 'utf8') }); } catch (e) { return Promise.resolve({ missing: true }); } }
-  var h = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'finans-pusulasi-bg' }; if (process.env.GITHUB_TOKEN) h.Authorization = 'Bearer ' + process.env.GITHUB_TOKEN;
-  return fetch('https://api.github.com/gists/' + id, { headers: h }).then(function (r) {
+  var base = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'finans-pusulasi-bg' }, tok = process.env.GITHUB_TOKEN;
+  function get(auth) { return fetch('https://api.github.com/gists/' + id, { headers: auth && tok ? Object.assign({ Authorization: 'Bearer ' + tok }, base) : base }); }
+  return get(true).then(function (r) { return (r.status === 401 || r.status === 403) && tok ? get(false) : r; }).then(function (r) { // Actions belirteci Gist'e yetkili değilse kimliksiz dene (gizli Gist numarasıyla okunur)
     if (r.status === 404) return { missing: true };
     if (!r.ok) throw new Error('Gist okunamadı: HTTP ' + r.status);
     return r.json().then(function (g) {
