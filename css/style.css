@@ -560,3 +560,30 @@ table.sc td{vertical-align:top;min-width:120px}table.sc .an{font-size:.85rem}.wa
 .snap-kpis{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0}
 .snap-kpis span{font-size:.85rem;color:var(--muted)}.snap-kpis b{color:var(--ink);font-size:1rem}
 @media (max-width:520px){.fresh-strip{gap:3px 10px;font-size:.78rem}}
+
+/* v8.2 — Arka plan portföy izleme */
+.bgw-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px}
+.bgw-step{display:flex;gap:12px;align-items:flex-start}
+.bgw-n{flex:0 0 28px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--line);color:var(--ink);font-weight:700;font-size:.85rem}
+.bgw-step.done .bgw-n{background:var(--safe);color:#fff}
+.bgw-b{flex:1;min-width:0}.bgw-b h3{margin:2px 0 6px;font-size:1rem}
+.bgw-sub{margin:6px 0 10px;padding-left:20px}.bgw-sub li{margin:4px 0}
+.bgw-secret textarea{width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;word-break:break-all;resize:vertical;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.bgw-secret textarea.masked{letter-spacing:.15em;color:var(--muted)}
+.bgw-topic{padding:4px 8px;border-radius:6px;background:var(--bg);border:1px solid var(--line);word-break:break-all}
+.bgw-pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:.72rem;font-weight:700;vertical-align:middle;background:var(--line);color:var(--muted);margin-left:6px}
+.bgw-pill.ok{background:var(--ok-bg);color:var(--ok)}.bgw-pill.warn{background:var(--warn-bg);color:var(--warn)}.bgw-pill.neg{background:var(--danger-bg);color:var(--danger)}
+.bgw-msg{padding:8px 12px;border-radius:10px;background:var(--info-bg);color:var(--info);margin:8px 0}.bgw-msg.ok{background:var(--ok-bg);color:var(--ok)}.bgw-msg.err{background:var(--danger-bg);color:var(--danger)}
+.bgw-list{padding-left:20px}.bgw-list li{margin:6px 0}
+.bgw-check{list-style:none;padding:0;margin:10px 0 0}.bgw-check li{padding:6px 0;border-bottom:1px solid var(--line)}.bgw-check li b{display:inline-block;width:1.4em}
+.bgw-check li.ok b{color:var(--ok)}.bgw-check li.bad b{color:var(--danger)}.bgw-check li.wait b{color:var(--warn)}.bgw-check small{display:block;color:var(--muted);margin-left:1.4em}
+.bgw-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.bgw-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
+.bgw-kpis>div{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}.bgw-kpis span{display:block;color:var(--muted);font-size:.78rem}.bgw-kpis b{display:block;font-size:1.15rem;margin-top:2px}.bgw-kpis small{color:var(--muted)}
+.bgw-items{list-style:none;padding:0;margin:8px 0}.bgw-items li{padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin:6px 0}.bgw-items p{margin:4px 0}
+.bgw-fs{border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:8px 12px}.bgw-fs .chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0}
+.bgw-warn{color:var(--danger);font-weight:600}
+.bgw-line{margin:4px 0}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:480px){.bgw-step{gap:8px}}
+.bgw-rem{list-style:none;padding:0;margin:6px 0}.bgw-rem li{padding:6px 0;border-bottom:1px solid var(--line)}.bgw-rem li.overdue b{color:var(--danger)}.bgw-rem li.today b{color:var(--warn)}

@@ -114,10 +114,39 @@
       });
     });
   });
+  test('Kontrol: piyasa geneli (herkese açık) uyarılar sonuçta görünür ama arka plan portföy bildirimi olarak ÇİFT gönderilmez', function () {
+    var p = BG.slice(personal(), NOW, 't'), data = { feed: { items: [] }, alerts: { generatedAt: new Date(NOW).toISOString(), items: [{ id: 'srv-1', cat: 'market', sev: 'critical', title: 'Piyasa şoku testi', body: 'x', at: new Date(NOW).toISOString(), href: null }] } };
+    return BG.check(p, data, { now: NOW, refresh: false, snapOf: function () { return Promise.resolve(null); }, prev: { log: NT.cleanLog(null), analysis: {} } }).then(function (r) {
+      ok(r.res.items.some(function (i) { return i.id === 'srv-1'; }), 'görünür'); ok(!r.deliver.some(function (i) { return i.id === 'srv-1'; }), 'çift bildirim yok');
+    });
+  });
   test('Kontrol: yalnızca ELDEKİ varlıklar için stop/düşüş uyarısı (izleme listesi stop uyarısı üretmez)', function () {
     var s = personal(); s.analysis = { watchlist: [{ key: 'bist:THYAO', name: 'THYAO' }] }; var p = BG.slice(s, NOW, 't');
     var below = snapFor('bist:THYAO', { price: 50, plans: { conservative: { stop: 60, stopLabel: 'test' } } });
     return chk(p, { snapOf: function (k) { return Promise.resolve(k === 'bist:THYAO' ? below : null); } }).then(function (r) { ok(!r.res.log.items.some(function (i) { return /^stop:bist:THYAO/.test(i.id); })); ok(r.res.analysis['bist:THYAO'], 'izleme listesi analizi sonuçta'); });
+  });
+  test('Ödeme hatırlatmaları: yüke yalnız hatırlatma listesi girer (tutar/ad işlem listesi değil); arka planda vade yaklaşınca/geçince uyarı, ödenince kalkar, tekrar bildirim yok', function () {
+    var st = personal(), p = BG.slice(st, NOW, 't'); ok(Array.isArray(p.reminders) && p.reminders.length > 0, 'örnek durumda yaklaşan ödeme var'); ok(!('recurring' in p.state) && !('transactions' in p.state));
+    p.reminders.forEach(function (r) { ok(/^(recurring|card|sinking):/.test(r.id) && /^\d{4}-\d\d-\d\d$/.test(r.date) && Number.isInteger(r.remind) && Number.isSafeInteger(r.amount) && r.amount >= 0, 'biçim ' + r.id); });
+    function ymd(plus) { return new Date(NOW + 3 * 3600000 + plus * 86400000).toISOString().slice(0, 10); }
+    var base = BG.slice(personal(), NOW, 't'); base.reminders = [
+      { id: 'recurring:r1:' + ymd(2), kind: 'recurring', title: 'Kira', date: ymd(2), amount: 1500000, remind: 3 }, { id: 'recurring:r2:' + ymd(20), kind: 'recurring', title: 'Uzak', date: ymd(20), amount: 100, remind: 3 },
+      { id: 'card:c1:' + ymd(-2), kind: 'card', title: 'Kart — son ödeme', date: ymd(-2), amount: 99900, remind: 3 }, { id: 'recurring:r3:' + ymd(0), kind: 'recurring', title: 'Fatura', date: ymd(0), amount: 5000, remind: 3 }, { id: 'recurring:r4:' + ymd(-30), kind: 'recurring', title: 'Çok eski', date: ymd(-30), amount: 5000, remind: 3 }];
+    return chk(base, { prev: { log: NT.cleanLog(null), analysis: {} } }).then(function (r1) {
+      var pay = r1.res.items.filter(function (i) { return i.cat === 'payment'; }); eq(pay.map(function (i) { return i.title; }).sort(), ['Fatura — bugün son gün', 'Kart — son ödeme — ödeme günü geçti (2 gün)', 'Kira — 2 gün sonra'].sort());
+      eq(pay.filter(function (i) { return i.sev === 'high'; }).length, 2); eq(pay.filter(function (i) { return i.sev === 'medium'; }).length, 1);
+      ok(r1.res.reminders.length === 5 && r1.res.reminders.filter(function (x) { return x.level === 'later'; }).length === 1, 'sonuçta tüm hatırlatma satırları (uzak olan "later")');
+      pay.forEach(function (i) { ok(!/\d[\d.]*,\d\d\s*TL|\d+\s*TL/.test(i.title + i.body), 'bildirim metninde tutar yok'); ok(/Ödendi/.test(i.body)); });
+      var cur = r1.res; base.reminders = base.reminders.slice(0, 1); // diğerleri ödendi → cihaz yeni yük yükledi
+      return chk(base, { prev: cur }).then(function (r2) {
+        eq(r2.deliver.filter(function (i) { return i.cat === 'payment'; }).length, 0, 'aynı hatırlatma tekrar bildirilmez');
+        var all = r2.res.log.items.filter(function (i) { return i.cat === 'payment'; }); ok(all.filter(function (i) { return i.resolvedAt; }).length === 2, 'ödenen (listeden düşen) hatırlatmalar çözüldü'); eq(r2.res.items.filter(function (i) { return i.cat === 'payment'; }).length, 1);
+      });
+    });
+  });
+  test('Bildirim ayarı: "Ödeme hatırlatması" kategorisi varsayılan açık (orta ve üstü) ve ayardan kapatılabilir', function () {
+    var S2 = NT.cleanSettings(null); eq(S2.cats.payment, { on: true, push: 'medium' }); ok(NT.CATS.payment && NT.CAT_HELP.payment);
+    var off = NT.cleanSettings({ cats: { payment: { on: false, push: 'off' } } }); eq(off.cats.payment.on, false);
   });
 
   /* ---------- 6. İş betiği (Actions'ta çalışan Node adımı) ---------- */

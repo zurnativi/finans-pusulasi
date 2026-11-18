@@ -77,8 +77,32 @@
     ['incomes', 'expenses'].forEach(function (k) { (s[k] || []).forEach(function (x) { x.name = String(x.name || '').slice(0, 0); }); });
     if (s.notifSettings) { try { s.notifSettings = NT.cleanSettings(s.notifSettings); } catch (e) { delete s.notifSettings; } }
     var out = { v: VERSION, at: iso(nowMs), device: String(device || '').slice(0, 40), isExample: !!state.isExample, pushMode: opts.pushMode === 'generic' ? 'generic' : 'detail', state: s };
+    out.reminders = remindersOf(state, tsiYmd(nowMs));
     if (opts.testPush) out.testPush = { id: String(opts.testPush.id).slice(0, 40), at: opts.testPush.at };
     return out;
+  }
+
+  /* Yaklaşan ödemeler: cihazda (tam durumdan, "ödendi" bilgisiyle) hesaplanır; yüke yalnız hatırlatma listesi girer (işlem/tekrarlayan listesi girmez). */
+  function remindersOf(state, todayYmd) {
+    var up; try { up = L.upcoming(state, todayYmd, 45); } catch (e) { return []; }
+    var rec = {}, acc = {}; (state.recurring || []).forEach(function (r) { rec[r.id] = r; }); (state.accounts || []).forEach(function (a) { acc[a.id] = a; });
+    return up.slice(0, 40).map(function (x) {
+      var rd = x.kind === 'recurring' ? rec[x.id] && rec[x.id].remindDays : x.kind === 'card' ? acc[x.id] && acc[x.id].card && acc[x.id].card.remindDays : 7;
+      rd = Number.isInteger(rd) && rd >= 0 && rd <= 31 ? rd : (x.kind === 'sinking' ? 7 : 3);
+      return { id: x.kind + ':' + x.id + ':' + x.date, kind: x.kind, title: String(x.title || '').slice(0, 80), date: x.date, amount: Number.isSafeInteger(x.amount) ? Math.abs(x.amount) : 0, remind: rd };
+    });
+  }
+  function reminderCands(list, today, nowIso) {
+    var cands = [], rows = [];
+    (list || []).forEach(function (r) {
+      if (!r || !L.isYmd(r.date)) return; var dl = L.daysBetween(today, r.date), level = dl < 0 ? 'overdue' : dl === 0 ? 'today' : dl <= r.remind ? 'soon' : 'later';
+      rows.push({ id: r.id, kind: r.kind, title: r.title, date: r.date, amount: r.amount, daysLeft: dl, level: level });
+      if (level === 'later' || dl < -14) return;
+      cands.push({ id: 'pay:' + r.id, cat: 'payment', sev: level === 'soon' ? 'medium' : 'high', state: true, title: r.title + (dl < 0 ? ' — ödeme günü geçti (' + (-dl) + ' gün)' : dl === 0 ? ' — bugün son gün' : ' — ' + dl + ' gün sonra'),
+        body: r.date.slice(8, 10) + '.' + r.date.slice(5, 7) + '.' + r.date.slice(0, 4) + ' tarihli ödeme. Ödediysen uygulamada “Ödendi” işaretle; işaretlenince bu hatırlatma kalkar.', href: '#odemeler', assets: [],
+        why: ['Uygulamandaki ödeme planına göre (hatırlatma günü: ' + r.remind + ')'], sources: [{ label: 'Ödeme planın (cihazından, şifreli)', at: nowIso }] });
+    });
+    return { cands: cands, rows: rows };
   }
 
   /* ======================= ORTAK HESAPLAR (tarayıcıdaki arayüzle aynı fonksiyonlar) ======================= */
@@ -204,7 +228,7 @@
         if (s.stance && s.stance.hold && s.stance.hold.code === 'trim' && !(o.hold === 'trim')) cands.push({ id: 'an:trim:' + key + ':' + day, cat: 'portfolio', sev: 'high', title: nm + ': yorulma işaretleri — kısmi azaltmayı gözden geçir', body: (s.stance.hold.why || []).slice(0, 2).join(' · ') + '. Bu otomatik satış değildir; yalnızca taze analizin gösterdiği zayıflık/yorulma. Kararı sen ver.', href: '#analiz/varlik/' + key, assets: [nm], why: ['Satış kuralı: yalnız taze analiz dirençte ≥2 yorulma işareti gösterirse'], sources: [{ label: 'Analiz anlık görüntüsü', at: s.at }] });
       }
       var p = s.plans && s.plans.conservative;
-      if (role === 'hold' && s.halalOk && p && p.stop != null && s.price != null && s.price < p.stop) cands.push({ id: 'stop:' + key + ':' + p.stop + ':' + s.lastDate, cat: 'level', sev: 'high', title: nm + ': fiyat analiz stop seviyesinin altında', body: 'Son ' + s.price + ' < seviye ' + p.stop + ' (' + (p.stopLabel || 'yapı bazlı') + '). Güncel analizi aç; bu otomatik satış emri değildir.', href: '#analiz/varlik/' + key, assets: [nm], why: ['Seviye, taze analizin yapısından çıkar (sabit % değil)'], sources: [{ label: 'Analiz anlık görüntüsü', at: s.at }] });
+      if (role === 'hold' && s.halalOk && p && p.stop != null && s.price != null && s.price < p.stop) cands.push({ id: 'stop:' + key + ':' + p.stop + ':' + s.lastDate, cat: 'level', sev: 'high', state: true, title: nm + ': fiyat analiz stop seviyesinin altında', body: 'Son ' + s.price + ' < seviye ' + p.stop + ' (' + (p.stopLabel || 'yapı bazlı') + '). Güncel analizi aç; bu otomatik satış emri değildir.', href: '#analiz/varlik/' + key, assets: [nm], why: ['Seviye, taze analizin yapısından çıkar (sabit % değil)'], sources: [{ label: 'Analiz anlık görüntüsü', at: s.at }] });
     }
     hold.forEach(function (h) { consider(h.key, h.name, 'hold'); });
     (wl || []).forEach(function (w) { consider(w.key, w.name, 'watch'); });
@@ -244,8 +268,10 @@
           return (opts.MD ? kapItems(opts.MD, hold) : Promise.resolve([])).then(function (kap) {
             var items = ((data.feed && data.feed.items) || []).concat(kap), news = N.process(items, hold, now);
             var health = H, meta = prevLog.meta, ctx = buildCtx({ state: state, calc: c, now: now, hold: hold, settings: S, health: health, news: news, hub: data, meta: meta });
-            var ev2 = NT.evaluate(ctx), cands = ev2.cands.concat(pa.cands);
-            var firstRun = !prev || !prev.log, fresh = NT.merge(prevLog, cands, now, ev2.metaPatch), dl = NT.deliverable(prevLog, fresh, S, now);
+            var ev2 = NT.evaluate(ctx), rm = reminderCands(payload.reminders, today, nowIso), cands = ev2.cands.concat(pa.cands, rm.cands); res.reminders = rm.rows.slice(0, 20);
+            var firstRun = !prev || !prev.log, fresh = NT.merge(prevLog, cands, now, ev2.metaPatch);
+            prevLog.items.forEach(function (it) { if (/^an:/.test(it.id) && !it.resolvedAt && now - (it.firstAt || it.at || now) > 36 * 3600000) it.resolvedAt = now; }); // geçiş uyarıları 36 sa sonra kutudan kalkar
+            var dl = NT.deliverable(prevLog, fresh, S, now).filter(function (it) { return it.origin !== 'workflow'; }); // piyasa geneli uyarıları zaten tools/publish.py ntfy'ye gönderir (çift bildirim olmasın)
             if (firstRun) dl = dl.filter(function (it) { return it.sev === 'critical'; }).slice(0, 3); // ilk çalışmada eski durumlar için bildirim yağmuru olmasın
             res.log = prevLog; res.fresh = fresh; res.deliver = dl.map(function (it) { return it.id; });
             res.items = NT.visible(prevLog, S, now).slice(0, 40).map(function (it) { return { id: it.id, cat: it.cat, sev: it.sev, title: it.title, body: it.body, href: it.href, at: it.at, assets: it.assets, why: it.why, sources: (it.sources || []).slice(0, 3) }; });

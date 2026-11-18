@@ -7,10 +7,10 @@
 })(typeof self !== 'undefined' ? self : this, function (N, EV) {
   'use strict';
   var SEV = { critical: { rank: 4, label: 'Kritik' }, high: { rank: 3, label: 'Yüksek' }, medium: { rank: 2, label: 'Orta' }, info: { rank: 1, label: 'Bilgi' } };
-  var CATS = { portfolio: 'Portföy', level: 'Fiyat seviyesi', news: 'Kritik haber', event: 'Takvim ve senaryo', market: 'Piyasa şoku', data: 'Veri kalitesi' };
-  var CAT_HELP = { portfolio: 'Düşüş eşikleri, varlık/limit aşımı, sağlık skoru, acil fon, helal durum değişikliği.', level: 'Koyduğun fiyat seviyelerinin tetiklenmesi.', news: 'Çok önemli haberler ve portföyüne olası etkisi.', event: 'Faiz kararı, enflasyon, seçim gibi olayların 1 gün öncesi ve sonucu (beklenti sapması).', market: 'BIST, USD/TL, altın, Bitcoin, VIX\'te olağandışı hareket; tahmin piyasalarında ani kayma.', data: 'Eski/eksik fiyat, ulaşılamayan veri kaynağı.' };
+  var CATS = { portfolio: 'Portföy', level: 'Fiyat seviyesi', news: 'Kritik haber', event: 'Takvim ve senaryo', market: 'Piyasa şoku', data: 'Veri kalitesi', payment: 'Ödeme hatırlatması' };
+  var CAT_HELP = { portfolio: 'Düşüş eşikleri, varlık/limit aşımı, sağlık skoru, acil fon, helal durum değişikliği.', level: 'Koyduğun fiyat seviyelerinin tetiklenmesi.', news: 'Çok önemli haberler ve portföyüne olası etkisi.', event: 'Faiz kararı, enflasyon, seçim gibi olayların 1 gün öncesi ve sonucu (beklenti sapması).', market: 'BIST, USD/TL, altın, Bitcoin, VIX\'te olağandışı hareket; tahmin piyasalarında ani kayma.', data: 'Eski/eksik fiyat, ulaşılamayan veri kaynağı.', payment: 'Yaklaşan/geçmiş düzenli ödemeler, kart son ödeme günü, yıllık giderler (arka plan izleme açıkken telefona da gelir).' };
   var DEFAULT_SETTINGS = {
-    v: 1, cats: { portfolio: { on: true, push: 'high' }, level: { on: true, push: 'high' }, news: { on: true, push: 'high' }, event: { on: true, push: 'high' }, market: { on: true, push: 'critical' }, data: { on: true, push: 'critical' } },
+    v: 1, cats: { portfolio: { on: true, push: 'high' }, level: { on: true, push: 'high' }, news: { on: true, push: 'high' }, event: { on: true, push: 'high' }, market: { on: true, push: 'critical' }, data: { on: true, push: 'critical' }, payment: { on: true, push: 'medium' } },
     quiet: { on: true, from: '23:00', to: '08:00', critBypass: true }, browser: false, ntfy: { on: false, topic: '', min: 'critical' }, newsScope: 'portfolio',
     thr: { ddMedium: 5, ddHigh: 10, ddCritical: 20, move1d: 7, move1dCritical: 12 }
   };
