@@ -23,6 +23,12 @@
     }
     return best;
   }
+  // `at` anından SONRA beklenen ilk zamanlanmış çalışma (yoksa null): veri bundan beri yenilenmemişse gecikme buradan ölçülür
+  function firstAfter(job, atMs) {
+    var S = SCHEDULE[job]; if (!S || atMs == null) return null; var d0 = Math.floor(atMs / D) * D, best = null;
+    for (var k = 0; k <= 9 && best == null; k++) { var day = d0 + k * D, sl = S.slots(day, new Date(day).getUTCDay()); for (var i = 0; i < sl.length; i++) if (sl[i] > atMs && (best == null || sl[i] < best)) best = sl[i]; }
+    return best;
+  }
   function ageText(ms) {
     if (ms == null || !isFinite(ms)) return '—'; var m = Math.round(ms / MIN);
     if (m < 1) return 'şimdi'; if (m < 90) return m + ' dk önce'; var h = Math.round(ms / H); if (h < 48) return h + ' sa önce'; return Math.round(ms / D) + ' gün önce';
@@ -37,7 +43,7 @@
       var exp = lastExpected(id, nowMs), row = { id: id, label: S.label, every: S.every, lastAt: at != null ? new Date(at).toISOString() : null, age: at != null ? nowMs - at : null, expectedAt: exp != null ? new Date(exp).toISOString() : null, failed: !!(st && st.ok === false), run: st && st.run || null };
       if (at == null) { row.state = 'missing'; row.text = st && st.ok === false ? 'Son çalışma başarısız' : 'Henüz çalışmadı / bilgi yok'; }
       else {
-        var delay = exp != null ? nowMs - Math.max(exp, 0) : 0, behind = exp != null && at < exp - 5 * MIN;
+        var nx = firstAfter(id, at), behind = exp != null && at < exp - 5 * MIN, delay = behind && nx != null ? nowMs - nx : 0;
         row.state = !behind || delay <= S.grace ? 'ok' : delay > 4 * S.grace ? 'stale' : 'late';
         row.text = row.state === 'ok' ? 'Güncel' : row.state === 'late' ? 'Gecikmeli (beklenen çalışma henüz gelmedi)' : 'Durmuş görünüyor';
       }
@@ -55,5 +61,5 @@
       return { name: name, ok: s.ok !== false, n: s.n, state: st, fetchedAt: f != null ? new Date(f).toISOString() : null, lastAt: l != null ? new Date(l).toISOString() : null, fetchedAgo: f != null ? nowMs - f : null, lastAgo: l != null ? nowMs - l : null, kind: s.kind, err: s.err || null };
     }).sort(function (a, b) { return (a.state === 'ok') - (b.state === 'ok') || (a.name < b.name ? -1 : 1); });
   }
-  return { SCHEDULE: SCHEDULE, lastExpected: lastExpected, evaluate: evaluate, sources: sources, ageText: ageText };
+  return { SCHEDULE: SCHEDULE, lastExpected: lastExpected, firstAfter: firstAfter, evaluate: evaluate, sources: sources, ageText: ageText };
 });

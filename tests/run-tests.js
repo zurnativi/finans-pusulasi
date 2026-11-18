@@ -735,6 +735,13 @@
               r8.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
               console.log('\n' + p8 + '/' + r8.length + ' v8 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length));
               if (p8 !== r8.length) process.exit(1);
+              console.log('\n— v8.1 (güncellik ↔ cron eşitliği, sunucu anlık görüntüsü, uyarı üretimi, senaryo özeti) —');
+              return require('./run-tests-v81.js').run().then(function (r81) {
+                var p81 = r81.filter(function (r) { return r.ok; }).length;
+                r81.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                console.log('\n' + p81 + '/' + r81.length + ' v8.1 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length));
+                if (p81 !== r81.length) process.exit(1);
+              });
             });
           });
         });

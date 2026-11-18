@@ -18,6 +18,47 @@
     function st() { return X.state(); }
     function an() { var s = st(); return s.analysis && typeof s.analysis === 'object' ? s.analysis : { watchlist: [], profile: {} }; }
     function sums() { try { return JSON.parse(localStorage.getItem(SUM_KEY) || '{}') || {}; } catch (e) { return {}; } }
+    /* ---------- Sunucu anlık görüntüleri (v8.1): iş akışı aynı analiz kodunu çalıştırıp analysis/*.json yazar ---------- */
+    var HDx = window.HubData, snapCache = {}, srvReq = false, srvUi = { kind: 'bist', sort: 'score' };
+    function srvIdx() { var d = HDx && HDx.get(); return d && d.analysisIdx && d.analysisIdx.items ? d.analysisIdx : null; }
+    function srvMap() { var m = {}, ix = srvIdx(); if (ix) ix.items.forEach(function (r) { m[r.key] = r; }); return m; }
+    function ageTxt(iso) { var t = iso ? Date.parse(iso) : NaN; return isFinite(t) && window.Fresh ? window.Fresh.ageText(Date.now() - t) : '—'; }
+    function sumsAll() { // yerel özet (tarayıcıda hesaplanan) öncelikli; yoksa ya da sunucununki daha yeniyse sunucu satırı
+      var S = Object.assign({}, sums()), m = srvMap();
+      Object.keys(m).forEach(function (k) { var r = m[k], l = S[k]; if (!l || (r.at && l.at && r.at > l.at)) S[k] = { key: r.key, name: r.name, kind: r.kind, total: r.total, conf: r.conf, confLabel: r.confLabel, stance: r.stance || '', stanceCode: r.stanceCode, price: r.price, cur: r.cur, at: r.at, lastDate: r.lastDate, blocked: r.blocked, server: true }; });
+      return S;
+    }
+    function loadSnap(key) {
+      var c = snapCache[key]; if (c && (c.loading || (c.data && Date.now() - c.t < 5 * 60000))) return;
+      snapCache[key] = { loading: true, t: Date.now(), data: c && c.data };
+      var url = (HDx ? HDx.base() : MD.URL.mdIndex.replace(/index\.json$/, '')) + 'analysis/' + SN.fileOf(key) + '.json';
+      MD.fetchJson(url, { timeout: 15000 }).then(function (j) { snapCache[key] = { data: j, t: Date.now() }; X.render(); }, function (e) { snapCache[key] = { error: e.status === 404 ? null : e.message, none: e.status === 404, t: Date.now() }; X.render(); });
+    }
+    function snapCard(key, A) {
+      var c = snapCache[key]; if (!c || !c.data) return c && c.loading ? '<section class="card snap-card"><p class="loading-line">Sunucu anlık görüntüsü alınıyor…</p></section>' : '';
+      var s = c.data, pl = s.plans && s.plans.conservative, diff = A && A.total != null && s.total != null ? A.total - s.total : null;
+      var h = '<section class="card snap-card"><h2>Sunucu anlık görüntüsü <span class="srv-tag">arka plan</span> ' + tip('GitHub Actions bu varlığı düzenli olarak, tarayıcıdaki ile AYNI analiz koduyla hesaplar. Sayfa açılır açılmaz bu sonuç görünür; aşağıdaki canlı hesap ise şu an tarayıcında yapılır.') + '</h2>';
+      h += '<div class="hrow"><div class="hbars">' + bar(s.total, 'Skor (sunucu)') + '</div><div class="stance st-' + esc(s.stance ? s.stance.code : 'nosignal') + '"><b>' + esc(s.stance ? s.stance.label : '—') + '</b><div class="hint">Güven ' + (s.confidence != null ? s.confidence : '—') + '/100</div></div></div>';
+      h += '<div class="snap-kpis"><span>Fiyat <b>' + money(s.price, s.currency) + '</b></span><span>Son mum <b>' + esc(s.lastDate || '—') + '</b></span>' + (pl && pl.stop != null ? '<span>Temkinli stop <b>' + money(pl.stop, s.currency) + '</b></span>' : '') + (pl && pl.rr != null ? '<span>R/Ö <b>' + String(pl.rr).replace('.', ',') + '</b></span>' : '') + '<span>Son güncelleme <b>' + esc(ageTxt(s.at)) + '</b> <small class="muted">(' + when(s.at) + ')</small></span></div>';
+      if (diff != null && Math.abs(diff) >= 5) h += '<p class="hint">Tarayıcı hesabı ' + A.total + ', sunucu ' + s.total + ': fark ' + (diff > 0 ? '+' : '') + diff + '. Sunucu hesabı daha eski bir fiyat/mumla yapılmış olabilir; güncel karar için aşağıdaki canlı hesabı kullan.</p>';
+      else if (diff != null) h += '<p class="hint">Tarayıcıdaki canlı hesapla uyumlu (fark ' + (diff > 0 ? '+' : '') + diff + ').</p>';
+      if (s.source && s.source.live) h += '<p class="hint">Canlı fiyat kaynağı: ' + esc(s.source.live.source) + ' · ' + when(s.source.live.at) + '</p>';
+      return h + '</section>';
+    }
+    function srvCard() {
+      var ix = srvIdx(); if (!ix && HDx && !srvReq) { srvReq = true; HDx.load(false).then(function () { X.render(); }, function () { }); }
+      if (!ix) return '<section class="card srv-card"><h2>Sunucu analizleri</h2><p class="muted">' + (srvReq ? 'Sunucu analizi henüz yok ya da yüklenemedi (iş akışının ilk çalışması bekleniyor).' : 'Yükleniyor…') + '</p></section>';
+      var KG = { bist: ['bist:', 'Katılım 50 hisseleri'], idx: ['idx:', 'Endeksler'], etf: ['us:', 'Helal ABD ETF'], fund: ['tefas:', 'Fonlar'], mt: ['metal:|fx:', 'Altın/gümüş/döviz'], cg: ['cg:', 'Kripto'], all: ['', 'Hepsi'] };
+      var rows = ix.items.filter(function (r) { var g = KG[srvUi.kind]; return !g[0] || g[0].split('|').some(function (p) { return r.key.indexOf(p) === 0; }); });
+      rows.sort(function (a, b) { return srvUi.sort === 'name' ? (a.name < b.name ? -1 : 1) : (b.total == null ? -1 : a.total == null ? 1 : b.total - a.total); });
+      var h = '<section class="card srv-card"><div class="srv-top"><h2>Sunucu analizleri <span class="srv-tag">arka planda güncellenir</span> ' + tip('Katılım 50 hisseleri, endeksler, altın/gümüş, döviz, helal ETF, örnek fonlar ve kripto için sunucuda hesaplanmış skorlar. Siten kapalıyken de yenilenir; aynı kod tarayıcıda kendi varlıkların için çalışır.') + '</h2>' +
+        '<div class="flt"><label>Grup <select data-asrv="kind">' + Object.keys(KG).map(function (k) { return '<option value="' + k + '"' + (srvUi.kind === k ? ' selected' : '') + '>' + KG[k][1] + '</option>'; }).join('') + '</select></label> <label>Sıra <select data-asrv="sort"><option value="score"' + (srvUi.sort === 'score' ? ' selected' : '') + '>Skor</option><option value="name"' + (srvUi.sort === 'name' ? ' selected' : '') + '>Ad</option></select></label></div></div>' +
+        '<p class="hint">Son güncelleme: <b>' + esc(ageTxt(ix.generatedAt)) + '</b> (' + when(ix.generatedAt) + ') · ' + ix.count + ' varlık · <a href="#haberler/durum">iş durumu</a></p>';
+      if (!rows.length) return h + '<p class="muted">Bu grupta analiz yok.</p></section>';
+      h += '<div class="tablewrap"><table class="atable stack"><thead><tr><th>Varlık</th><th>Skor</th><th>Durum</th><th class="detail-only">Güven</th><th>Helal</th><th>Güncelleme</th></tr></thead><tbody>' + rows.slice(0, 60).map(function (r) {
+        return '<tr><td data-label="Varlık"><a href="#analiz/varlik/' + esc(r.key) + '">' + esc(String(r.name).split(' — ')[0]) + '</a><div class="hint">' + esc(String(r.name).split(' — ').slice(1).join(' — ').slice(0, 40)) + (r.stale ? ' <span class="srv-tag">eski kopya</span>' : '') + '</div></td><td data-label="Skor">' + scoreBadge(r.total) + ' <span class="srv-bar" style="width:' + Math.round((r.total || 0) * 0.6) + 'px"></span></td><td data-label="Durum">' + esc(r.blocked ? 'Sinyal yok' : r.stance || '—') + '</td><td data-label="Güven" class="detail-only">' + (r.conf != null ? r.conf : '—') + '</td><td data-label="Helal">' + (r.halal === 'uygun' ? pill('ok', 'Uygun') : r.halal === 'supheli' ? pill('warn', 'Şüpheli') : pill('info', r.halal === 'uygun_degil' ? 'Uygun değil' : 'Bilinmiyor')) + '</td><td data-label="Güncelleme">' + esc(ageTxt(r.at)) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      return h + '<p class="hint">Skor 0–100; güven veri kalitesi ve TradingView karşılaştırmasına göre. Yalnızca teknik/temel okuma — yatırım tavsiyesi değildir; helal olmayan varlıklara alım planı önerilmez.</p></section>';
+    }
     function saveSum(A) { var s = sums(); s[A.key] = { key: A.key, name: A.name, kind: A.kind, total: A.total, conf: A.confidence, confLabel: A.confLabel, stance: A.stance.label, stanceCode: A.stance.code, hold: A.stance.hold ? A.stance.hold.label : null, price: A.price, cur: A.currency, at: new Date().toISOString(), lastDate: A.lastDate, blocked: A.blocked }; try { localStorage.setItem(SUM_KEY, JSON.stringify(s)); } catch (e) { /* kota */ } }
     function imports() { try { return JSON.parse(localStorage.getItem(IMP_KEY) || '{}') || {}; } catch (e) { return {}; } }
     function pill(level, text) { var c = level === 'ok' ? 'ok' : level === 'warn' ? 'warn' : level === 'danger' || level === 'fail' ? 'err' : 'info'; return '<span class="pill ' + c + '">' + esc(text) + '</span>'; }
@@ -72,7 +113,7 @@
     }
     function open(key, opts) {
       if (cur.key !== key) cur.view.tf = cur.view.tf === '1d' || !tfAllowed(key) ? '1d' : cur.view.tf;
-      cur.key = key; cur.error = null; cur.loading = true;
+      cur.key = key; cur.error = null; cur.loading = true; loadSnap(key);
       if (X.tab() !== 'analiz' || X.sub() !== 'varlik') location.hash = '#analiz/varlik/' + key; // route → render
       else { if (location.hash !== '#analiz/varlik/' + key) history.replaceState(null, '', '#analiz/varlik/' + key); X.render(); }
       runAnalysis(key, opts).then(function () { cur.loading = false; X.render(); }, function (e) { cur.loading = false; cur.error = e.message || String(e); X.render(); });
@@ -240,7 +281,7 @@
         fees: sm.feesTL, invested: sm.boughtTL, perf: rr && !rr.empty && bench && rr.xirr != null ? { xirr: rr.xirr, bench: bench.v, benchLabel: bench.label } : null, profile: prof, maxSingleBp: R.maxAssetBp, corr: corr && !corr.error ? corr : null };
     }
     function overview() {
-      var h = searchBox(), inp = healthInput(), H = inp ? AN.health(inp) : null, S = sums(), hl = holdings();
+      var h = searchBox(), inp = healthInput(), H = inp ? AN.health(inp) : null, S = sumsAll(), hl = holdings();
       if (st().isExample) h += '<p class="hint">Örnek portföy üzerinde gösteriliyor. Piyasa verileri ise <b>gerçek ve canlıdır</b>.</p>';
       h += '<div class="grid two a-top">';
       h += '<section class="card a-health"><h2>Portföy sağlık skoru ' + tip('10 ölçütün belgeli ağırlıklarla ortalaması: çeşitlendirme (korelasyon dahil), yoğunlaşma, risk dağılımı uyumu, oynaklık/düşüş, acil fon, helal uyum, likidite, maliyet, performans, kural uyumu. Hesaplanamayan ölçütün ağırlığı diğerlerine dağıtılır.') + '</h2>';
@@ -257,12 +298,13 @@
       h += '<section class="card"><h2>Varlıklarının skorları ' + tip('Her varlık kendi türüne uygun yöntemle analiz edilir. Skor 0-100; güven düzeyi veri kalitesine ve göstergelerin TradingView ile uyumuna göre belirlenir.') + '</h2>';
       if (rows.length) {
         h += '<div class="btnrow"><button class="btn small primary" type="button" data-act="a-bulk"' + (bulk && bulk.running ? ' disabled' : '') + '>' + (bulk && bulk.running ? 'Analiz ediliyor… ' + bulk.done + '/' + bulk.total : 'Tümünü analiz et') + '</button></div>';
-        h += '<table class="atable"><thead><tr><th>Varlık</th><th>Skor</th><th>Durum</th><th class="detail-only">Güven</th></tr></thead><tbody>' + rows.map(function (x) { var s = S[x.key]; return '<tr><td><a href="#analiz/varlik/' + esc(x.key) + '">' + esc(x.name) + '</a><div class="hint">' + esc(x.key) + (s ? ' · ' + when(s.at) : '') + '</div></td><td>' + scoreBadge(s ? s.total : null) + '</td><td>' + (s ? esc(s.hold || s.stance) : '<span class="muted">analiz edilmedi</span>') + '</td><td class="detail-only">' + (s ? esc(s.confLabel) : '—') + '</td></tr>'; }).join('') + '</tbody></table>';
+        h += '<table class="atable"><thead><tr><th>Varlık</th><th>Skor</th><th>Durum</th><th class="detail-only">Güven</th></tr></thead><tbody>' + rows.map(function (x) { var s = S[x.key]; return '<tr><td><a href="#analiz/varlik/' + esc(x.key) + '">' + esc(x.name) + '</a><div class="hint">' + esc(x.key) + (s ? ' · ' + when(s.at) + (s.server ? ' · sunucu' : '') : '') + '</div></td><td>' + scoreBadge(s ? s.total : null) + '</td><td>' + (s ? esc(s.hold || s.stance) : '<span class="muted">analiz edilmedi</span>') + '</td><td class="detail-only">' + (s ? esc(s.confLabel) : '—') + '</td></tr>'; }).join('') + '</tbody></table>';
         if (bulk && bulk.errors.length) h += '<p class="hint">Alınamayanlar: ' + esc(bulk.errors.join(' · ')) + '</p>';
       } else h += '<p class="muted">Analiz edilebilecek varlık yok.</p>';
       if (noKey.length) h += '<p class="hint">Piyasa verisi eşleşmeyen: ' + esc(noKey.map(function (x) { return x.name; }).join(', ')) + '. Varlığa kod (ör. ASELS, KTV) veya fiyat kaynağı ekleyince analiz edilir. <a href="#portfoy/varliklar">Varlıklar →</a></p>';
       h += '</section></div>';
       var wl = an().watchlist || [];
+      h += srvCard();
       h += alertsOverview();
       h += '<section class="card"><h2>İzleme listesi ' + tip('Takip etmek istediğin varlıklar. Varlık analizinde "İzlemeye al" ile eklenir; eşitleme açıksa tüm cihazlarına taşınır.') + '</h2>';
       if (wl.length) h += '<div class="wl">' + wl.map(function (w) { var s = S[w.key]; return '<a class="wcard" href="#analiz/varlik/' + esc(w.key) + '"><div class="wl-h"><b>' + esc(w.name || w.key) + '</b>' + scoreBadge(s ? s.total : null) + '</div><div class="hint">' + esc(s ? (s.stance + ' · ' + money(s.price, s.cur)) : 'henüz analiz edilmedi') + '</div><div class="hint">' + (s ? when(s.at) : '') + '</div></a>'; }).join('') + '</div>';
@@ -275,11 +317,11 @@
       var h = searchBox();
       if (!cur.key) return h + '<section class="card"><h2>Nasıl çalışır?</h2><ul class="ev"><li>Yazdığın varlığın <b>güncel</b> fiyat geçmişi kaynağından çekilir (BIST 15 dk gecikmeli, kripto anlık).</li><li>Göstergeler (RSI, MACD, ADX, Ichimoku, Supertrend, Bollinger, OBV…) hesaplanır ve TradingView\'in kendi değerleriyle karşılaştırılarak doğrulanır.</li><li>Grafikteki tepe/dip noktalarından destek-direnç bölgeleri, trend çizgileri, Fibonacci ve formasyonlar bulunur.</li><li>Alım bölgesi, stop ve hedefler bu yapıdan çıkar — sabit yüzde kullanılmaz. Risk/ödül 1,5\'in altındaysa "bekle" denir.</li></ul>' +
         '<div class="btnrow">' + [['bist:ASELS', 'ASELS'], ['tefas:KTV', 'KTV fonu'], ['cg:bitcoin', 'Bitcoin'], ['metal:XAU', 'Gram altın'], ['us:SPUS', 'SPUS']].map(function (x) { return '<button class="btn small" type="button" data-act="a-open" data-key="' + x[0] + '">' + x[1] + '</button>'; }).join(' ') + '</div></section>' + importCard();
-      if (cur.loading) return h + '<section class="card"><p class="loading-line">⏳ ' + esc(cur.key) + ' için güncel veri alınıyor ve analiz ediliyor…</p></section>';
-      if (cur.error) return h + '<div class="notice danger"><b>' + esc(cur.key) + ' analiz edilemedi:</b> ' + esc(cur.error) + '<br>Uydurma veri kullanılmaz. Kaynağa ulaşılamıyorsa biraz sonra tekrar dene ya da OHLCV verisi yükle.</div>' + importCard();
+      if (cur.loading) return h + snapCard(cur.key, null) + '<section class="card"><p class="loading-line">⏳ ' + esc(cur.key) + ' için güncel veri alınıyor ve analiz ediliyor…</p></section>';
+      if (cur.error) return h + snapCard(cur.key, null) + '<div class="notice danger"><b>' + esc(cur.key) + ' analiz edilemedi:</b> ' + esc(cur.error) + '<br>Uydurma veri kullanılmaz. Kaynağa ulaşılamıyorsa biraz sonra tekrar dene ya da OHLCV verisi yükle.</div>' + importCard();
       var A = cacheA[cur.key]; if (!A) return h;
       if (!A.col) return h + '<div class="notice danger"><b>' + esc(A.name || A.key) + ':</b> ' + esc(A.blockReasons.join(' ')) + ' Analiz için en az 30 günlük veri gerekir; sinyal üretilmedi.</div>';
-      return h + assetView(A);
+      return h + snapCard(cur.key, A) + assetView(A);
     }
     function assetView(A) {
       var S = A.series, h = '', inWl = (an().watchlist || []).some(function (w) { return w.key === A.key; }), ccy = A.currency;
@@ -593,7 +635,7 @@
     /* ---------- Ana sayfa kartı ---------- */
     function homeCard() {
       var H = null; try { var inp = healthInput(); H = inp ? AN.health(inp) : null; } catch (e) { console.error(e); }
-      var S = sums(), hk = holdings().list.map(function (x) { return x.key; }), wk = (an().watchlist || []).map(function (w) { return w.key; });
+      var S = sumsAll(), hk = holdings().list.map(function (x) { return x.key; }), wk = (an().watchlist || []).map(function (w) { return w.key; });
       var ks = Object.keys(S).map(function (k) { return S[k]; }).filter(function (x) { return x.total != null && (hk.indexOf(x.key) >= 0 || wk.indexOf(x.key) >= 0); }).sort(function (a, b) { return b.total - a.total; });
       var best = ks[0], worst = ks.length > 1 ? ks[ks.length - 1] : null;
       function nm(x) { return esc(String(x.name).split(' — ')[0]); }
@@ -692,6 +734,7 @@
     var hubUI = null;
     function setHub(h) { hubUI = h; }
     function health() { try { var inp = healthInput(); return inp ? AN.health(inp) : null; } catch (e) { return null; } }
+    document.addEventListener('change', function (e) { var el = e.target; if (el && el.dataset && el.dataset.asrv) { srvUi[el.dataset.asrv] = el.value; X.render(); } });
     return { setHub: setHub, health: health, render: render, homeCard: homeCard, actions: actions, onSubmit: onSubmit, afterRender: afterRender, startAlerts: startAlerts, checkAlerts: checkAlerts, keyOfAsset: keyOfAsset, halalFor: halalFor, open: open, _cache: cacheA, _sums: sums };
   };
 })();

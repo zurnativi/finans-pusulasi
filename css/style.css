@@ -543,3 +543,20 @@ table.sc td{vertical-align:top;min-width:120px}table.sc .an{font-size:.85rem}.wa
   .nt-a .btn,.nw .btn{min-height:40px}
   .seg.wrap{width:100%}.seg.wrap button{flex:1 1 40%;min-height:40px}
 }
+
+/* v8.1 — güncellik şeridi, sunucu analizleri */
+.fresh-strip{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:0 0 10px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);text-decoration:none;font-size:.82rem}
+.fresh-strip:hover{border-color:var(--brand)}
+.fresh-strip .fr-t{color:var(--muted);font-weight:600}
+.fr-j{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.fr-j i{width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block}
+.fr-j.st-late i,.fr-j.st-missing i{background:#d99a1c}.fr-j.st-stale i{background:var(--danger)}
+.fr-j b{font-weight:600}
+.srv-card .srv-top{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:6px}
+.srv-bar{display:inline-block;height:6px;border-radius:3px;background:var(--brand);vertical-align:middle;opacity:.8}
+.srv-tag{font-size:.72rem;padding:1px 6px;border-radius:999px;background:var(--info-bg);color:var(--info);margin-left:4px;white-space:nowrap}
+.snap-card{border-left:4px solid var(--info)}
+.snap-card .hrow{align-items:center}
+.snap-kpis{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0}
+.snap-kpis span{font-size:.85rem;color:var(--muted)}.snap-kpis b{color:var(--ink);font-size:1rem}
+@media (max-width:520px){.fresh-strip{gap:3px 10px;font-size:.78rem}}

@@ -4,11 +4,11 @@
   'use strict';
   window.HubUI = function (X) {
     var N = window.News, EV = window.Events, NT = window.Notify, MO = window.Mood, HD = window.HubData, esc = X.esc;
-    var ui = { f: { scope: 'all', topic: 'all', region: 'all', imp: 'medium', sort: 'rank', q: '' }, limit: 30, nf: { cat: 'all', sev: 'all', unread: false, hist: false }, open: {}, busy: false, err: null, kap: [], kapAt: 0, runAt: 0, procKey: '', proc: null };
+    var ui = { f: { scope: 'all', topic: 'all', region: 'all', imp: 'medium', sort: 'rank', q: '', src: 'all' }, limit: 30, nf: { cat: 'all', sev: 'all', unread: false, hist: false }, open: {}, busy: false, err: null, kap: [], kapAt: 0, runAt: 0, procKey: '', proc: null };
     var TOPICS = (window.NewsRules.topics || []).map(function (t) { return [t.id, t.label]; }).concat([['company', 'Şirket / KAP']]);
     var SEVC = { critical: 'sev-critical', high: 'sev-high', medium: 'sev-medium', info: 'sev-info', low: 'sev-info' };
     var SEVL = { critical: 'Kritik', high: 'Yüksek', medium: 'Orta', info: 'Bilgi', low: 'Düşük' };
-    var TAB_HASH = { '': 'akis', takvim: 'takvim', bildirim: 'bildirim', ayar: 'ayar' };
+    var TAB_HASH = { '': 'akis', takvim: 'takvim', bildirim: 'bildirim', ayar: 'ayar', durum: 'durum' };
     function st() { return X.state(); }
     function settings() { var s = st(); return NT.cleanSettings(s && s.notifSettings); }
     function logOf() { var s = st(); return NT.cleanLog(s && s.notifLog); }
@@ -85,7 +85,7 @@
       }).catch(function (e) { console.error(e); ui.err = e.message; }).then(function () { running = false; ui.busy = false; updateBell(); if (X.tab() === 'haberler' || X.tab() === 'ozet') X.render(); });
     }
     function start() {
-      updateBell(); setTimeout(function () { run(false); }, 1500); setInterval(function () { run(false); }, 10 * 60000);
+      updateBell(); setTimeout(function () { run(false); }, 1500); setInterval(function () { run(false); if (bgOn()) bgPush(); }, 5 * 60000); if (bgOn()) setTimeout(bgPush, 4000);
       document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - ui.runAt > 5 * 60000) run(false); });
       document.addEventListener('click', onClick); document.addEventListener('change', onChange); document.addEventListener('input', onInput);
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePanel(); });
@@ -114,7 +114,7 @@
       return '<p class="hint hub-src">Veri: GitHub Actions ile otomatik üretilir (market-data dalı). Son üretim: ' + esc(g ? tsiIso(g) : '—') + (staleK.length ? ' · <b class="neg">Ağ hatası: ' + esc(staleK.join(', ')) + ' için son kopya gösteriliyor (güncel değil)</b>' : '') + (errs.length && !staleK.length ? ' · <b class="neg">Alınamadı: ' + esc(errs.join(', ')) + '</b>' : '') + '</p>';
     }
     function tabsNav(cur) {
-      var nav = [['', 'Haber akışı'], ['takvim', 'Takvim ve senaryolar'], ['bildirim', 'Bildirimler'], ['ayar', 'Bildirim ayarları']], c = NT.counts(logOf(), settings(), Date.now());
+      var nav = [['', 'Haber akışı'], ['takvim', 'Takvim ve senaryolar'], ['bildirim', 'Bildirimler'], ['ayar', 'Bildirim ayarları'], ['durum', 'Kaynaklar ve güncelleme']], c = NT.counts(logOf(), settings(), Date.now());
       return '<nav class="areanav" aria-label="Haberler bölümleri">' + nav.map(function (x) { return '<a href="#haberler' + (x[0] ? '/' + x[0] : '') + '"' + (cur === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + (x[0] === 'bildirim' && c.unread ? ' <span class="cnt">' + c.unread + '</span>' : '') + '</a>'; }).join('') + '</nav>';
     }
     function loading() {
@@ -137,6 +137,7 @@
         if (f.topic !== 'all' && it.imp.topics.indexOf(f.topic) < 0) return false;
         if (f.region === 'tr' && it.r !== 'tr') return false; if (f.region === 'global' && it.r === 'tr') return false; if (f.region === 'official' && !it.o) return false;
         if (f.imp !== 'all' && rank[it.imp.level] < rank[f.imp] && !(it.mine && it.exp.direct && rank[it.imp.level] >= 1)) return false;
+        if (f.src !== 'all' && it.s !== f.src) return false;
         if (q && N.fold(it.t).indexOf(q) < 0) return false; return true;
       }).sort(function (a, b) { return f.sort === 'time' ? ((a.a || '') < (b.a || '') ? 1 : -1) : (b.imp.rank + (b.mine ? 8 : 0)) - (a.imp.rank + (a.mine ? 8 : 0)); });
     }
@@ -171,6 +172,7 @@
         '<label>Sınıf <select data-hubf="topic">' + opts([['all', 'Hepsi']].concat(TOPICS), f.topic) + '</select></label>' +
         '<label>Bölge <select data-hubf="region">' + opts([['all', 'Hepsi'], ['tr', 'Türkiye'], ['global', 'Küresel'], ['official', 'Yalnız resmî kurum']], f.region) + '</select></label>' +
         '<label>Önem <select data-hubf="imp">' + opts([['critical', 'Yalnız kritik'], ['high', 'Yüksek ve üstü'], ['medium', 'Orta ve üstü'], ['all', 'Hepsi (düşük dahil)']], f.imp) + '</select></label>' +
+        '<label>Kaynak <select data-hubf="src">' + opts([['all', 'Hepsi']].concat(srcNames(d).map(function (n) { return [n, n]; })), f.src) + '</select></label>' +
         '<label>Sıra <select data-hubf="sort">' + opts([['rank', 'Önem'], ['time', 'Zaman']], f.sort) + '</select></label>' +
         '<input type="search" id="hub-q" data-hubf="q" placeholder="Haberlerde ara" value="' + esc(f.q) + '" aria-label="Haberlerde ara"></div></section>';
       h += '<section class="card"><h2>Haberler <small class="muted">(' + list.length + ' sonuç)</small></h2>' + (hold.length ? '' : '<p class="hint">Portföyünde varlık yok; “Portföyümle ilgili” etiketleri varlık ekleyince çıkar.</p>') +
@@ -305,9 +307,57 @@
         '<div class="row"><input type="text" id="ntfy-topic" data-hubs="ntfy.topic" value="' + esc(tp) + '" placeholder="örn. fp-9k2x7q4m1c8d" aria-label="ntfy konu adı" maxlength="64"> <button class="btn small" data-hub="ntfygen" type="button">Rastgele üret</button> <button class="btn small" data-hub="ntfytest" type="button"' + (tp ? '' : ' disabled') + '>Test gönder</button></div><p class="hint" id="ntfy-msg" role="status">' + esc(ui.ntfyMsg || '') + '</p><p class="hint">Konu adı yalnızca bu cihazda saklanır (eşitlenmez). Test mesajı doğrudan tarayıcından ntfy.sh’a gider; iş akışı ise sırdaki konuyu kullanır — ikisinin aynı olduğundan emin ol.</p></section>';
       return h + '<section class="card"><h2>Bildirim verisini temizle</h2><button class="btn danger small" data-hub="clearlog" type="button">Bildirim geçmişini sil</button> <button class="btn small" data-hub="resetset" type="button">Ayarları varsayılana döndür</button></section>';
     }
+
+    /* ======================= GÜNCELLİK (v8.1) ======================= */
+    function srcNames(d) { var o = {}; ((d.feed && d.feed.items) || []).forEach(function (i) { if (i.s && String(i.s).indexOf('GDELT') !== 0) o[i.s] = (o[i.s] || 0) + 1; }); return Object.keys(o).sort(function (a, b) { return o[b] - o[a]; }); }
+    var FR = window.Fresh, JSHORT = { news: 'Haber', intraday: 'Seans içi', daily: 'Günlük', crypto: 'Kripto' };
+    function freshEval() { var d = HD.get() || {}; return FR.evaluate(HD.statuses(d), Date.now()); }
+    function freshStrip() {
+      var d = HD.get(); if (!d || !FR) return ''; var ev = freshEval(), ai = d.analysisIdx;
+      var dots = ev.jobs.map(function (j) { return '<span class="fr-j st-' + j.state + '" title="' + esc(j.label + ' — ' + j.text + (j.lastAt ? ' · son: ' + tsiIso(j.lastAt) : '')) + '"><i aria-hidden="true"></i>' + esc(JSHORT[j.id]) + ' <b>' + esc(j.lastAt ? FR.ageText(j.age) : '—') + '</b></span>'; }).join('');
+      return '<a class="fresh-strip" href="#haberler/durum" aria-label="Veri güncelliği: ayrıntı için aç"><span class="fr-t">Arka plan verisi</span>' + dots + (ai && ai.generatedAt ? '<span class="fr-j st-ok"><i aria-hidden="true"></i>Analiz <b>' + esc(FR.ageText(Date.now() - Date.parse(ai.generatedAt))) + '</b></span>' : '') + '</a>' +
+        (ev.banner ? '<div class="notice warn" role="alert">' + esc(ev.banner.text) + '</div>' : '');
+    }
+    function homeFresh() { var d = HD.get(); if (!d || !FR) return ''; var ev = freshEval(); return ev.banner ? '<div class="notice warn" role="alert">' + esc(ev.banner.text) + ' <a href="#haberler/durum">Ayrıntı</a></div>' : ''; }
+    var SKIND = { official: 'resmî kurum', rss: 'RSS', html: 'liste sayfası (RSS yok)' };
+    function renderStatus() {
+      var d = HD.get() || {}, now = Date.now(); if (!hasData()) return loading(); var ev = freshEval(), srcs = FR.sources(d.sources, now), ai = d.analysisIdx, mid = d.sources && d.sources.midas;
+      var h = '<section class="card"><h2>Arka plan işleri <small class="muted">— siten kapalıyken de çalışır</small></h2><div class="tablewrap"><table class="stack"><thead><tr><th>İş</th><th>Ne zaman çalışır</th><th>Son başarılı çalışma</th><th>Durum</th></tr></thead><tbody>' +
+        ev.jobs.map(function (j) { return '<tr><td data-label="İş"><b>' + esc(j.label) + '</b></td><td data-label="Zamanlama">' + esc(j.every) + '</td><td data-label="Son çalışma">' + (j.lastAt ? esc(tsiIso(j.lastAt)) + ' <small class="muted">(' + esc(FR.ageText(j.age)) + ')</small>' + (j.run ? ' · <a href="' + esc(j.run) + '" target="_blank" rel="noopener noreferrer">kayıt ↗</a>' : '') : '—') + '</td><td data-label="Durum"><span class="pill ' + (j.state === 'ok' ? 'ok' : 'warn') + '">' + esc(j.text) + '</span></td></tr>'; }).join('') +
+        '</tbody></table></div><p class="hint">Zamanlar GitHub Actions ile (ücretsiz) çalışır; GitHub zamanlanmış işleri dakikalarca hatta yarım saat geciktirebilir, bu yüzden “gecikmeli” uyarısı gevşek eşiklidir. Bir iş uzun süre çalışmazsa burada ve Haberler/Ana sayfada uyarı çıkar. Tarayıcın açıkken veri 5 dakikada bir yenilenir.</p></section>';
+      h += '<section class="card"><h2>Haber kaynakları</h2>' + (srcs.length ? '<div class="tablewrap"><table class="stack"><thead><tr><th>Kaynak</th><th>Tür</th><th>Son çekme</th><th>En yeni haber</th><th>Başlık</th><th>Durum</th></tr></thead><tbody>' +
+        srcs.map(function (x) { return '<tr><td data-label="Kaynak"><b>' + esc(x.name) + '</b></td><td data-label="Tür">' + esc(SKIND[x.kind] || x.kind || '') + '</td><td data-label="Son çekme">' + esc(x.fetchedAt ? FR.ageText(x.fetchedAgo) : '—') + '</td><td data-label="En yeni haber">' + esc(x.lastAt ? FR.ageText(x.lastAgo) : '—') + '</td><td data-label="Başlık">' + (x.n != null ? x.n : '—') + '</td><td data-label="Durum"><span class="pill ' + (x.state === 'ok' && x.n !== 0 ? 'ok' : x.state === 'fail' ? 'err' : 'warn') + '">' + (x.state === 'fail' ? 'alınamadı' + (x.err ? ' (' + esc(x.err) + ')' : '') : x.state === 'stale' ? 'eski' : x.n === 0 ? 'boş yanıt' : 'çalışıyor') + '</span></td></tr>'; }).join('') + '</tbody></table></div>' :
+        '<p class="muted">Kaynak durumu henüz üretilmedi (haber işi ilk çalışmasını bekliyor).</p>') + '<p class="hint">Yalnız başlık, bağlantı ve saat saklanır; içerik kopyalanmaz, her haber kaynağına bağlanır.</p></section>';
+      h += '<section class="card"><h2>Midas’ın Kulakları</h2><p>' + (mid && mid.ok ? '<span class="pill ok">çalışıyor</span> ' : mid ? '<span class="pill err">alınamadı</span> ' : '<span class="pill warn">henüz çekilmedi</span> ') + 'Midas’ın Kulakları (<a href="https://www.getmidas.com/midasin-kulaklari/" target="_blank" rel="noopener noreferrer">getmidas.com ↗</a>) haber akışına eklendi. Sitenin <code>robots.txt</code> dosyası bu bölümü yasaklamıyor; resmî bir RSS akışı yok (genel <code>/feed/</code> başka içerik veriyor), bu yüzden herkese açık liste sayfası nazikçe (≈20 dakikada tek istek, kimlikli kullanıcı etiketiyle) okunur. Yalnız <b>başlık, bağlantı, tarih ve okuma süresi</b> saklanır; yazı metni kopyalanmaz — başlığa dokunmak Midas’a götürür.' +
+        (mid && mid.ok ? ' Son okuma: ' + (mid.n || 0) + ' makale görüldü, en yenisi ' + esc(mid.lastAt ? tsiIso(mid.lastAt) : '—') + '.' : '') + (mid && mid.err ? ' Hata: ' + esc(mid.err) : '') + '</p><p class="hint">Bunlar Midas’ın editoryal içerikleridir, resmî duyuru değildir; yatırım tavsiyesi olarak okuma. Haber saati makale sayfasındaki yayın saatinden alınır; alınamazsa gün başı gösterilir.</p></section>';
+      h += '<section class="card"><h2>Sunucu analizleri</h2>' + (ai && ai.items ? '<p>' + ai.items.length + ' varlığın analizi (Katılım 50 hisseleri, endeksler, altın/gümüş, döviz, helal ETF, örnek fonlar, kripto) arka planda hesaplanır; <b>aynı hesaplama kodu</b> tarayıcıda da çalışır. İşler: ' + Object.keys(ai.runs || {}).map(function (k) { var r = ai.runs[k]; return esc(k) + ' — ' + esc(r.generatedAt ? FR.ageText(now - Date.parse(r.generatedAt)) : '—') + (r.failed && r.failed.length ? ' (' + r.failed.length + ' alınamadı)' : ''); }).join(' · ') + '. <a href="#analiz">Portföy Analizi → Genel bakış</a></p>' : '<p class="muted">Sunucu analizi henüz üretilmedi.</p>') +
+        '<p class="hint">Kendi varlıkların için hesap yine cihazında yapılır (portföy bilgin sunucuya gitmez). Sunucu anlık görüntüsü yalnız herkese açık piyasa verisinden üretilir.</p></section>';
+      return h + bgCard();
+    }
+    /* ---------- Periodic Background Sync (deneysel, en iyi çaba) ---------- */
+    var BG_LS = 'finans-pusulasi:bgsync';
+    function bgSupported() { return 'serviceWorker' in navigator && typeof ServiceWorkerRegistration !== 'undefined' && 'periodicSync' in ServiceWorkerRegistration.prototype; }
+    function bgOn() { try { return localStorage.getItem(BG_LS) === '1'; } catch (e) { return false; } }
+    function watchKeys() { var k = {}; holdings().forEach(function (x) { if (/^[a-z]+:/.test(x.key) && x.key.indexOf('a:') !== 0) k[x.key] = 1; }); var A = X.aui(); try { ((X.state().analysis && X.state().analysis.watchlist) || []).forEach(function (w) { k[w.key] = 1; }); } catch (e) { /* yok */ } return Object.keys(k).slice(0, 60); }
+    function bgPush() { if (!('serviceWorker' in navigator)) return; navigator.serviceWorker.ready.then(function (reg) { if (reg.active) reg.active.postMessage({ type: 'FP_WATCH', keys: watchKeys(), base: window.MData.URL.mdIndex.replace(/index\.json$/, '') }); }).catch(function () { }); }
+    function bgEnable() {
+      if (!bgSupported()) { ui.bgMsg = 'Bu tarayıcı arka plan eşitlemeyi (Periodic Background Sync) desteklemiyor.'; X.render(); return; }
+      var ask = typeof Notification !== 'undefined' && Notification.permission === 'default' ? Notification.requestPermission() : Promise.resolve(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
+      ask.then(function (p) {
+        if (p !== 'granted') { ui.bgMsg = 'Bildirim izni gerekli (tarayıcı ayarlarından izin ver).'; X.render(); return; }
+        return navigator.serviceWorker.ready.then(function (reg) { return reg.periodicSync.register('fp-refresh', { minInterval: 60 * 60 * 1000 }); }).then(function () { try { localStorage.setItem(BG_LS, '1'); } catch (e) { /* yok */ } bgPush(); ui.bgMsg = 'Açıldı. Tarayıcı uygun gördükçe (genelde günde birkaç kez) arka planda kontrol eder; garanti verilmez.'; X.render(); });
+      }).catch(function (e) { ui.bgMsg = 'Açılamadı: ' + (e && e.message || e) + ' (uygulamayı ana ekrana yüklemen gerekebilir).'; X.render(); });
+    }
+    function bgDisable() { try { localStorage.setItem(BG_LS, '0'); } catch (e) { /* yok */ } navigator.serviceWorker.ready.then(function (reg) { return reg.periodicSync && reg.periodicSync.unregister('fp-refresh'); }).catch(function () { }).then(function () { ui.bgMsg = 'Kapatıldı.'; X.render(); }); }
+    function bgCard() {
+      var sup = bgSupported(), on = bgOn();
+      return '<section class="card"><h2>Site kapalıyken bildirim</h2><div class="grid two"><div><h3>1) Telefona anlık bildirim (önerilen)</h3><p>İş akışı piyasa geneli <b>kritik</b> uyarıları (ve ister isen yüksek olanları) ücretsiz ntfy ile gönderir. Kurulum: <a href="#haberler/ayar">Bildirim ayarları → ntfy</a>. Portföy tutarların sunucuya hiç gitmez; isteğe bağlı <code>WATCH_SYMBOLS</code> değişkeniyle yalnız sembol listesi (tutarsız) verilirse o semboller için seviye uyarıları da gelir.</p></div>' +
+        '<div><h3>2) Tarayıcı arka plan kontrolü <span class="pill warn">deneysel · en iyi çaba</span></h3><p>Yalnız <b>Chrome/Android’de ana ekrana yüklenmiş uygulamada</b> çalışır; tarayıcı ne sıklıkla çalıştıracağına kendisi karar verir (kullanım sıklığına göre, genelde günde birkaç kez). Kontrol: yeni kritik/yüksek piyasa uyarıları ve <b>cihazında</b> izlediğin varlıkların analizindeki sert düşüş. İzleme listen yalnız bu cihazda (tarayıcı önbelleğinde) tutulur.</p>' +
+        (sup ? '<label class="chk"><input type="checkbox" data-hub="bgtoggle"' + (on ? ' checked' : '') + '> Arka plan kontrolünü aç</label>' : '<p class="muted">Bu tarayıcıda desteklenmiyor (masaüstü Safari/Firefox, iOS vb.). ntfy yöntemini kullan.</p>') + (ui.bgMsg ? '<p class="hint">' + esc(ui.bgMsg) + '</p>' : '') + '</div></div></section>';
+    }
     function render() {
       var s = X.sub(), tab = TAB_HASH[s] || 'akis', h = '<h1>Haberler <span class="muted" style="font-size:.9rem;font-weight:400">— haber, takvim, senaryo ve bildirimler</span></h1>' + tabsNav(s in TAB_HASH ? s : '');
-      try { h += tab === 'takvim' ? renderCalendar() : tab === 'bildirim' ? renderNotifs() : tab === 'ayar' ? renderSettings() : renderFeed(); } catch (e) { console.error(e); h += '<div class="notice warn">Bu bölüm gösterilemedi (' + esc(e.message) + '). Diğer bölümler çalışıyor.</div>'; }
+      try { h += freshStrip(); h += tab === 'takvim' ? renderCalendar() : tab === 'bildirim' ? renderNotifs() : tab === 'ayar' ? renderSettings() : tab === 'durum' ? renderStatus() : renderFeed(); } catch (e) { console.error(e); h += '<div class="notice warn">Bu bölüm gösterilemedi (' + esc(e.message) + '). Diğer bölümler çalışıyor.</div>'; }
       if (!ui.opened) { ui.opened = true; setTimeout(function () { run(false); }, 50); }
       return h;
     }
@@ -348,7 +398,7 @@
       if (mine.length) h += '<div class="detail-only"><h3>Duygu kayıtların</h3><ul class="evl">' + mine.slice(-10).reverse().map(function (c) { return '<li>' + esc(dmy(c.d)) + ' — ' + esc(MO.MOODS[c.m]) + (c.dd != null ? ' <small class="muted">(o gün zirveden −%' + pc1(c.dd) + ')</small>' : '') + '</li>'; }).join('') + '</ul></div>';
       return h + '<details class="refs"><summary>Kaynaklar ve yöntem</summary><ul>' + a.refs.map(function (r) { return '<li>' + ext(r.url, r.cite) + '<br><small>' + esc(r.claim) + '</small></li>'; }).join('') + '</ul><p class="hint">Yöntem: duygu durumu kural tabanlıdır (zirveden düşüş ≥ %10 veya 30 günde ≥ %8 düşüş → “baskı altında”; ≥ %5 / ≥ %4 veya 5+ kayıt düşüş serisi → “dikkatli”; 30 günde ≥ %15 artış → “coşkulu”). Bu bir psikolojik değerlendirme veya yatırım tavsiyesi değildir; yoğun sıkıntı yaşıyorsan bir uzmana başvur.</p></details></section>';
     }
-    function homeCards() { try { return homeAlerts(); } catch (e) { console.error(e); return ''; } }
+    function homeCards() { try { return homeFresh() + homeAlerts(); } catch (e) { console.error(e); return ''; } }
     function homeMood() { try { return moodCard(); } catch (e) { console.error(e); return ''; } }
 
     /* ======================= VARLIK SAYFASI KARTI ======================= */
@@ -377,6 +427,7 @@
       if (el.dataset.hubf && el.tagName === 'BUTTON') { ui.f[el.dataset.hubf] = el.dataset.v; ui.limit = 30; X.render(); return; }
       var act = el.dataset.hub, id = el.dataset.id, now = Date.now();
       function upd(fn) { var log = logOf(); fn(log); X.quiet(function (s) { s.notifLog = log; }); updateBell(); X.render(); }
+      if (act === 'bgtoggle') { if (el.checked) bgEnable(); else bgDisable(); return; }
       if (act === 'refresh') { ui.busy = true; X.render(); run(true); }
       else if (act === 'runnow') { run(true); }
       else if (act === 'more') { ui.limit += 30; X.render(); }
