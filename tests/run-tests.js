@@ -747,6 +747,13 @@
                   r82.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                   console.log('\n' + p82 + '/' + r82.length + ' v8.2 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length));
                   if (p82 !== r82.length) process.exit(1);
+                  console.log('\n— v8.3 (şifreli kişisel veri paketi: gidiş-dönüş, yanlış parola, örnek veri değişimi, uygulandı atlama, betik, depo denetimi) —');
+                  return require('./run-tests-v83.js').run().then(function (r83) {
+                    var p83 = r83.filter(function (r) { return r.ok; }).length;
+                    r83.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                    console.log('\n' + p83 + '/' + r83.length + ' v8.3 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length));
+                    if (p83 !== r83.length) process.exit(1);
+                  });
                 });
               });
             });

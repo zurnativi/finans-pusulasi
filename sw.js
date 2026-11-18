@@ -6,11 +6,11 @@
  * - Yeni sürüm kendiliğinden devreye girmez; sayfa "Yeni sürüm hazır" der, kullanıcı onaylayınca geçilir.
  * Kapsam: dosyanın bulunduğu klasör (GitHub Pages alt yolu /finans-pusulasi/ dahil) — tüm yollar göreli.
  */
-var VERSION = '8.2.1';
+var VERSION = '8.3.0';
 var CACHE = 'fp-shell-' + VERSION;
 var Q = '?v=' + VERSION;
 var SHELL = ['./', 'index.html', 'css/style.css' + Q, 'vendor/echarts.min.js'].concat(
-  ['money', 'calc', 'ledger', 'importparse', 'portfolio', 'prices', 'alerts', 'sample', 'cryptobox', 'syncmerge', 'sync', 'lock', 'store', 'ai', 'chartdata', 'charts', 'ta', 'structure', 'mdata', 'analysis', 'snapshot', 'labellayout', 'tachart', 'portfolio-ui', 'analysis-ui', 'security-ui', 'newsrules', 'news', 'events', 'notify', 'mood', 'freshness', 'hubdata', 'bgwatch', 'bgwatch-ui', 'hub-ui', 'app']
+  ['money', 'calc', 'ledger', 'importparse', 'portfolio', 'prices', 'alerts', 'sample', 'cryptobox', 'syncmerge', 'sync', 'lock', 'store', 'ai', 'chartdata', 'charts', 'ta', 'structure', 'mdata', 'analysis', 'snapshot', 'labellayout', 'tachart', 'portfolio-ui', 'analysis-ui', 'security-ui', 'personal', 'newsrules', 'news', 'events', 'notify', 'mood', 'freshness', 'hubdata', 'bgwatch', 'bgwatch-ui', 'hub-ui', 'app']
     .map(function (n) { return 'js/' + n + '.js' + Q; }));
 
 self.addEventListener('install', function (e) {

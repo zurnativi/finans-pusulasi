@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, AUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, HUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
+  var PD = window.PersonalData || null, PDui = null;
   var state = null, lastSaved = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
@@ -84,7 +85,11 @@
   /* Eşitlemeden gelen yeni hâl: olduğu gibi al, damgalama */
   function replaceState(ns) { state = ns; persist({ noStamp: true }); setView(state.settings.view || 'simple'); render(); }
   /* Kopya/yedek geri yükleme: tüm kayıtlar yenisiyle değişir (geri alınabilir, eşitlemede yeni değişiklik sayılır) */
-  function restoreState(obj, msg) { mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, msg || 'Geri yüklendi.'); setView(state.settings.view); }
+  function restoreState(obj, msg, noUndo) { // noUndo: kişisel veri paketi — "Geri al" örnek veriyi geri getirmesin (önceki hâl otomatik kopyada)
+    mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, noUndo ? null : (msg || 'Geri yüklendi.'));
+    if (noUndo) { undoStack = null; toast(msg || 'Geri yüklendi.'); }
+    setView(state.settings.view);
+  }
 
   /* ---------- Görünüm (sade/detaylı) ---------- */
   function setView(v) {
@@ -99,7 +104,7 @@
     var b = $('#banner');
     if (state.isExample) {
       b.innerHTML = '<div class="banner example" role="note"><div class="grow"><b>ÖRNEK VERİ</b> — Gördüğün rakamlar örnektir, gerçek değildir. Kendi rakamlarını girmeye hazır olduğunda temizle veya üzerine yaz.</div>' +
-        '<button class="btn small" data-act="example-mine">Bunlar artık benim verilerim</button>' +
+        (PD && PDui && PDui.available() ? '<button class="btn small primary" data-act="personal-open">🔐 Kişisel verilerimi aç</button>' : '') + '<button class="btn small" data-act="example-mine">Bunlar artık benim verilerim</button>' +
         '<button class="btn small" data-act="refresh-example">Örnek veriyi yenile</button>' +
         '<button class="btn small danger" data-act="example-clear">Örnek veriyi temizle</button></div>';
     } else b.innerHTML = '';
@@ -1672,6 +1677,7 @@
     if (SUI && SUI.onClick(act, t)) return;
     var A = {
       'example-clear': function () { if (confirm('Örnek verilerin tamamı silinsin mi? (Sonra kendi verilerini girersin.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); s.settings.view = document.body.classList.contains('detailed') ? 'detailed' : 'simple'; }, 'Örnek veri temizlendi.'); },
+      'personal-open': function () { if (PDui) PDui.openManual(); },
       'example-mine': function () { mutate(function (s) { s.isExample = false; s.transactions.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); if (s.trades) s.trades.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); }, 'Veriler artık senin verilerin olarak işaretlendi.'); },
       'refresh-example': function () {
         if (!state.isExample) return;
@@ -1920,6 +1926,7 @@
       state: function () { return state; }, mutate: mutate, render: function () { if (state) render(); }, toast: toast, esc: esc, tip: tip, today: today, dateLabel: dateLabel, tab: function () { return tab; },
       replaceState: replaceState, restoreState: restoreState, download: function (n, t) { Store.download(n, t); }, busyToast: function (m) { toast(m); }
     });
+    PDui = PD ? PD.ui({ state: function () { return state; }, restoreState: restoreState, snapshot: SUI.snapshot, toast: toast, esc: esc }) : null;
     // Kilit: kilit açıksa (veya veri diskte şifreliyse) önce PIN sorulur; anahtar yalnızca bellekte tutulur
     var lockCfg = SUI.lockCfg();
     Store.isLockedOnDisk().catch(function () { return false; }).then(function (enc) {
@@ -1970,6 +1977,8 @@
       maybeNotify();
       if (HUI) HUI.start();
       SUI.start();
+      // v8.3: sitedeki şifreli kişisel veri paketi varsa ve bu cihazda yalnızca örnek/boş veri varsa şifre sor (dosya yüklemek gerekmez)
+      if (PD && PDui) PDui.check().then(function () { if (state && PDui.available()) renderBanner(); }).catch(function (e) { console.error(e); });
       registerSW();
     });
   }
