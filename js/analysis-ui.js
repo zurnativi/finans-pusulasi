@@ -30,6 +30,7 @@
     }
     function loadSnap(key) {
       var c = snapCache[key]; if (c && (c.loading || (c.data && Date.now() - c.t < 5 * 60000))) return;
+      if (srvIdx() && !srvMap()[key]) { snapCache[key] = { none: true, t: Date.now() }; return; } // indekste yoksa istek atma (404 gürültüsü olmasın)
       snapCache[key] = { loading: true, t: Date.now(), data: c && c.data };
       var url = (HDx ? HDx.base() : MD.URL.mdIndex.replace(/index\.json$/, '')) + 'analysis/' + SN.fileOf(key) + '.json';
       MD.fetchJson(url, { timeout: 15000 }).then(function (j) { snapCache[key] = { data: j, t: Date.now() }; X.render(); }, function (e) { snapCache[key] = { error: e.status === 404 ? null : e.message, none: e.status === 404, t: Date.now() }; X.render(); });
