@@ -61,6 +61,7 @@
     ['Eğitim', ['okul', 'kurs', 'üniversite', 'kitap', 'd&r', 'kırtasiye', 'udemy']],
     ['Bağış/Zekat', ['bağış', 'bagis', 'zekat', 'sadaka', 'vakıf', 'dernek', 'kızılay']],
     ['Nakit çekim', ['atm', 'nakit çekim', 'para çekme']],
+    ['Kişilere transfer', []], // anahtar kelimesi yok: yalnızca elle/aktarımda seçilir (arkadaş, aile, bölüşülen hesap)
     ['Transfer', ['tesekkur', 'teşekkür', 'kart ödeme', 'kart odeme', 'borç ödeme', 'hesaplar arası', 'havale', 'eft', 'fast', 'virman', 'transfer']],
     ['Banka masrafı', ['masraf', 'komisyon', 'kart aidatı', 'bsmv', 'kkdf']]
   ];

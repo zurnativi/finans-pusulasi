@@ -363,13 +363,13 @@
 
   /* ---------- İŞLEMLER ---------- */
   var txFilter = { ym: null, q: '' };
-  function catOptions(sel) { return P.CATEGORIES.map(function (c) { return '<option' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
+  function catOptions(sel) { var list = P.CATEGORIES.slice(); if (sel && list.indexOf(sel) < 0) list.push(sel); /* listede olmayan (eski/özel) kategori kaybolmasın */ return list.map(function (c) { return '<option' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
   function renderTransactions() {
     if (!txFilter.ym) txFilter.ym = C.currentYm();
     var months = {}; state.transactions.forEach(function (t) { months[t.date.slice(0, 7)] = 1; }); months[C.currentYm()] = 1;
     var list = state.transactions.filter(function (t) { return (txFilter.ym === 'all' || t.date.slice(0, 7) === txFilter.ym) && (!txFilter.q || P.fold(t.description + ' ' + t.category).indexOf(P.fold(txFilter.q)) >= 0); })
       .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
-    var inc = 0, exp = 0; list.forEach(function (t) { if (t.amount >= 0) inc = M.add(inc, t.amount); else exp = M.add(exp, -t.amount); });
+    var inc = 0, exp = 0, trn = 0; list.forEach(function (t) { if (t.category === 'Transfer') trn = M.add(trn, t.amount < 0 ? -t.amount : t.amount); /* hesaplar arası: gelir/gider sayılmaz (özet ve bütçeyle aynı kural) */ else if (t.amount >= 0) inc = M.add(inc, t.amount); else exp = M.add(exp, -t.amount); });
     var h = '<h1>İşlemler</h1><section class="card"><h2>Elle işlem ekle</h2><form id="tx-form" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end" novalidate>' +
       '<div class="field"><label for="tx-date">Tarih</label><input id="tx-date" type="date" required value="' + todayYmd() + '"></div>' +
       '<div class="field"><label for="tx-desc">Açıklama</label><input id="tx-desc" type="text" maxlength="120" placeholder="ör. Migros alışverişi" required></div>' +
@@ -380,7 +380,7 @@
     h += '<section class="card" style="margin-top:14px"><div class="row" style="margin-bottom:10px"><label class="sr" for="tx-month">Ay</label><select id="tx-month" style="max-width:200px"><option value="all"' + (txFilter.ym === 'all' ? ' selected' : '') + '>Tüm aylar</option>' +
       Object.keys(months).sort().reverse().map(function (m) { return '<option value="' + m + '"' + (m === txFilter.ym ? ' selected' : '') + '>' + ymLabel(m) + '</option>'; }).join('') + '</select>' +
       '<label class="sr" for="tx-q">Ara</label><input id="tx-q" type="search" placeholder="Ara…" style="max-width:240px" value="' + esc(txFilter.q) + '">' +
-      '<span class="muted">' + list.length + ' işlem · Gelir <b class="pos num">' + tl2(inc) + '</b> · Harcama <b class="neg num">' + tl2(exp) + '</b></span></div>';
+      '<span class="muted">' + list.length + ' işlem · Gelir <b class="pos num">' + tl2(inc) + '</b> · Harcama <b class="neg num">' + tl2(exp) + '</b>' + (trn ? ' · Transfer (sayılmaz) <b class="num">' + tl2(trn) + '</b>' : '') + '</span></div>';
     if (!list.length) h += '<p class="muted">Bu filtreyle işlem yok.</p>';
     else {
       h += '<div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Açıklama</th><th>Kategori</th><th class="r">Tutar</th><th class="detail-only">Kaynak</th><th></th></tr></thead><tbody>';
@@ -1090,7 +1090,7 @@
   function numIn(list, id, field, val, label, min, max) { return '<input type="number" inputmode="numeric" min="' + min + '" max="' + max + '" step="1" style="max-width:90px" aria-label="' + esc(label) + '" data-list="' + list + '" data-id="' + esc(id) + '" data-field="' + field + '" value="' + esc(val == null ? '' : val) + '">'; }
   function ymIn(list, id, field, val, label) { return '<input type="month" aria-label="' + esc(label) + '" data-list="' + list + '" data-id="' + esc(id) + '" data-field="' + field + '" value="' + esc(val || '') + '">'; }
   function chk(list, id, field, on, label) { return '<input type="checkbox" aria-label="' + esc(label) + '" data-list="' + list + '" data-id="' + esc(id) + '" data-field="' + field + '"' + (on ? ' checked' : '') + '>'; }
-  function catOpts() { return P.CATEGORIES.map(function (c) { return [c, c]; }); }
+  function catOpts(sel) { var list = P.CATEGORIES.slice(); if (sel && list.indexOf(sel) < 0) list.push(sel); return list.map(function (c) { return [c, c]; }); }
   var sub = '';
   function subtabs(base, items) {
     return '<nav class="subtabs" aria-label="Alt bölümler">' + items.map(function (it) {
@@ -1238,7 +1238,7 @@
     });
     h += '</div><section class="card" style="margin-top:14px"><h2>Yıllık giderleri düzenle</h2><div class="tablewrap"><table><thead><tr><th>Ad</th><th class="r">Tutar (TL)</th><th class="r">Biriken (TL)</th><th>Ödeme ayı</th><th>Tekrar ' + tip('Kaç ayda bir tekrar eder? Yıllık: 12, 6 ayda bir: 6.') + '</th><th class="detail-only">Kategori</th><th></th></tr></thead><tbody>';
     state.sinkingFunds.forEach(function (f) {
-      h += '<tr><td>' + textInput('sinkingFunds', f.id, 'name', f.name, 'Ad') + '</td><td>' + moneyInput('sinkingFunds', f.id, 'amount', f.amount, f.name + ' tutarı') + '</td><td>' + moneyInput('sinkingFunds', f.id, 'saved', f.saved, f.name + ' biriken') + '</td><td>' + ymIn('sinkingFunds', f.id, 'dueYm', f.dueYm, 'Ödeme ayı') + '</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">' + numIn('sinkingFunds', f.id, 'everyMonths', f.everyMonths, 'Kaç ayda bir', 1, 120) + ' ay</div></td><td class="detail-only">' + sel('sinkingFunds', f.id, 'category', catOpts(), f.category, 'Kategori') + '</td><td>' + delBtn('sinkingFunds', f.id, f.name) + '</td></tr>';
+      h += '<tr><td>' + textInput('sinkingFunds', f.id, 'name', f.name, 'Ad') + '</td><td>' + moneyInput('sinkingFunds', f.id, 'amount', f.amount, f.name + ' tutarı') + '</td><td>' + moneyInput('sinkingFunds', f.id, 'saved', f.saved, f.name + ' biriken') + '</td><td>' + ymIn('sinkingFunds', f.id, 'dueYm', f.dueYm, 'Ödeme ayı') + '</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">' + numIn('sinkingFunds', f.id, 'everyMonths', f.everyMonths, 'Kaç ayda bir', 1, 120) + ' ay</div></td><td class="detail-only">' + sel('sinkingFunds', f.id, 'category', catOpts(f.category), f.category, 'Kategori') + '</td><td>' + delBtn('sinkingFunds', f.id, f.name) + '</td></tr>';
     });
     h += '</tbody></table></div><button class="btn" data-act="add" data-list="sinkingFunds">+ Yıllık gider ekle</button>' +
       '<p class="hint">Örnekler: kasko/sigorta, emlak vergisi, MTV, bayram harcamaları, kurban, okul masrafları, tatil, yıllık abonelikler. Kumbara parasını katılım hesabında tutabilirsin.</p></section>';
@@ -1300,7 +1300,7 @@
     h += '<section class="card"><div class="tablewrap"><table class="rc stack"><thead><tr><th>Ad</th><th>Tür</th><th class="r">Tutar (TL)</th><th>Kategori</th><th>Sıklık ' + tip('Her ay, her yıl veya her N ayda bir (ör. 2 ayda bir su faturası, 3 ayda bir aidat).') + '</th><th>Gün ' + tip('Ayın kaçında? 31 yazarsan kısa aylarda ayın son günü kabul edilir.') + '</th><th>Başlangıç</th><th class="detail-only">Bitiş</th><th class="detail-only">Hesap</th><th class="detail-only">Kaç gün önce hatırlat</th><th>Aktif</th><th></th></tr></thead><tbody>';
     state.recurring.forEach(function (r) {
       h += '<tr><td>' + textInput('recurring', r.id, 'name', r.name, 'Ad') + '</td><td>' + sel('recurring', r.id, 'direction', [['expense', 'Gider'], ['income', 'Gelir']], r.direction, 'Tür') + '</td><td>' + moneyInput('recurring', r.id, 'amount', r.amount, r.name + ' tutarı') + '</td>' +
-        '<td>' + sel('recurring', r.id, 'category', catOpts(), r.category, 'Kategori') + '</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">' + sel('recurring', r.id, 'freq', [['monthly', 'Her ay'], ['yearly', 'Her yıl'], ['custom', 'Her N ayda']], r.freq, 'Sıklık') +
+        '<td>' + sel('recurring', r.id, 'category', catOpts(r.category), r.category, 'Kategori') + '</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">' + sel('recurring', r.id, 'freq', [['monthly', 'Her ay'], ['yearly', 'Her yıl'], ['custom', 'Her N ayda']], r.freq, 'Sıklık') +
         (r.freq === 'custom' ? numIn('recurring', r.id, 'everyMonths', r.everyMonths, 'Kaç ayda bir', 1, 120) : '') + '</div></td><td>' + numIn('recurring', r.id, 'day', r.day, 'Gün', 1, 31) + '</td><td>' + ymIn('recurring', r.id, 'startYm', r.startYm, 'Başlangıç ayı') + '</td>' +
         '<td class="detail-only">' + ymIn('recurring', r.id, 'endYm', r.endYm, 'Bitiş ayı (boş: süresiz)') + '</td><td class="detail-only"><select aria-label="Hesap" data-list="recurring" data-id="' + esc(r.id) + '" data-field="accountId">' + accOptions(r.accountId, null, '— seçilmedi —') + '</select></td>' +
         '<td class="detail-only">' + numIn('recurring', r.id, 'remindDays', r.remindDays == null ? 3 : r.remindDays, 'Hatırlatma günü', 0, 31) + '</td><td style="text-align:center">' + chk('recurring', r.id, 'active', r.active !== false, 'Aktif') + '</td><td>' + delBtn('recurring', r.id, r.name) + '</td></tr>';
@@ -1341,7 +1341,7 @@
       h += '<tr><td>' + textInput('installments', p.id, 'description', p.description, 'Açıklama') + '</td><td><select aria-label="Kart" data-list="installments" data-id="' + esc(p.id) + '" data-field="cardId">' + accOptions(p.cardId, function (x) { return x.type === 'card'; }) + '</select></td>' +
         '<td>' + moneyInput('installments', p.id, 'total', p.total, 'Toplam') + '</td><td>' + numIn('installments', p.id, 'count', p.count, 'Taksit sayısı', 1, 60) + '</td><td>' + ymIn('installments', p.id, 'firstYm', p.firstYm, 'İlk taksit ayı') + '</td>' +
         '<td class="r num">' + (s.thisMonth ? tl2(s.thisMonth) + '<div class="hint">' + (s.paidCount + 1) + '/' + p.count + '. taksit</div>' : s.notStarted ? '<span class="hint">başlamadı</span>' : '—') + '</td><td class="r num">' + (s.done ? '<span class="pill ok">Bitti ✓</span>' : s.remainingCount + ' taksit · ' + tl2(s.remaining)) + '</td><td class="num">' + esc(shortYm(s.lastYm)) + '</td>' +
-        '<td class="detail-only">' + sel('installments', p.id, 'category', catOpts(), p.category, 'Kategori') + '</td><td>' + delBtn('installments', p.id, p.description) + '</td></tr>';
+        '<td class="detail-only">' + sel('installments', p.id, 'category', catOpts(p.category), p.category, 'Kategori') + '</td><td>' + delBtn('installments', p.id, p.description) + '</td></tr>';
     });
     if (!state.installments.length) h += '<tr><td colspan="10" class="muted">Taksitli alışveriş yok.</td></tr>';
     h += '</tbody></table></div><button class="btn" data-act="add" data-list="installments">+ Taksitli alışveriş ekle</button>';
