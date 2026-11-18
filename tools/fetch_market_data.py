@@ -314,7 +314,16 @@ def kap_fetch(days=30):
 # ---------- Haberler: Türk ekonomi RSS akışları (başlık + bağlantı; içerik kopyalanmaz) + GDELT (açık veri) ----------
 RSS = [('Dünya', 'https://www.dunya.com/rss?dunya'), ('Habertürk Ekonomi', 'https://www.haberturk.com/rss/ekonomi.xml'), ('Ekonomim', 'https://www.ekonomim.com/rss'),
        ('TRT Haber Ekonomi', 'https://www.trthaber.com/ekonomi_articles.rss'), ('Borsa Gündem', 'https://www.borsagundem.com.tr/rss'), ('ForInvest', 'https://www.foreks.com/rss'),
-       ('Hürriyet Ekonomi', 'https://www.hurriyet.com.tr/rss/ekonomi'), ('Bloomberg HT', 'https://www.bloomberght.com/rss')]
+       ('Hürriyet Ekonomi', 'https://www.hurriyet.com.tr/rss/ekonomi'), ('Bloomberg HT', 'https://www.bloomberght.com/rss'), ('NTV Ekonomi', 'https://www.ntv.com.tr/ekonomi.rss'),
+       # v8: küresel ve resmî kaynaklar (başlık + bağlantı)
+       ('CNBC Ekonomi', 'https://www.cnbc.com/id/20910258/device/rss/rss.html'), ('BBC Business', 'https://feeds.bbci.co.uk/news/business/rss.xml'),
+       ('MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'),
+       ('The Guardian Business', 'https://www.theguardian.com/business/rss'), ('NYT Business', 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml'),
+       ('Investing.com', 'https://www.investing.com/rss/news.rss'),
+       ('Fed — para politikası', 'https://www.federalreserve.gov/feeds/press_monetary.xml'), ('ECB — basın', 'https://www.ecb.europa.eu/rss/press.html')]
+REGION = {'CNBC Ekonomi': 'global', 'BBC Business': 'global', 'MarketWatch': 'global', 'The Guardian Business': 'global', 'NYT Business': 'global', 'Investing.com': 'global',
+          'Fed — para politikası': 'global', 'ECB — basın': 'global'}
+OFFICIAL = {'Fed — para politikası': 'Fed', 'ECB — basın': 'ECB'}
 FOLD = str.maketrans({'ı': 'I', 'İ': 'I', 'i': 'I', 'ş': 'S', 'Ş': 'S', 'ğ': 'G', 'Ğ': 'G', 'ü': 'U', 'Ü': 'U', 'ö': 'O', 'Ö': 'O', 'ç': 'C', 'Ç': 'C', 'â': 'A', 'Â': 'A', 'î': 'I', 'û': 'U'})
 def fold(t): return re.sub(r'\s+', ' ', (t or '').translate(FOLD).upper())
 ALIAS = {'THYAO': ['THY', 'TURK HAVA YOLLARI'], 'BIMAS': ['BIM'], 'TUPRS': ['TUPRAS'], 'SISE': ['SISECAM'], 'EREGL': ['ERDEMIR'], 'KCHOL': ['KOC HOLDING'], 'SAHOL': ['SABANCI HOLDING'],
@@ -349,7 +358,11 @@ def news_fetch(rows, prio):
     for name, url in RSS:
         try:
             b = http(url, headers={'Accept': 'application/rss+xml,application/xml,text/xml,*/*'}, tries=2, raw=True)
-            got = parse_rss(name, b); items += got; status[name] = {'ok': True, 'n': len(got)}
+            got = parse_rss(name, b)
+            for g_ in got:
+                g_['reg'] = REGION.get(name, 'tr')
+                if name in OFFICIAL: g_['off'] = OFFICIAL[name]
+            items += got; status[name] = {'ok': True, 'n': len(got)}
         except Exception as e: status[name] = {'ok': False, 'err': str(e)[:80]}
     gd = {'ok': 0, 'fail': 0}
     if MODE == 'full' and not SKIP_GDELT:
@@ -377,7 +390,7 @@ def news_fetch(rows, prio):
         if x['url'] not in pool or (x.get('gsym') and not pool[x['url']].get('gsym')): pool[x['url']] = x
     cut = (NOW - datetime.timedelta(days=14)).strftime('%Y-%m-%dT%H:%M:%SZ')
     allit = sorted([x for x in pool.values() if (x.get('at') or NOW.strftime('%Y-%m-%dT%H:%M:%SZ')) >= cut and (x.get('at') or '') <= (NOW + datetime.timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ')], key=lambda x: x.get('at') or '', reverse=True)
-    write(os.path.join(OUT, 'news/pool.json'), {'generatedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ'), 'items': allit[:3000]})
+    write(os.path.join(OUT, 'news/pool.json'), {'generatedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ'), 'items': allit[:4000]})
     # Hisse eşleştirme: başlıkta (Türkçe karakterler katlanarak) şirketin belirgin adı/kısa adı veya büyük harfle hisse kodu geçmeli
     by = {}; folded = [fold(x['title']) for x in allit]
     for r in rows:

@@ -35,6 +35,19 @@ jobs:
           WORKERS: '5'
           MODE: ${{ ((github.event.schedule == '10 8-14 * * 1-5' || github.event.schedule == '0 9 * * 0,6') && 'intraday') || inputs.mode || 'full' }}
         run: python3 tools/fetch_market_data.py /tmp/out
+      - name: Haber merkezi verisi (takvim, olasılıklar, benzer olaylar, uyarılar)
+        # Hata bu adımı durdurmaz: ana piyasa verisi zaten yazıldı; alınamayan bölüm önceki sürümle (stale) kalır.
+        continue-on-error: true
+        env:
+          PREV_DIR: /tmp/prev
+          MODE: ${{ ((github.event.schedule == '10 8-14 * * 1-5' || github.event.schedule == '0 9 * * 0,6') && 'intraday') || inputs.mode || 'full' }}
+          # İsteğe bağlı push (ntfy.sh): Settings → Secrets and variables → Actions → New repository SECRET `NTFY_TOPIC` (uzun, tahmin edilemez bir ad).
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_MIN: ${{ vars.NTFY_MIN }}          # boş = yalnız kritik; 'high' = yüksek ve kritik
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }} # isteğe bağlı: ASELS,THYAO (başlıkta geçerse bildirime eklenir)
+        run: |
+          sudo apt-get install -y poppler-utils >/dev/null 2>&1 || true
+          python3 tools/fetch_hub.py /tmp/out
       - name: market-data dalına yaz
         run: |
           cd /tmp/out
