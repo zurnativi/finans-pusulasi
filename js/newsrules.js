@@ -36,7 +36,8 @@
       "MARKET CRASH",
       "STOCK MARKET CRASH",
       "BUYUK DEPREM"
-     ]
+     ],
+     "hard": true
     },
     {
      "id": "decision",
@@ -56,7 +57,8 @@
       "CUTS RATES",
       "HOLDS RATES",
       "FOMC"
-     ]
+     ],
+     "hard": true
     },
     {
      "id": "macro",
@@ -211,6 +213,259 @@
      "critical": 40
     },
     "probJump": 0.15
-   }
+   },
+   "topics": [
+    {
+     "id": "rates_tr",
+     "label": "TCMB / TL faizleri",
+     "kw": [
+      "TCMB",
+      "PPK",
+      "POLITIKA FAIZI",
+      "TURKIYE CUMHURIYET MERKEZ BANKASI",
+      "KARAHAN",
+      "TURKIYE MERKEZ BANKASI",
+      "TURKISH CENTRAL BANK",
+      "TURKEY CENTRAL BANK",
+      "TURKEY RATE",
+      "TURKISH LIRA"
+     ]
+    },
+    {
+     "id": "rates_us",
+     "label": "Fed / ABD faizleri",
+     "kw": [
+      "FED",
+      "FOMC",
+      "POWELL",
+      "FEDERAL RESERVE",
+      "ABD MERKEZ BANKASI",
+      "FED FAIZ",
+      "TREASURY YIELD",
+      "TREASURY YIELDS",
+      "RATE CUT",
+      "RATE HIKE",
+      "WARSH"
+     ]
+    },
+    {
+     "id": "rates_eu",
+     "label": "ECB / Euro Bölgesi",
+     "kw": [
+      "ECB",
+      "LAGARDE",
+      "AVRUPA MERKEZ BANKASI",
+      "EUROZONE",
+      "EURO BOLGESI"
+     ]
+    },
+    {
+     "id": "inflation",
+     "label": "Enflasyon",
+     "kw": [
+      "ENFLASYON",
+      "TUFE",
+      "UFE",
+      "INFLATION",
+      "CPI",
+      "PCE",
+      "CORE INFLATION",
+      "FIYAT ENDEKSI"
+     ]
+    },
+    {
+     "id": "macro_us",
+     "label": "ABD makro verileri",
+     "kw": [
+      "NONFARM",
+      "NON FARM",
+      "PAYROLL",
+      "PAYROLLS",
+      "JOBS REPORT",
+      "UNEMPLOYMENT",
+      "ISSIZLIK ORANI",
+      "GDP",
+      "JOBLESS CLAIMS",
+      "RETAIL SALES",
+      "ISM"
+     ]
+    },
+    {
+     "id": "politics_tr",
+     "label": "Türkiye siyaseti",
+     "kw": [
+      "SECIM",
+      "ERKEN SECIM",
+      "ERDOGAN",
+      "CHP",
+      "AK PARTI",
+      "MHP",
+      "IMAMOGLU",
+      "ANAYASA",
+      "MUHALEFET",
+      "REFERANDUM",
+      "YENI ANAYASA",
+      "OZEL OZGUR"
+     ]
+    },
+    {
+     "id": "geo",
+     "label": "Jeopolitik / ticaret savaşı",
+     "kw": [
+      "SAVAS",
+      "ATESKES",
+      "ABLUKA",
+      "GERGINLIK",
+      "IRAN",
+      "ISRAIL",
+      "RUSYA",
+      "UKRAYNA",
+      "GAZZE",
+      "WAR",
+      "MISSILE",
+      "SANCTION",
+      "SANCTIONS",
+      "YAPTIRIM",
+      "TARIFF",
+      "TARIFFS",
+      "GUMRUK VERGISI",
+      "TICARET SAVASI",
+      "TRADE WAR",
+      "TRUMP"
+     ]
+    },
+    {
+     "id": "rating",
+     "label": "Kredi notu",
+     "kw": [
+      "MOODYS",
+      "MOODY'S",
+      "FITCH",
+      "S&P GLOBAL",
+      "KREDI NOTU",
+      "KREDI DERECELENDIRME",
+      "RATING",
+      "DOWNGRADE",
+      "UPGRADE",
+      "NOT ARTIRIMI",
+      "NOT INDIRIMI"
+     ]
+    },
+    {
+     "id": "gold",
+     "label": "Altın",
+     "kw": [
+      "ALTIN",
+      "ONS ALTIN",
+      "GRAM ALTIN",
+      "GOLD",
+      "BULLION",
+      "GOLD PRICE"
+     ]
+    },
+    {
+     "id": "fx",
+     "label": "Döviz / TL",
+     "kw": [
+      "DOLAR",
+      "EURO",
+      "KUR",
+      "USD/TRY",
+      "DOLAR/TL",
+      "DOLLAR",
+      "CURRENCY",
+      "LIRA",
+      "TL'NIN DEGER",
+      "KUR SOKU",
+      "DOVIZ",
+      "DXY"
+     ]
+    },
+    {
+     "id": "crypto",
+     "label": "Kripto",
+     "kw": [
+      "BITCOIN",
+      "BTC",
+      "KRIPTO",
+      "ETHEREUM",
+      "CRYPTO",
+      "STABLECOIN",
+      "SPOT ETF",
+      "ETH"
+     ]
+    },
+    {
+     "id": "equity_tr",
+     "label": "Borsa İstanbul",
+     "kw": [
+      "BORSA",
+      "BIST",
+      "BIST 100",
+      "XU100",
+      "KATILIM ENDEKSI",
+      "KAP",
+      "HISSE",
+      "BORSA ISTANBUL",
+      "TURKISH STOCKS"
+     ]
+    },
+    {
+     "id": "equity_us",
+     "label": "ABD borsaları",
+     "kw": [
+      "WALL STREET",
+      "S&P 500",
+      "NASDAQ",
+      "DOW JONES",
+      "NYSE",
+      "STOCKS",
+      "SPX",
+      "STOCK MARKET",
+      "SELL-OFF",
+      "SELLOFF",
+      "RALLY"
+     ]
+    },
+    {
+     "id": "energy",
+     "label": "Enerji",
+     "kw": [
+      "PETROL",
+      "BRENT",
+      "OPEC",
+      "DOGALGAZ",
+      "OIL",
+      "CRUDE",
+      "NATURAL GAS",
+      "ENERJI"
+     ]
+    }
+   ],
+   "corroborate": 2,
+   "stop": [
+    "VE",
+    "ILE",
+    "ICIN",
+    "BIR",
+    "THE",
+    "AND",
+    "FOR",
+    "WITH",
+    "FROM",
+    "THAT",
+    "THIS",
+    "BU",
+    "DE",
+    "DA",
+    "MI",
+    "NE",
+    "SON",
+    "DAKIKA",
+    "CANLI",
+    "ONCE",
+    "GORE"
+   ],
+   "similar": 0.6
   };
 });

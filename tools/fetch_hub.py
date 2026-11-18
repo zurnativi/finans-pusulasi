@@ -196,7 +196,7 @@ POLY_SLUGS = [('fed_hike_2026', 'another-fed-rate-hike-in-2026', 'Fed 2026\'da b
 MTR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
 def pm_label(m):
     g = (m.get('groupItemTitle') or '').strip()
-    try: d = datetime.datetime.strptime(g, '%B %d, %Y'); return "%d %s %d'e kadar" % (d.day, MTR[d.month - 1], d.year)
+    try: d = datetime.datetime.strptime(g, '%B %d, %Y'); return "%d %s %d tarihine kadar" % (d.day, MTR[d.month - 1], d.year)
     except Exception: return (g or (m.get('question') or ''))[:60]
 def poly_probs():
     out = []
@@ -273,13 +273,23 @@ def cbrt_survey():
     nx = re.search(r'(\w+) ayı Para Politikası Kurulu toplantısı için TCMB politika faiz oranı beklentisi bu anket döneminde yüzde ([\d,]+)', flat)
     row = re.search(r'Önümüzdeki Para Politikası Kurulu toplantıları için\s+((?:[\d,]+\s+){6}[\d,]+)', t)
     vals = [num_tr(x) for x in row.group(1).split()] if row else None
+    mrow = re.search(r'Tüketici enflasyonu beklentiniz nedir\? \(%\)\s+((?:[\d,]+\s+){7}[\d,]+)', t)
+    mv = [num_tr(x) for x in mrow.group(1).split()] if mrow else None
+    fxr = re.search(r'ABD Dolar kuru beklentiniz nedir\? \(TL\)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)', t)
+    dist = []
+    dm = re.search(r'12 ay sonrasına ilişkin olasılık tahminleri değerlendirildiğinde, (.*?) öngörülmektedir', flat)
+    if dm:
+        for a, b, c in re.findall(r'yüzde ([\d,]+) olasılıkla (?:ise )?yüzde ([\d,]+) [–-] ([\d,]+) aralığında', dm.group(1)): dist.append({'lo': num_tr(b), 'hi': num_tr(c), 'p': num_tr(a) / 100})
     if not (cy and nx): raise Exception('PKA metni beklenen biçimde değil')
     rows = cbrt_rates(); cur = rows[-1]
     return {'id': 'cbrt_survey', 'period': period, 'url': url, 'pageUrl': CBRT_SURVEY_URL, 'source': 'TCMB Piyasa Katılımcıları Anketi', 'respondents': 70 if 'katılımcı tarafından' in flat and '70 katılımcı' in flat else None,
             'cpiYearEnd': {'prev': cy[0], 'now': cy[1]}, 'cpi12m': {'prev': m12[0], 'now': m12[1]} if m12 else None,
             'nextMeeting': {'month': nx.group(1), 'rate': num_tr(nx.group(2))}, 'rateSeries': dict(zip(['meeting1', 'meeting2', 'meeting3', 'yearEnd', 'm12', 'nextYearEnd', 'm24'], vals)) if vals else None,
             'currentRate': {'rate': cur[1], 'since': cur[0]}, 'distribution': None, 'kind': 'survey',
-            'note': 'Anket ortalamayı verir; katılımcı dağılımı yayımlanmaz. Bu yüzden olasılık yüzdesi YOKTUR (model tahmini uygulamada ayrıca ve etiketli gösterilir).'}
+            'monthlyCpi': {'cur': mv[0], 'next': mv[1], 'next2': mv[2]} if mv else None,
+            'usdtry': {'monthEnd': num_tr(fxr.group(1)), 'yearEnd': num_tr(fxr.group(2)), 'm12': num_tr(fxr.group(3))} if fxr else None,
+            'cpi12mDist': dist or None,
+            'note': 'Politika faizi için anket yalnız ortalama verir; katılımcı dağılımı yayımlanmaz, bu yüzden faiz kararı için olasılık yüzdesi YOKTUR. 12 ay sonrası enflasyon için TCMB aralık olasılıklarını yayımlar (cpi12mDist, resmî).'}
 
 def build_probs():
     res = {'generatedAt': NOWS, 'items': [], 'survey': None, 'sources': {}}
@@ -455,17 +465,27 @@ def build_feed():
     return {'generatedAt': NOWS, 'poolAt': pool.get('generatedAt'), 'items': tr + gl, 'method': 'Kaynak akışlarından yalnız başlık + bağlantı + saat saklanır (içerik kopyalanmaz). Son 7 gün.'}
 
 # ---------------------------------------------------------------- İş akışı tarafı uyarılar (+ ntfy)
-CRIT = [  # (desen, ağırlık, neden) — js/news.js içindeki RULES.critical ile birebir aynı olmalıdır (testle doğrulanır)
-]
 def load_rules():
     r = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_rules.json'), encoding='utf-8')); return r
 def fold(t): return F.fold(t)
 def score_title(title, rules):
-    f = fold(title); sc = 0; why = []
+    f = fold(title); sc = 0; why = []; hard = False
     for tier in rules['tiers']:
         for kw in tier['kw']:
-            if re.search(r'(?<![A-Z0-9])' + re.escape(fold(kw)) + r'(?![A-Z0-9])', f): sc += tier['w']; why.append(kw); break
-    return sc, why
+            if re.search(r'(?<![A-Z0-9])' + re.escape(fold(kw)) + r'(?![A-Z0-9])', f):
+                sc += tier['w']; why.append(kw)
+                if tier.get('hard'): hard = True
+                break
+    return sc, why, hard
+def tokens(title, rules):
+    stop = set(rules.get('stop', [])); o = set()
+    for w in re.sub(r"[^A-Z0-9' ]", ' ', fold(title)).split(' '):
+        w = re.sub(r"'.*$", '', w)
+        if len(w) >= 3 and w not in stop: o.add(w)
+    return o
+def jacc(a, b):
+    if not a or not b: return 0
+    return len(a & b) / float(len(a | b))
 
 def build_alerts(cal, probs, macro, feed):
     rules = load_rules(); old = prev('hub/alerts.json') or {}; oldItems = {a['id']: a for a in old.get('items', [])}
@@ -475,11 +495,18 @@ def build_alerts(cal, probs, macro, feed):
         new.append({'id': id_, 'sev': sev, 'cat': cat, 'title': title, 'body': body, 'url': url, 'assets': assets or [], 'at': NOWS})
     # 1) kritik haberler (son 6 saat, tarihli)
     cut = (NOW - datetime.timedelta(hours=6)).strftime(ISO)
-    for it in feed.get('items', []):
+    allf = feed.get('items', []); toks = {}
+    for it in allf:
+        if it.get('a') and it['a'] >= (NOW - 2 * DAY).strftime(ISO): toks[id(it)] = tokens(it['t'], rules)
+    for it in allf:
         if not it.get('a') or it['a'] < cut: continue
-        sc, why = score_title(it['t'], rules)
+        sc, why, hard = score_title(it['t'], rules)
         if it.get('o'): sc += rules['officialBonus']
-        if sc >= rules['criticalAt']:
+        tk = toks.get(id(it)) or tokens(it['t'], rules)
+        srcs = set(x.get('s') for x in allf if id(x) in toks and jacc(tk, toks[id(x)]) >= rules.get('similar', 0.6)) | {it.get('s')}
+        nsrc = len(srcs)
+        if nsrc >= 3 and sc > 0: sc += 10
+        if sc >= rules['criticalAt'] and hard and (it.get('o') or nsrc >= rules.get('corroborate', 2)):
             add('news:' + re.sub(r'[^a-z0-9]', '', fold(it['t']).lower())[:40], 'critical', 'news', it['t'][:140], 'Kaynak: %s · eşleşen: %s' % (it.get('s'), ', '.join(why[:4])), it['u'])
     # 2) yaklaşan yüksek etkili olaylar (T-1 gün)
     tom = ymd(NOW.astimezone(TR) + DAY); today = ymd(NOW.astimezone(TR))
