@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   window.AnalysisUI = function (X) {
-    var M = window.Money, PF = window.Portfolio, C = window.Calc, AN = window.Analysis, MD = window.MData, TA = window.TA, TC = window.TAChart;
+    var M = window.Money, PF = window.Portfolio, C = window.Calc, AN = window.Analysis, SN = window.Snap, MD = window.MData, TA = window.TA, TC = window.TAChart;
     var esc = X.esc, tip = X.tip, tl = X.tl;
     var SUM_KEY = 'finans-pusulasi:analiz-ozet', IMP_KEY = 'finans-pusulasi:analiz-ice-aktarim';
     var cur = { key: null, loading: false, error: null, view: { tf: '1d', range: '1Y', lower: 'volume', lens: 'conservative', overlays: { ma: true, structure: true, plan: true, patterns: true, fib: false, bb: false, ichimoku: false, supertrend: false, vwap: false } } };
@@ -14,7 +14,7 @@
     var AL = window.Alerts, NOTIFY_KEY = 'finans-pusulasi:uyari-bildirim';
     var TFS = [['1d', 'Günlük'], ['4h', '4 saat'], ['1h', '1 saat']], TF_LABEL = { '1d': 'günlük', '4h': '4 saatlik', '1h': 'saatlik' };
     var KIND_LABEL = { stock: 'BIST hissesi', fund: 'TEFAS fonu', crypto: 'Kripto', etf: 'ABD ETF/hisse', metal: 'Emtia', fx: 'Döviz', index: 'Endeks', import: 'İçe aktarılan' };
-    var US_HALAL = { SPUS: 1, HLAL: 1, SPSK: 1, SPRE: 1, SPTE: 1, SPWO: 1, UMMA: 1 };
+    var US_HALAL = window.Snap.US_HALAL;
     function st() { return X.state(); }
     function an() { var s = st(); return s.analysis && typeof s.analysis === 'object' ? s.analysis : { watchlist: [], profile: {} }; }
     function sums() { try { return JSON.parse(localStorage.getItem(SUM_KEY) || '{}') || {}; } catch (e) { return {}; } }
@@ -46,18 +46,12 @@
       var list = c.pos.filter(function (p) { return p.asset && p.valueTL > 0; }).map(function (p) { return { pos: p, key: keyOfAsset(p.asset), name: p.asset.name, value: p.valueTL, halal: p.halal }; });
       return { list: list, c: c };
     }
-    function halalFor(key, series) {
+    function halalOverride(key) { // kullanıcının Yönetim'deki etiketi (varsa)
       var a = (st().assets || []).find(function (x) { return keyOfAsset(x) === key; }), H = PF.HALAL;
       if (a && a.halal && a.halal.status && a.halal.status !== 'bilinmiyor' && H[a.halal.status]) return { status: a.halal.status, label: H[a.halal.status].label, reason: (a.halal.note || 'Yönetim\'deki etiketin') };
-      var k = key.split(':')[0], s = key.slice(k.length + 1);
-      if (k === 'bist') { var m = (series && series.katilim) || []; return m.indexOf('XKTUM') >= 0 ? { status: 'uygun', label: 'Uygun', reason: 'Borsa İstanbul Katılım Tüm endeksinde' + (m.indexOf('XK050') >= 0 ? ' (Katılım 50 dahil)' : '') } : { status: 'bilinmiyor', label: 'Katılım endeksinde değil', reason: 'Katılım endekslerinde yer almıyor — helal filtresinden geçmez' }; }
-      if (k === 'tefas') { var f = series && series.fund; if (f && f.tags && f.tags.islamic) return { status: 'uygun', label: 'Uygun', reason: 'Katılım (İslami) fon — TEFAS etiketi' }; if (f && /borçlanma|para piyasası|eurobond|repo/i.test(f.type || '')) return { status: 'uygun_degil', label: 'Uygun değil', reason: 'Faizli araçlara yatırım yapan fon türü (' + f.type + ')' }; return { status: 'bilinmiyor', label: 'Bilinmiyor', reason: 'Katılım fonu etiketi yok' }; }
-      if (k === 'us' || k === 'td') return US_HALAL[s] ? { status: 'uygun', label: 'Uygun', reason: 'Şer\'i endeks izleyen ETF' } : { status: 'bilinmiyor', label: 'Bilinmiyor', reason: 'Şer\'i tarama bilgisi yok' };
-      if (k === 'cg') return { status: 'supheli', label: 'Şüpheli', reason: 'Kripto paralar hakkında âlimler arasında görüş ayrılığı var' };
-      if (k === 'metal' || k === 'macro') return { status: 'uygun', label: 'Uygun', reason: 'Fiziki/peşin altın-gümüş için (vadeli kontrat değil; ons grafiği yalnızca fiyat okumak için)' };
-      if (k === 'fx') return { status: 'uygun', label: 'Uygun', reason: 'Peşin (spot) döviz' };
-      return { status: 'bilinmiyor', label: 'Bilinmiyor', reason: 'Yatırım aracı değil (yalnızca piyasa okuması)' };
+      return undefined;
     }
+    function halalFor(key, series) { return halalOverride(key) || SN.halalBase(key, series); }
     function twelveKey() { try { return (JSON.parse(localStorage.getItem('finans-pusulasi:prices') || '{}') || {}).twelveKey || null; } catch (e) { return null; } }
 
     /* ---------- Analizi yükle ve hesapla ---------- */
@@ -65,18 +59,7 @@
       opts = opts || {};
       var imp = key.indexOf('imp:') === 0 ? imports()[key.slice(4)] : null;
       return MD.load(key, { symbol: opts.symbol, twelveKey: twelveKey(), imported: imp }).then(function (series) {
-        var k = key.split(':')[0], jobs = [], ctx = { halal: halalFor(key, series) };
-        if (series.kind === 'stock' && k === 'bist') {
-          jobs.push(MD.fundamentals(key.slice(5)).then(function (f) { ctx.fundamentals = f; }, function (e) { ctx.fundErr = e.message; }));
-          // Göreli güç: Katılım endeksindeki hisse → Katılım Tüm (XKTUM, gerçek endeks değerleri); değilse BIST 100. XKTUM dosyası yoksa BIST 100'e düşülür (etiketlenir).
-          var isK = (series.katilim || []).indexOf('XKTUM') >= 0, xu = function () { return MD.loadMd('index', 'XU100').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'BIST 100'; }, function () { }); };
-          jobs.push(isK ? MD.loadMd('index', 'XKTUM').then(function (b) { if (b.bars.length < 130) return xu(); ctx.benchBars = b.bars; ctx.benchName = 'Katılım Tüm (XKTUM)'; }, xu) : xu());
-          jobs.push(MD.tvLive('BIST:XKTUM').then(function (x) { ctx.benchTv = x.raw; }, function () { }));
-        }
-        if (series.kind === 'fund' && series.fund && series.fund.type) jobs.push(MD.fundPeers(series.fund.type).then(function (p) { ctx.fundPeers = p; }, function () { }));
-        if (series.kind === 'crypto' && k === 'cg' && key !== 'cg:bitcoin') jobs.push(MD.load('cg:bitcoin').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'Bitcoin'; }, function () { }));
-        if (k === 'metal') jobs.push(MD.load('fx:USD').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'Dolar/TL'; }, function () { }));
-        return Promise.all(jobs).then(function () {
+        return SN.contextFor(MD, key, series, { halal: halalOverride(key) }).then(function (ctx) {
           var h = holdings(), held = h.list.filter(function (x) { return x.key === key; })[0], total = h.list.reduce(function (s2, x) { return s2 + x.value; }, 0) / 100;
           var R = Object.assign({}, PF.DEFAULT_RULES, (st().settings && st().settings.riskRules) || {});
           ctx.holding = !!held; ctx.portfolioValue = total > 0 && series.currency === 'TRY' ? total : null; ctx.maxSingleFrac = R.maxAssetBp / 10000;

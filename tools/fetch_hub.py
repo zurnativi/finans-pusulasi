@@ -512,7 +512,15 @@ def build_alerts(cal, probs, macro, feed):
     tom = ymd(NOW.astimezone(TR) + DAY); today = ymd(NOW.astimezone(TR))
     for e in (cal.get('events') or []):
         if e.get('impact') == 'high' and e['date'] in (tom, today) and e['type'] in ('cbrt_ppk', 'fomc', 'ecb_rate', 'tr_cpi', 'us_cpi', 'us_jobs'):
-            add('event:%s:%s' % (e['id'], 'T0' if e['date'] == today else 'T1'), 'high', 'event', ('Bugün: ' if e['date'] == today else 'Yarın: ') + e['title'], 'Tarih %s%s. Kaynak: %s' % (e['date'], (' ' + e['time'] + ' TSİ') if e.get('time') else '', e['source']['name']), e['source'].get('url'))
+            extra = ''
+            if e['type'] == 'fomc':  # yalnız gerçek kaynaktan (Kalshi) olasılık; yoksa hiçbir sayı yazılmaz
+                pi = next((i for i in probs.get('items', []) if i.get('region') == 'fed' and i.get('decisionDate') == e['date'] and i.get('outcomes')), None)
+                if pi:
+                    g = {'cut': 0.0, 'hold': 0.0, 'hike': 0.0}
+                    for o in pi['outcomes']: g['cut' if o['code'] in ('C25', 'C26') else 'hold' if o['code'] == 'H0' else 'hike'] += o['p']
+                    t = sum(g.values())
+                    if t > 0.5: extra = ' Piyasa (Kalshi): artırım %%%d · sabit %%%d · indirim %%%d.' % tuple(round(100 * g[k] / t) for k in ('hike', 'hold', 'cut'))
+            add('event:%s:%s' % (e['id'], 'T0' if e['date'] == today else 'T1'), 'high', 'event', ('Bugün: ' if e['date'] == today else 'Yarın: ') + e['title'], 'Tarih %s%s. Kaynak: %s.%s' % (e['date'], (' ' + e['time'] + ' TSİ') if e.get('time') else '', e['source']['name'], extra), e['source'].get('url'))
     # 3) piyasa şokları
     th = rules['market']
     for it in (macro.get('items') or []):
@@ -537,22 +545,7 @@ def build_alerts(cal, probs, macro, feed):
     keep = [a for a in old.get('items', []) if a['at'] >= (NOW - 7 * DAY).strftime(ISO)]
     allitems = sorted(new + keep, key=lambda a: a['at'], reverse=True)[:150]
     res = {'generatedAt': NOWS, 'items': allitems, 'newCount': len(new)}
-    # ntfy (isteğe bağlı): NTFY_TOPIC deposu sırrı/değişkeni. Konu adı gizli tutulmalıdır.
-    topic = os.environ.get('NTFY_TOPIC', '').strip()
-    watch = [w.strip().upper() for w in os.environ.get('WATCH_SYMBOLS', '').split(',') if w.strip()]
-    if topic and re.match(r'^[A-Za-z0-9_-]{8,64}$', topic):
-        sent = 0
-        for a in new:
-            if a['sev'] not in ('critical', 'high'): continue
-            if a['sev'] == 'high' and os.environ.get('NTFY_MIN', 'critical') == 'critical': continue
-            body = a['body'] + (' · İzleme listesi: ' + ', '.join(w for w in watch if w in fold(a['title'])) if watch and any(w in fold(a['title']) for w in watch) else '')
-            msg = {'topic': topic, 'title': ('🔴 ' if a['sev'] == 'critical' else '🟠 ') + a['title'][:100], 'message': body[:300], 'priority': 5 if a['sev'] == 'critical' else 4, 'tags': ['chart_with_downwards_trend'], 'click': a.get('url') or 'https://zurnativi.github.io/finans-pusulasi/#haberler'}
-            try:
-                req = urllib.request.Request('https://ntfy.sh/', data=json.dumps(msg).encode('utf-8'), headers={'Content-Type': 'application/json', 'User-Agent': 'finans-pusulasi'})
-                urllib.request.urlopen(req, timeout=20).read(); sent += 1
-            except Exception as e: print('ntfy hata', str(e)[:80])
-            if sent >= 5: break
-        res['ntfy'] = {'sent': sent, 'at': NOWS}
+    # ntfy: gönderim tools/publish.py'de (birleştirme sonrası, 'pushed' işaretiyle) yapılır; burada yalnız uyarı üretilir.
     return res
 
 def main():

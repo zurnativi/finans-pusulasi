@@ -1,14 +1,13 @@
-# Piyasa verisi (BIST, endeks + Katılım endeksleri, altın/gümüş, döviz, helal ETF; günlük ve saatlik mumlar), KAP bildirimleri ve haber başlıkları —
-# tarayıcıdan CORS ile alınamayan veriler.
-# Çıktı `market-data` dalına (tek commit, geçmiş tutulmaz) yazılır; site raw.githubusercontent.com'dan okur.
-# Not: GitHub, 60 gün hareketsiz depolarda zamanlanmış iş akışlarını durdurabilir; Actions sekmesinden yeniden açılır.
+# GÜNLÜK TAM DERLEME (ağır iş): BIST + endeksler + Katılım endeksleri + altın/gümüş + döviz + helal ETF günlük ve saatlik mumlar, KAP, haber,
+# takvim/olasılık/benzer olay/toparlanma çalışması, sunucu analiz anlık görüntüleri. İş günü 10:30 ve 18:40 TSİ.
+# Çıktı `market-data` dalına tools/publish.py ile yazılır (başka işlerle çakışmaz; dal tek commit, geçmiş tutulmaz).
+# Diğer işler: market-intraday.yml (saatlik), market-news.yml (≈20 dk), market-crypto.yml (saatlik, 7/24), keepalive.yml (haftalık).
+# Not: GitHub zamanlanmış işleri geciktirebilir (dakikalar–yarım saat) ve 60 gün depo hareketsizliğinde durdurabilir (keepalive.yml bunu önler).
 name: market-data
 on:
   schedule:
     - cron: '40 15 * * 1-5'   # 18:40 TSİ — tam derleme (BIST kapanışından sonra)
     - cron: '30 7 * * 1-5'    # 10:30 TSİ — tam derleme (sabah: ABD/emtia kapanışları)
-    - cron: '10 8-14 * * 1-5' # 11:10–17:10 TSİ saat başı — seans içi: saatlik mumlar + KAP + haber
-    - cron: '0 9 * * 0,6'     # hafta sonu 12:00 TSİ — KAP + haber (+ kripto dışı saatlik veri değişmez)
   workflow_dispatch:
     inputs:
       mode:
@@ -18,7 +17,7 @@ on:
         default: full
 permissions:
   contents: write
-concurrency: { group: market-data, cancel-in-progress: false }
+concurrency: { group: market-data-daily, cancel-in-progress: false }
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -26,35 +25,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
       - name: Önceki veriyi al (alınamayan semboller için)
         run: |
           git fetch --depth=1 origin market-data:prev-data 2>/dev/null && git worktree add /tmp/prev prev-data || echo "önceki veri yok"
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
       - name: Veriyi derle
         env:
           PREV_DIR: /tmp/prev
           WORKERS: '5'
-          MODE: ${{ ((github.event.schedule == '10 8-14 * * 1-5' || github.event.schedule == '0 9 * * 0,6') && 'intraday') || inputs.mode || 'full' }}
+          MODE: ${{ inputs.mode || 'full' }}
         run: python3 tools/fetch_market_data.py /tmp/out
       - name: Haber merkezi verisi (takvim, olasılıklar, benzer olaylar, uyarılar)
         # Hata bu adımı durdurmaz: ana piyasa verisi zaten yazıldı; alınamayan bölüm önceki sürümle (stale) kalır.
         continue-on-error: true
         env:
           PREV_DIR: /tmp/prev
-          MODE: ${{ ((github.event.schedule == '10 8-14 * * 1-5' || github.event.schedule == '0 9 * * 0,6') && 'intraday') || inputs.mode || 'full' }}
-          # İsteğe bağlı push (ntfy.sh): Settings → Secrets and variables → Actions → New repository SECRET `NTFY_TOPIC` (uzun, tahmin edilemez bir ad).
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          NTFY_MIN: ${{ vars.NTFY_MIN }}          # boş = yalnız kritik; 'high' = yüksek ve kritik
-          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }} # isteğe bağlı: ASELS,THYAO (başlıkta geçerse bildirime eklenir)
+          MODE: ${{ inputs.mode || 'full' }}
         run: |
           sudo apt-get install -y poppler-utils >/dev/null 2>&1 || true
           python3 tools/fetch_hub.py /tmp/out
-      - name: market-data dalına yaz
+      - name: Analiz anlık görüntüleri ve senaryo özeti (tarayıcıdaki aynı JS modülleri)
+        continue-on-error: true
+        env:
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}   # isteğe bağlı: ASELS,THYAO (evrene eklenir; tutar/adet YOK)
         run: |
-          cd /tmp/out
-          git init -q -b market-data
-          git config user.name "market-data-bot"
-          git config user.email "actions@users.noreply.github.com"
-          printf '# Finans Pusulası piyasa verisi\nOtomatik üretilir (tools/fetch_market_data.py). Kişisel, ticari olmayan kullanım. Kaynaklar resmi değildir.\n' > README.md
-          git add -A
-          git commit -q -m "Piyasa verisi $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" market-data
+          node tools/precompute.js /tmp/out --set=bist
+          node tools/scenarios.js /tmp/out
+      - name: market-data dalına yaz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}     # isteğe bağlı (README: "Arka plan bildirimleri")
+          NTFY_MIN: ${{ vars.NTFY_MIN }}            # boş = yalnız kritik; 'high' = yüksek ve kritik
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}
+        run: |
+          export JOB_SECONDS=$(( $(date +%s) - T0 ))
+          python3 tools/publish.py /tmp/out /tmp/prev daily

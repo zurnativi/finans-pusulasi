@@ -339,6 +339,60 @@ def keywords(sym, name):
     if w and len(w[0]) >= 5 and w[0] not in STOP: ks.add(w[0])
     return sorted(ks)
 
+
+# ---------- Midas'ın Kulakları (getmidas.com): robots.txt'e göre /midasin-kulaklari/ izinli; RSS yok (genel /feed/ başka içerik) → liste sayfası ----------
+# Yalnız başlık + bağlantı + tarih + okuma süresi saklanır; makale metni kopyalanmaz. Sayfa en çok saatte bir (yeni bağlantılar için makale başına 1 istek, en çok 12).
+MIDAS_SRC = "Midas'ın Kulakları"
+MIDAS_LIST = 'https://www.getmidas.com/midasin-kulaklari/'
+MIDAS_UA = 'FinansPusulasi/8.1 (kisisel, ticari olmayan; basliklar baglantiyla; +https://github.com/zurnativi/finans-pusulasi)'
+MIDAS_MONTHS = {'Ocak': 1, 'Şubat': 2, 'Mart': 3, 'Nisan': 4, 'Mayıs': 5, 'Haziran': 6, 'Temmuz': 7, 'Ağustos': 8, 'Eylül': 9, 'Ekim': 10, 'Kasım': 11, 'Aralık': 12}
+def parse_midas_list(h):
+    """Liste sayfası → [{title,url,day,rt}]. Beklenmeyen yapıda boş döner (uydurma yok)."""
+    out = []; seen = set()
+    for m in re.finditer(r'<div class="daily-newsletters-block-body-item">\s*<a href="(https://www\.getmidas\.com/midasin-kulaklari/[a-z0-9-]+-p-\d+)"(.*?)</a>', h, re.S):
+        url, body = m.group(1), m.group(2)
+        t = re.search(r'<h3>\s*(.*?)\s*</h3>', body, re.S); d = re.search(r'<span>\s*([^<•]+?)\s*•\s*(\d+)\s*dakika', body)
+        if not t or not d or url in seen: continue
+        dm = re.match(r'(\S+)\s+(\d{1,2}),\s*(\d{4})', d.group(1).strip())
+        if not dm or dm.group(1) not in MIDAS_MONTHS: continue
+        seen.add(url)
+        out.append({'title': re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', '', t.group(1)))).strip()[:240], 'url': url,
+                    'day': '%s-%02d-%02d' % (dm.group(3), MIDAS_MONTHS[dm.group(1)], int(dm.group(2))), 'rt': int(d.group(2))})
+    return out
+def parse_midas_time(h):
+    m = re.search(r'<meta property="article:published_time" content="([^"]+)"', h)
+    if not m: return None
+    try:
+        dt = datetime.datetime.fromisoformat(m.group(1)); return dt.astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception: return None
+def midas_fetch(known, max_new=12):
+    """known: {url: önceki öğe}. Döner: (öğeler, durum)."""
+    st = {'ok': False, 'n': 0, 'new': 0, 'robots': 'izinli (Disallow listesinde yok)', 'source': MIDAS_LIST}
+    h = http(MIDAS_LIST, headers={'User-Agent': MIDAS_UA, 'Accept': 'text/html'}, raw=True, tries=2).decode('utf-8', 'replace')
+    rows = parse_midas_list(h); st['n'] = len(rows)
+    if not rows: raise RuntimeError('liste sayfasında makale bulunamadı (sayfa yapısı değişmiş olabilir)')
+    out = []; fetched = 0; cut = (NOW - datetime.timedelta(days=14)).strftime('%Y-%m-%d')
+    for r in rows:
+        if r['day'] < cut: continue  # eski/süresiz içerik (ör. "2023 temettü şampiyonları") akışa alınmaz
+        old = known.get(r['url'])
+        if old and old.get('at'): at = old['at']
+        else:
+            at = None
+            if fetched < max_new:
+                fetched += 1
+                try: at = parse_midas_time(http(r['url'], headers={'User-Agent': MIDAS_UA, 'Accept': 'text/html'}, raw=True, tries=2, timeout=25).decode('utf-8', 'replace')); time.sleep(1.0)
+                except Exception: at = None
+            if at: st['new'] += 1
+        approx = False
+        if not at:  # makale saati alınamadı: yalnız gün biliniyor → gün başı (TSİ); "approx" işaretli
+            at = (datetime.datetime.strptime(r['day'], '%Y-%m-%d').replace(tzinfo=TR)).astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'); approx = True
+        it = {'title': r['title'], 'url': r['url'], 'src': MIDAS_SRC, 'at': at, 'reg': 'tr', 'rt': r['rt']}
+        if approx: it['approx'] = 1
+        out.append(it)
+    st['ok'] = True; st['lastAt'] = max((x['at'] for x in out), default=None)
+    return out, st
+
+MIDAS_STATUS = {}
 def parse_rss(src, b):
     out = []
     try: root = ET.fromstring(b)
@@ -364,6 +418,12 @@ def news_fetch(rows, prio):
                 if name in OFFICIAL: g_['off'] = OFFICIAL[name]
             items += got; status[name] = {'ok': True, 'n': len(got)}
         except Exception as e: status[name] = {'ok': False, 'err': str(e)[:80]}
+    try:
+        pprev = load_prev('news/pool.json') or {}
+        mi, mst = midas_fetch({x['url']: x for x in pprev.get('items', []) if x.get('src') == MIDAS_SRC})
+        items += mi; status[MIDAS_SRC] = {'ok': True, 'n': len(mi), 'new': mst['new']}; MIDAS_STATUS.update(mst)
+    except Exception as e:
+        status[MIDAS_SRC] = {'ok': False, 'err': str(e)[:100]}; MIDAS_STATUS.update({'ok': False, 'err': str(e)[:100]})
     gd = {'ok': 0, 'fail': 0}
     if MODE == 'full' and not SKIP_GDELT:
         names = {r['s']: r['name'] for r in rows}; tg = time.time(); streak = 0
@@ -383,6 +443,11 @@ def news_fetch(rows, prio):
             except Exception: gd['fail'] += 1; streak += 1
             time.sleep(6)
     status['GDELT'] = gd
+    # Kaynak başına güncellik (arayüzde "kaynak durumu"): son çekme saati + o kaynaktaki en yeni haberin saati
+    lastBy = {}
+    for x in items:
+        if x.get('at') and x['at'] > lastBy.get(x['src'], ''): lastBy[x['src']] = x['at']
+    write(os.path.join(OUT, 'news/sources.json'), {'generatedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ'), 'sources': {k: dict(v, lastAt=lastBy.get(k), fetchedAt=NOW.strftime('%Y-%m-%dT%H:%M:%SZ'), kind=('official' if k in OFFICIAL.values() or k in OFFICIAL else 'html' if k == MIDAS_SRC else 'rss'), reg=REGION.get(k, 'tr')) for k, v in status.items() if k != 'GDELT'}, 'midas': MIDAS_STATUS or None})
     # Önceki 14 günle birleştir (aynı bağlantı tek), 14 günden eskiler atılır
     prev = load_prev('news/pool.json') or {}
     pool = {x['url']: x for x in prev.get('items', [])}
@@ -451,6 +516,17 @@ def run_side(rows, members):
     nst['seconds'] = round(time.time() - t3)
     return h1, kapst, nst
 
+def main_news():
+    """Hızlı haber işi: yalnız haber akışları (RSS + Midas'ın Kulakları + resmî duyurular) → news/*. Fiyat/mum dosyalarına dokunmaz."""
+    t0 = time.time(); copy_prev()
+    prev_idx = load_prev('index.json')
+    if not prev_idx: print('Önce tam çalıştırma gerekli (index.json yok)'); sys.exit(2)
+    rows = [{'s': b['s'], 'name': b['n'], 'sector': b.get('sec')} for b in prev_idx.get('bist', [])]
+    nst = news_fetch(rows, []); nst['seconds'] = round(time.time() - t0)
+    prev_idx['news'] = nst
+    write(os.path.join(OUT, 'index.json'), prev_idx)
+    print('news', json.dumps({'pool': nst.get('pool'), 'feeds': nst.get('feeds')}, ensure_ascii=False)[:1500], round(time.time() - t0), 's')
+
 def main_intraday():
     t0 = time.time(); copy_prev()
     prev_idx = load_prev('index.json')
@@ -465,6 +541,7 @@ def main_intraday():
 
 def main():
     if MODE == 'intraday': return main_intraday()
+    if MODE == 'news': return main_news()
     t0 = time.time(); copy_prev()
     rows, members = universe()
     if LIMIT: rows = rows[:LIMIT]

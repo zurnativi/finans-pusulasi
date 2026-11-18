@@ -1,0 +1,43 @@
+# HIZLI HABER İŞİ (7/24, ≈20 dakikada bir): haber akışları (RSS + Midas'ın Kulakları + Fed/ECB), takvim, tahmin piyasası olasılıkları, makro,
+# uyarılar, senaryo özeti. Fiyat/mum dosyalarına dokunmaz. Hafif iştir (genelde 1–2 dk).
+# GitHub'ın en sık zamanlaması 5 dakikadır ve yoğun saatlerde gecikebilir; bu yüzden :07/:27/:47 (tam saat başından kaçınmak için).
+name: market-news
+on:
+  schedule:
+    - cron: '7,27,47 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: market-data-news, cancel-in-progress: false }
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Önceki veriyi al
+        run: |
+          git fetch --depth=1 origin market-data:prev-data && git worktree add /tmp/prev prev-data
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Haber akışları
+        env: { PREV_DIR: /tmp/prev, MODE: news, SKIP_GDELT: '1' }
+        run: python3 tools/fetch_market_data.py /tmp/out
+      - name: Takvim, olasılıklar, makro, uyarılar
+        continue-on-error: true
+        env: { PREV_DIR: /tmp/prev, MODE: news }
+        run: |
+          sudo apt-get install -y poppler-utils >/dev/null 2>&1 || true
+          python3 tools/fetch_hub.py /tmp/out
+          node tools/scenarios.js /tmp/out
+      - name: market-data dalına yaz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_MIN: ${{ vars.NTFY_MIN }}
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}
+        run: |
+          export JOB_SECONDS=$(( $(date +%s) - T0 ))
+          python3 tools/publish.py /tmp/out /tmp/prev news

@@ -1,0 +1,25 @@
+# CANLI TUTMA: GitHub, 60 gün depo hareketi olmayan HERKESE AÇIK depolarda zamanlanmış iş akışlarını otomatik devre dışı bırakır.
+# Bu iş haftada bir her iş akışı için "etkinleştir" API'sini çağırır (zaten açıksa zararsızdır; devre dışı kalmışsa yeniden açar) ve durumlarını
+# listeler. Not: market-data dalına her ≈20 dk yazılan commit'ler de depo hareketidir; bu ek güvencedir.
+# EN İYİ ÇABA: GitHub kuralları değişebilir. Arayüz zaten iş durursa "arka plan güncellemesi durmuş" uyarısı gösterir (js/freshness.js).
+name: keepalive
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: read
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: İş akışlarını etkinleştir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for wf in market-data market-intraday market-news market-crypto keepalive; do
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/${wf}.yml/enable" && echo "etkin: $wf" || echo "uyarı: $wf etkinleştirilemedi"
+          done
+          gh api "repos/${{ github.repository }}/actions/workflows" --jq '.workflows[] | "\(.name): \(.state)"'

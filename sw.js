@@ -10,7 +10,7 @@ var VERSION = '8.0.0';
 var CACHE = 'fp-shell-' + VERSION;
 var Q = '?v=' + VERSION;
 var SHELL = ['./', 'index.html', 'css/style.css' + Q, 'vendor/echarts.min.js'].concat(
-  ['money', 'calc', 'ledger', 'importparse', 'portfolio', 'prices', 'alerts', 'sample', 'cryptobox', 'syncmerge', 'sync', 'lock', 'store', 'ai', 'chartdata', 'charts', 'ta', 'structure', 'mdata', 'analysis', 'labellayout', 'tachart', 'portfolio-ui', 'analysis-ui', 'security-ui', 'newsrules', 'news', 'events', 'notify', 'mood', 'hubdata', 'hub-ui', 'app']
+  ['money', 'calc', 'ledger', 'importparse', 'portfolio', 'prices', 'alerts', 'sample', 'cryptobox', 'syncmerge', 'sync', 'lock', 'store', 'ai', 'chartdata', 'charts', 'ta', 'structure', 'mdata', 'analysis', 'snapshot', 'labellayout', 'tachart', 'portfolio-ui', 'analysis-ui', 'security-ui', 'newsrules', 'news', 'events', 'notify', 'mood', 'freshness', 'hubdata', 'hub-ui', 'app']
     .map(function (n) { return 'js/' + n + '.js' + Q; }));
 
 self.addEventListener('install', function (e) {
