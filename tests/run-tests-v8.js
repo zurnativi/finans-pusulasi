@@ -167,6 +167,8 @@
   test('Duygu: toparlanma gerçekleri veriden gelir (kaynak ve saat taşır); veri yoksa boş', function () {
     var rec = { generatedAt: '2026-11-17T04:00:00Z', assets: { XU100: { label: 'BIST 100 (TL, nominal)', from: '2000-01-03', to: '2026-11-16', url: 'https://y', thr: { '10': { n: 25, medianDaysToRecover: 84, maxDaysToRecover: 1148 }, '20': { n: 13, medianDaysToRecover: 263 } } } } };
     var f = MO.recoveryFacts(rec, 0.12); ok(f.length >= 1 && f[0].src && f[0].src.url && /84 gün/.test(f[0].text) && !/undefined/.test(f[0].text), JSON.stringify(f)); eq(MO.recoveryFacts(null, 0.12), []);
+    rec.assets.XU100.thr['10'].episodes = [{ depth: -0.15, daysToRecover: 100 }, { depth: -0.18, daysToRecover: 200 }, { depth: -0.5, daysToRecover: 900 }, { depth: -0.12, daysToRecover: null }];
+    var f2 = MO.recoveryFacts(rec, 0.16); ok(f2[0].k === 'sim' && f2[0].n === 2 && f2[0].src.url === 'https://y' && /n ≤ 5/.test(f2[0].text), 'benzer derinlik: ' + JSON.stringify(f2[0]));
   });
 
   /* ---------- 5. Python ↔ JS kural eşitliği ---------- */

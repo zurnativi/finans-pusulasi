@@ -60,7 +60,7 @@
     });
     if (dd != null && dd >= 0.05 && rec.assets.XU100 && rec.assets.XU100.thr['10']) {
       var eps = rec.assets.XU100.thr['10'].episodes || [], lo = dd * 0.7, hi = dd * 1.4, sim = eps.filter(function (e) { return -e.depth >= lo && -e.depth <= hi && e.daysToRecover != null; });
-      if (sim.length) { var d = sim.map(function (e) { return e.daysToRecover; }).sort(function (a, b) { return a - b; }); facts.unshift({ k: 'sim', label: 'Benzer derinlik', text: 'BIST 100’de senin düşüşüne benzer derinlikte (%' + Math.round(lo * 100) + '–%' + Math.round(hi * 100) + ') ' + sim.length + ' geçmiş düşüş vardı; zirveyi yeniden görme süresi ortanca ' + d[Math.floor(d.length / 2)] + ' gün' + (sim.length <= 5 ? ' (n ≤ 5: küçük örnek, kesin çıkarım yapma)' : '') + '. Senin portföyün BIST 100 değildir; bu yalnızca bağlamdır.', n: sim.length, src: { name: 'Yahoo Finance (resmî olmayan), nominal', url: a.url || rec.url || null, at: rec.generatedAt } }); }
+      if (sim.length) { var d = sim.map(function (e) { return e.daysToRecover; }).sort(function (a, b) { return a - b; }); facts.unshift({ k: 'sim', label: 'Benzer derinlik', text: 'BIST 100’de senin düşüşüne benzer derinlikte (%' + Math.round(lo * 100) + '–%' + Math.round(hi * 100) + ') ' + sim.length + ' geçmiş düşüş vardı; zirveyi yeniden görme süresi ortanca ' + d[Math.floor(d.length / 2)] + ' gün' + (sim.length <= 5 ? ' (n ≤ 5: küçük örnek, kesin çıkarım yapma)' : '') + '. Senin portföyün BIST 100 değildir; bu yalnızca bağlamdır.', n: sim.length, src: { name: 'Yahoo Finance (resmî olmayan), nominal', url: rec.assets.XU100.url || rec.url || null, at: rec.generatedAt } }); }
     }
     return facts;
   }
