@@ -440,7 +440,7 @@ def build_recovery():
     res = {'generatedAt': NOWS, 'assets': {}, 'method': 'Zirveden en az %10 / %20 düşen her dönem; "toparlanma" = fiyatın önceki zirveyi yeniden görmesi (nominal, temettüsüz). Kaynak: Yahoo Finance günlük kapanış.', 'errors': {}}
     for k, ys, lab, y0 in defs:
         try:
-            s = yahoo_hist(ys, y0); a = {'label': lab, 'from': s[0][0], 'to': s[-1][0], 'thr': {}}
+            s = yahoo_hist(ys, y0); a = {'label': lab, 'from': s[0][0], 'to': s[-1][0], 'url': 'https://finance.yahoo.com/quote/%s/history' % ys, 'thr': {}}
             for thr in (0.10, 0.20):
                 eps = drawdowns(s, thr); done = [e['daysToRecover'] for e in eps if e['daysToRecover'] is not None]
                 a['thr'][str(int(thr * 100))] = {'n': len(eps), 'recovered': len(done), 'medianDaysToRecover': round(quantile(done, .5)) if done else None, 'maxDaysToRecover': max(done) if done else None,

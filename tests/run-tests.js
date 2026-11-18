@@ -727,8 +727,15 @@
           return require('./run-tests-v71.js').run().then(function (r71) {
             var p71 = r71.filter(function (r) { return r.ok; }).length;
             r71.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
-            console.log('\n' + p71 + '/' + r71.length + ' v7.1 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length));
+            console.log('\n' + p71 + '/' + r71.length + ' v7.1 testi geçti');
             if (p71 !== r71.length) process.exit(1);
+            console.log('\n— v8 (haber puanlama/eşleştirme, olay beklentisi ve olasılıkları, bildirim motoru, duygu durumu, Python/JS kural eşitliği) —');
+            return require('./run-tests-v8.js').run().then(function (r8) {
+              var p8 = r8.filter(function (r) { return r.ok; }).length;
+              r8.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+              console.log('\n' + p8 + '/' + r8.length + ' v8 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length));
+              if (p8 !== r8.length) process.exit(1);
+            });
           });
         });
       });

@@ -34,7 +34,7 @@
   }
   function topicLabel(id, rules) { var t = ((rules || RULES).topics || []).filter(function (x) { return x.id === id; })[0]; return t ? t.label : id; }
   /* Kritik = yüksek puan + "sert" kademe (kriz/karar) + doğrulama (resmî kurum VEYA en az 2 ayrı kaynak). Tek kaynaklı haber en fazla "yüksek" olur. */
-  function levelOf(score, rules, hard, corroborated) { rules = rules || RULES; if (score >= rules.criticalAt && hard && corroborated) return 'critical'; return score >= rules.highAt ? 'high' : score >= rules.mediumAt ? 'medium' : 'low'; }
+  function levelOf(score, rules, hard, corroborated) { rules = rules || RULES; if (score >= rules.criticalAt && hard && corroborated) return 'critical'; if (score >= rules.highAt && (hard || corroborated)) return 'high'; return score >= rules.mediumAt ? 'medium' : 'low'; }
   var LEVEL_TR = { critical: 'Kritik', high: 'Yüksek', medium: 'Orta', low: 'Düşük', info: 'Bilgi' };
   /* Önem puanı (0-100): kural puanı + resmî kaynak payı + aynı olayı veren bağımsız kaynak sayısı payı; haber eskidikçe sönümlenir.
    * Sönüm yalnız görünüm sırası içindir; "kritik" etiketi haberin kendi niteliğinden gelir. */

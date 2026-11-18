@@ -15,7 +15,6 @@
     {"id": "elec2023a", "date": "2023-05-15", "group": "turkey_election", "title": "14 Mayıs 2023 genel seçimi 1. tur (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2023_Turkish_general_election"},
     {"id": "elec2023b", "date": "2023-05-29", "group": "turkey_election", "title": "28 Mayıs 2023 cumhurbaşkanlığı 2. turu (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2023_Turkish_general_election"},
     {"id": "local2024", "date": "2024-04-01", "group": "turkey_election", "title": "31 Mart 2024 yerel seçimleri (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2024_Turkish_local_elections"},
-    {"id": "yen2024", "date": "2024-08-05", "group": "global_shock", "title": "Ağustos 2024 küresel satış dalgası (yen carry-trade çözülmesi)", "src": "https://en.wikipedia.org/wiki/2024_Japanese_stock_market_crash"},
     {"id": "uselec2024", "date": "2024-11-06", "group": "global_event", "title": "ABD başkanlık seçimi sonrası ilk işlem günü", "src": "https://en.wikipedia.org/wiki/2024_United_States_presidential_election"},
     {"id": "imamoglu2025", "date": "2025-03-19", "group": "turkey_shock", "title": "19 Mart 2025: İmamoğlu'nun gözaltına alınması", "src": "https://en.wikipedia.org/wiki/Ekrem_%C4%B0mamo%C4%9Flu"},
     {"id": "libday2025", "date": "2025-04-03", "group": "global_shock", "title": "ABD 'Kurtuluş Günü' gümrük vergileri sonrası ilk işlem günü", "src": "https://en.wikipedia.org/wiki/Liberation_Day_tariffs"}

@@ -66,7 +66,7 @@
         moves: movesOf(s), fired: firedList, stale: staleL, news: procd, events: EV.upcoming(d.calendar, now, 14), hub: { calendar: d.calendar, probs: d.probs, macro: d.macro, analogs: d.analogs, recovery: d.recovery, status: d.status }, server: (d.alerts && d.alerts.items) || [], meta: logOf().meta };
     }
     function deliver(items) {
-      var S = settings(); if (!items.length) return;
+      var S = settings(); if (!items.length || (X.state() && X.state().isExample)) return; // örnek veride ekran/tarayıcı bildirimi gönderilmez
       items.slice(0, 3).forEach(function (it) { if (it.sev === 'critical') X.toast('🔴 ' + it.title); });
       if (S.browser && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         items.slice(0, 3).forEach(function (it) { var opt = { body: (it.body || '').slice(0, 200), tag: 'fp-' + it.id, silent: it.sev !== 'critical' }; try { new Notification('Finans Pusulası · ' + SEVL[it.sev] + ': ' + it.title.slice(0, 80), opt); } catch (e) { /* desteklenmiyor */ } });
@@ -143,8 +143,11 @@
     function newsItem(it, now) {
       var at = it.a ? Date.parse(it.a) : NaN, badges = [];
       if (it.o) badges.push('<span class="bd off">Resmî · ' + esc(it.o) + '</span>');
-      it.matches.slice(0, 3).forEach(function (m) { badges.push('<span class="bd ' + (m.kind === 'direct' ? 'mine' : 'topic') + '" title="' + esc(m.why) + '">' + (m.kind === 'direct' ? '★ Portföyünde: ' : '◦ Dolaylı: ') + esc(m.h.name) + '</span>'); });
-      if (it.matches.length > 3) badges.push('<span class="bd topic">+' + (it.matches.length - 3) + ' varlık</span>');
+      var dir = it.matches.filter(function (m) { return m.kind === 'direct'; }), ind = it.matches.filter(function (m) { return m.kind !== 'direct'; }), byG = {};
+      dir.slice(0, 4).forEach(function (m) { badges.push('<span class="bd mine" title="' + esc(m.why) + '">★ Portföyünde: ' + esc(m.h.name) + '</span>'); });
+      if (dir.length > 4) badges.push('<span class="bd mine">+' + (dir.length - 4) + ' varlık daha</span>');
+      ind.forEach(function (m) { var g = N.groupOf(m.h); (byG[g] = byG[g] || []).push(m); });
+      Object.keys(byG).forEach(function (g) { badges.push('<span class="bd topic" title="' + esc(byG[g].map(function (m) { return m.h.name; }).join(', ') + ' — ' + byG[g][0].why) + '">◦ Dolaylı: ' + esc(N.GROUPS[g].short) + (byG[g].length > 1 ? ' (' + byG[g].length + ' varlık)' : ': ' + esc(byG[g][0].h.name)) + '</span>'); });
       if (it.n > 1) badges.push('<span class="bd">' + it.n + ' kaynak</span>');
       var topics = it.imp.topics.map(function (t) { return N.topicLabel(t); });
       return '<li class="nw ' + (SEVC[it.imp.level] || '') + '"><div class="nw-h">' + sevPill(it.imp.level) + ' ' + (url(it.u) ? '<a href="' + esc(it.u) + '" target="_blank" rel="noopener noreferrer">' + esc(it.t) + '</a>' : esc(it.t)) + '</div>' +
@@ -173,7 +176,7 @@
       h += '<section class="card"><h2>Haberler <small class="muted">(' + list.length + ' sonuç)</small></h2>' + (hold.length ? '' : '<p class="hint">Portföyünde varlık yok; “Portföyümle ilgili” etiketleri varlık ekleyince çıkar.</p>') +
         (shown.length ? '<ul class="nwl">' + shown.map(function (it) { return newsItem(it, now); }).join('') + '</ul>' : '<p class="muted">Bu filtrelerle haber yok. ' + (f.imp !== 'all' ? '<button class="btn small" data-hub="allimp" type="button">Düşük önemlileri de göster</button>' : '') + '</p>') +
         (list.length > shown.length ? '<p><button class="btn" data-hub="more" type="button">Daha fazla göster (' + (list.length - shown.length) + ')</button></p>' : '') +
-        '<p class="hint">Kaynaklar: TR ve küresel RSS akışları (Bloomberg HT, ForInvest, TRT Haber, Habertürk, Dünya, Ekonomim, BBC, NYT, Guardian, MarketWatch, CNBC, Investing.com), Fed ve ECB basın duyuruları (resmî), elindeki BIST hisseleri için KAP bildirimleri (resmî). Yalnız başlık, bağlantı ve saat saklanır; içerik kopyalanmaz. Önem puanı anahtar kelime kuralıdır; “kritik” için resmî kurum veya en az 2 ayrı kaynak aranır.</p></section>';
+        '<p class="hint">Kaynaklar: TR ve küresel RSS akışları (Bloomberg HT, ForInvest, TRT Haber, Habertürk, Dünya, Ekonomim, BBC, NYT, Guardian, MarketWatch, CNBC, Investing.com), Fed ve ECB basın duyuruları (resmî), elindeki BIST hisseleri için KAP bildirimleri (resmî). Yalnız başlık, bağlantı ve saat saklanır; içerik kopyalanmaz. Önem puanı anahtar kelime kuralıdır; “kritik” için kriz/karar anahtar kelimesi VE (resmî kurum veya en az 2 ayrı kaynak) aranır; “yüksek” için bunlardan biri yeter; tek kaynaklı ve yumuşak anahtar kelimeli haber en fazla “orta” olur.</p></section>';
       return h;
     }
 

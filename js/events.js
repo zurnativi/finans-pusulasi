@@ -95,8 +95,10 @@
     }
     if (ev.type === 'fomc') {
       var it = probs.filter(function (p) { return p.region === 'fed' && p.decisionDate === ev.date && p.outcomes; })[0]; if (!it) return null;
-      var top = it.outcomes.slice().sort(function (a, b) { return b.p - a.p; })[0];
-      return { kind: 'market', text: 'Piyasa (Kalshi) en olası sonuç: ' + top.label + ' (%' + Math.round(top.p * 100) + ')', code: codeOf(top.label), src: { name: 'Kalshi', url: it.url } };
+      var top = it.outcomes.slice().sort(function (a, b) { return b.p - a.p; })[0], sums = {}, NAMES = { cut: 'İndirim', hold: 'Sabit', hike: 'Artırım' };
+      it.outcomes.forEach(function (o) { var c = codeOf(o.label); sums[c] = (sums[c] || 0) + o.p; });
+      var gk = Object.keys(sums).sort(function (a, b) { return sums[b] - sums[a]; })[0], gtxt = NAMES[gk] ? NAMES[gk] + ' %' + Math.round(sums[gk] * 100) : top.label + ' %' + Math.round(top.p * 100);
+      return { kind: 'market', text: 'Piyasa (Kalshi) en olası yön: ' + gtxt + (NAMES[gk] && top.label !== NAMES[gk] ? ' (tek sonuç olarak en olası: ' + top.label + ' %' + Math.round(top.p * 100) + ')' : ''), code: gk && NAMES[gk] ? gk : codeOf(top.label), src: { name: 'Kalshi', url: it.url } };
     }
     if (ev.type === 'tr_cpi') { var m = sameMonthCpi(ev, sv); if (!m) return null; return { kind: 'survey', text: 'TCMB anketi: ' + m.label + ' beklentisi %' + fmtN(m.v), value: m.v, src: { name: 'TCMB Piyasa Katılımcıları Anketi — ' + sv.period, url: sv.pageUrl || sv.url } }; }
     if (ev.type === 'us_cpi') { var c = probs.filter(function (p) { return p.kind === 'ladder'; })[0]; if (!c || c.impliedMedian == null) return null; return { kind: 'market', text: 'Piyasa (Kalshi) ima edilen medyan: %' + fmtN(c.impliedMedian) + ' (yıllık TÜFE)', value: c.impliedMedian, src: { name: 'Kalshi', url: c.url } }; }
