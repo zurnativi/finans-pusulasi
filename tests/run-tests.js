@@ -741,6 +741,13 @@
                 r81.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                 console.log('\n' + p81 + '/' + r81.length + ' v8.1 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length));
                 if (p81 !== r81.length) process.exit(1);
+                console.log('\n— v8.2 (arka plan portföy izleme: şifreleme, kurulum dizgesi, yük gizliliği, kontrol motoru, iş betiği, akış/depo denetimi) —');
+                return require('./run-tests-v82.js').run().then(function (r82) {
+                  var p82 = r82.filter(function (r) { return r.ok; }).length;
+                  r82.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                  console.log('\n' + p82 + '/' + r82.length + ' v8.2 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length));
+                  if (p82 !== r82.length) process.exit(1);
+                });
               });
             });
           });

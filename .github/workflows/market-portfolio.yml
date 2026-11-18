@@ -1,0 +1,52 @@
+# ARKA PLAN PORTFÖY İZLEME (v8.2, isteğe bağlı): kullanıcının cihazda ŞİFRELENİP gizli Gist'e yüklenen portföy verisini çözer, aynı JS modülleriyle kontrol eder,
+# sonucu yine şifreleyip market-data dalına yazar ve (isteğe bağlı) ntfy ile telefona bildirim gönderir. PORTFOLIO_KEY sırrı tanımlı değilse hiçbir şey yapmaz.
+# Düz metin portföy verisi: yalnızca bu işin belleğinde. Günlüğe yalnızca sayılar yazılır; sırlar maskelenir.
+# Zamanlama: haber işinden 7 dk sonra (:14, :34, :54), her günlük/saatlik veri işinden sonra ve elle. Tek grup: çalışmalar sıraya girer, sonuç dosyası çakışmaz.
+name: market-portfolio
+on:
+  schedule:
+    - cron: '14,34,54 * * * *'
+  workflow_run:
+    workflows: [market-data, market-intraday]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: market-data-portfolio, cancel-in-progress: false }
+jobs:
+  watch:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Etkin mi?
+        id: gate
+        env: { K: '${{ secrets.PORTFOLIO_KEY }}' }
+        run: |
+          if [ -n "$K" ]; then echo "on=1" >> "$GITHUB_OUTPUT"; else echo "on=0" >> "$GITHUB_OUTPUT"; echo "PORTFOLIO_KEY tanımlı değil: portföy izleme kapalı."; fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.on == '1'
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.on == '1'
+        with: { node-version: '22' }
+      - name: Piyasa verisini al (herkese açık dal)
+        if: steps.gate.outputs.on == '1'
+        run: git fetch --depth=1 origin market-data:md-data && git worktree add /tmp/md md-data
+      - name: Portföyü çöz, kontrol et, şifreli sonucu yaz (günlüğe yalnızca sayılar)
+        id: job
+        if: steps.gate.outputs.on == '1'
+        continue-on-error: true
+        env:
+          PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/portfolio_job.js /tmp/md /tmp/bg-out
+      - name: market-data dalına yaz (yalnızca bg/ — şifreli)
+        if: steps.gate.outputs.on == '1'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -d /tmp/bg-out ]; then python3 tools/publish.py /tmp/bg-out /tmp/md portfolio; else echo "yazılacak bir şey yok"; fi
+      - name: Sonuç
+        if: steps.gate.outputs.on == '1' && steps.job.outcome == 'failure'
+        run: echo "::error::Portföy kontrolü hata verdi (ayrıntı için uygulamadaki Arka plan durumu kartına bak)"; exit 1

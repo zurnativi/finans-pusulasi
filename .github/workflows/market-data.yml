@@ -57,6 +57,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}     # isteğe bağlı (README: "Arka plan bildirimleri")
+          PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}   # yalnızca içindeki ntfy konusu okunur (kurulum tek sırla); asla yazdırılmaz
           NTFY_MIN: ${{ vars.NTFY_MIN }}            # boş = yalnız kritik; 'high' = yüksek ve kritik
           WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}
         run: |

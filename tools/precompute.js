@@ -14,18 +14,7 @@ var PRIVATE = process.env.PRIVATE_DIR || '/tmp/fp-private';
 var NOW = new Date(process.env.PRECOMPUTE_NOW || Date.now());
 var RAW = 'https://raw.githubusercontent.com/zurnativi/finans-pusulasi/market-data/';
 
-/* ---- fetch dolandırıcısı: market-data dalı isteklerini yerel dosyaya yönlendirir (başka her şey gerçek ağa gider) ---- */
-var realFetch = globalThis.fetch;
-globalThis.fetch = function (url, init) {
-  var u = String(url);
-  if (u.indexOf(RAW) === 0) {
-    var rel = decodeURIComponent(u.slice(RAW.length).split('?')[0]), p = path.join(OUT, rel);
-    if (!fs.existsSync(p)) return Promise.resolve(new Response('not found', { status: 404 }));
-    return Promise.resolve(new Response(fs.readFileSync(p), { status: 200, headers: { 'content-type': 'application/json' } }));
-  }
-  if (process.env.PRECOMPUTE_NO_NET === '1') return Promise.reject(new Error('ağ kapalı (test)'));
-  return realFetch(url, init);
-};
+require('./nodefetch.js').install(OUT, { noNet: process.env.PRECOMPUTE_NO_NET === '1' });
 var MD = require('../js/mdata.js'), AN = require('../js/analysis.js'), SN = require('../js/snapshot.js');
 
 function readJson(rel) { try { return JSON.parse(fs.readFileSync(path.join(OUT, rel), 'utf8')); } catch (e) { return null; } }
@@ -46,15 +35,7 @@ function universe() {
   return keys.filter(function (k, i) { return keys.indexOf(k) === i; });
 }
 function withTimeout(p, ms, label) { return new Promise(function (res, rej) { var t = setTimeout(function () { rej(new Error(label + ': zaman aşımı')); }, ms); p.then(function (x) { clearTimeout(t); res(x); }, function (e) { clearTimeout(t); rej(e); }); }); }
-function one(key) {
-  var sym = key.indexOf('cg:') === 0 ? undefined : undefined;
-  return MD.load(key, {}).then(function (series) {
-    return SN.contextFor(MD, key, series).then(function (ctx) {
-      var A = AN.analyze(series, ctx); A.series = series; A.ctx = ctx;
-      return SN.compact(A, { at: NOW.toISOString() });
-    });
-  });
-}
+function one(key) { return SN.analyzeKey(MD, AN, key, NOW.toISOString()); }
 function pool(items, n, fn) { var i = 0, res = []; return new Promise(function (done) { var act = 0; function next() { if (i >= items.length && act === 0) return done(res); while (act < n && i < items.length) { (function (it) { act++; fn(it).then(function (r) { res.push(r); }, function (e) { res.push({ key: it, error: String(e && e.message || e).slice(0, 160) }); }).then(function () { act--; next(); }); })(items[i++]); } } next(); }); }
 
 /* ---- uyarılar: bir önceki anlık görüntüye göre değişim (piyasa geneli; herkese açık) ---- */

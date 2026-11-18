@@ -7,7 +7,7 @@ Neden gerekli: birden çok zamanlanmış iş (haber ≈20 dk, saatlik seans içi
 farklılaşan dosyalarını üstüne işler (böylece başka işin daha taze verisi eski kopyayla ezilmez), özel dosyaları birleştirir (uyarılar, haber havuzu, index.json),
 analiz dizinini yeniden üretir, isteğe bağlı ntfy gönderir, tek commit'lik dalı --force-with-lease ile yazar; reddedilirse yeniden dener.
 Depo şişmez: dal her seferinde TEK commit'tir (geçmiş tutulmaz)."""
-import os, sys, json, re, shutil, subprocess, tempfile, time, hashlib, datetime, urllib.request
+import os, sys, json, re, shutil, subprocess, tempfile, time, hashlib, datetime, urllib.request, base64
 
 ISO = '%Y-%m-%dT%H:%M:%SZ'
 NOW = datetime.datetime.now(datetime.timezone.utc)
@@ -18,6 +18,7 @@ OWN = {  # işin yazabileceği yollar (güvenlik ağı)
     'intraday': ('h1/', 'kap/', 'news/', 'hub/', 'analysis/', 'index.json', 'status/intraday.json'),
     'crypto': ('analysis/', 'status/crypto.json'),
     'daily': ('',),
+    'portfolio': ('bg/',),   # v8.2: yalnız ŞİFRELİ sonuç dosyası (bg/results.enc.json); düz metin portföy verisi asla
 }
 INDEX_LATEST = ('intraday', 'kap', 'news')      # index.json'da "en yeni generatedAt kazanır" anahtarlar
 PRIVATE = os.environ.get('PRIVATE_DIR', '/tmp/fp-private')
@@ -119,9 +120,21 @@ def ntfy_post(topic, a):
 
 def hid(topic, id_): return hashlib.sha256((topic + '|' + id_).encode('utf-8')).hexdigest()[:16]
 
+def ntfy_topic():
+    """Konu adı: NTFY_TOPIC sırrı; yoksa PORTFOLIO_KEY kurulum dizgesinin içindeki konu (tek sırla kurulum). Yazdırılmaz."""
+    t = os.environ.get('NTFY_TOPIC', '').strip()
+    if t: return t
+    k = os.environ.get('PORTFOLIO_KEY', '').strip()
+    if k.startswith('FPBG1.'):
+        try:
+            b = k[6:]; b += '=' * (-len(b) % 4)
+            return str(json.loads(base64.urlsafe_b64decode(b)).get('t') or '')
+        except Exception: return ''
+    return ''
+
 def notify(merged_root, sent_cache):
     """Herkese açık uyarılar: kritik (+ NTFY_MIN=high ise yüksek), pushed işaretsiz, son 12 saatte. İzleme listesine özel uyarılar: yalnız ntfy, tuzlu özet ile tekrar önleme."""
-    topic = os.environ.get('NTFY_TOPIC', '').strip(); res = {'enabled': False, 'sent': 0}
+    topic = ntfy_topic(); res = {'enabled': False, 'sent': 0}
     if not topic or not re.match(r'^[A-Za-z0-9_-]{8,64}$', topic): return res
     res['enabled'] = True; minhigh = os.environ.get('NTFY_MIN', '').strip().lower() == 'high'
     ap = os.path.join(merged_root, 'hub/alerts.json'); al = read_json(ap) or {'items': []}; cut = (NOW - datetime.timedelta(hours=12)).strftime(ISO); sent = 0
@@ -168,6 +181,12 @@ def build_merged(out, prev, job, work, sent_cache):
         write_json(os.path.join(headdir, 'news/pool.json'), merge_pool(read_json(os.path.join(headdir, 'news/pool.json')), read_json(os.path.join(out, 'news/pool.json'))))
     if allowed(job, 'index.json') and os.path.exists(os.path.join(out, 'index.json')):
         write_json(os.path.join(headdir, 'index.json'), merge_index(read_json(os.path.join(headdir, 'index.json')), read_json(os.path.join(out, 'index.json')), job))
+    # silinecek yollar (OUT/.delete): yalnızca işin kendi izin listesindekiler (ör. kapatılan portföy izlemenin şifreli sonucu)
+    dp = os.path.join(out, '.delete')
+    if os.path.exists(dp):
+        for rel in open(dp, encoding='utf-8').read().split():
+            if allowed(job, rel) and rel != '' and os.path.isfile(os.path.join(headdir, rel)): os.remove(os.path.join(headdir, rel))
+    if job == 'portfolio': return headdir, headsha, copied, {'enabled': False, 'sent': 0}
     rebuild_analysis_index(headdir)
     st = {'job': job, 'ok': True, 'generatedAt': NOWS, 'seconds': int(os.environ.get('JOB_SECONDS', '0') or 0)}
     if os.environ.get('GITHUB_RUN_ID'): st['run'] = '%s/%s/actions/runs/%s' % (os.environ.get('GITHUB_SERVER_URL', 'https://github.com'), os.environ.get('GITHUB_REPOSITORY', ''), os.environ['GITHUB_RUN_ID'])

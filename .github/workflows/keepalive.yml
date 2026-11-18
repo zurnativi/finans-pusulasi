@@ -19,7 +19,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for wf in market-data market-intraday market-news market-crypto keepalive; do
+          for wf in market-data market-intraday market-news market-crypto market-portfolio keepalive; do
             gh api -X PUT "repos/${{ github.repository }}/actions/workflows/${wf}.yml/enable" && echo "etkin: $wf" || echo "uyarı: $wf etkinleştirilemedi"
           done
           gh api "repos/${{ github.repository }}/actions/workflows" --jq '.workflows[] | "\(.name): \(.state)"'

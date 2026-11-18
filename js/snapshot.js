@@ -51,7 +51,7 @@
     var out = { v: VERSION, key: A.key, name: A.name, kind: A.kind, tf: A.tf || '1d', currency: A.currency, n: A.n, closeOnly: !!A.closeOnly, at: meta.at || null,
       price: r(A.price), lastDate: A.lastDate || null, total: A.total, confidence: A.confidence, confLabel: A.confLabel, blocked: !!A.blocked, blockReasons: A.blockReasons || [], warnings: A.warnings || [] };
     out.scores = {}; Object.keys(A.scores || {}).forEach(function (k) { var s = A.scores[k]; out.scores[k] = s && num(s.score) ? s.score : null; });
-    out.stance = A.stance ? { code: A.stance.code, label: A.stance.label, why: (A.stance.why || []).slice(0, 4) } : null;
+    out.stance = A.stance ? { code: A.stance.code, label: A.stance.label, why: (A.stance.why || []).slice(0, 4), hold: A.stance.hold ? { code: A.stance.hold.code, label: A.stance.hold.label, why: (A.stance.hold.why || []).slice(0, 3) } : null } : null;
     out.halalOk = !!A.halalOk; out.halal = A.ctx && A.ctx.halal ? { status: A.ctx.halal.status, label: A.ctx.halal.label, reason: A.ctx.halal.reason } : null;
     if (A.plans) out.plans = { conservative: planOf(A.plans.conservative), aggressive: planOf(A.plans.aggressive), notes: (A.plans.notes || []).slice(0, 3), halalNote: A.plans.halalNote || null };
     if (A.col) {
@@ -74,5 +74,11 @@
   /* Genel bakış satırı (analysis/index.json) */
   function row(s) { return { key: s.key, name: s.name, kind: s.kind, total: s.total, conf: s.confidence, confLabel: s.confLabel, stance: s.stance && s.stance.label, stanceCode: s.stance && s.stance.code, price: s.price, cur: s.currency, lastDate: s.lastDate, at: s.at, blocked: s.blocked, halal: s.halal && s.halal.status, rr: s.plans && s.plans.conservative ? s.plans.conservative.rr : null }; }
   function fileOf(key) { return String(key).replace(/[^A-Za-z0-9_.-]/g, '-'); }
-  return { VERSION: VERSION, US_HALAL: US_HALAL, halalBase: halalBase, contextFor: contextFor, compact: compact, row: row, fileOf: fileOf };
+  /* Bir anahtarın tam analizi → sıkıştırılmış anlık görüntü (sunucu işleri ve arka plan portföy kontrolü bunu kullanır) */
+  function analyzeKey(MD, AN, key, at, opts) {
+    return MD.load(key, {}).then(function (series) {
+      return contextFor(MD, key, series, opts).then(function (ctx) { var A = AN.analyze(series, ctx); A.series = series; A.ctx = ctx; return compact(A, { at: at }); });
+    });
+  }
+  return { VERSION: VERSION, analyzeKey: analyzeKey, US_HALAL: US_HALAL, halalBase: halalBase, contextFor: contextFor, compact: compact, row: row, fileOf: fileOf };
 });

@@ -28,6 +28,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}   # yalnızca içindeki ntfy konusu okunur (kurulum tek sırla); asla yazdırılmaz
           NTFY_MIN: ${{ vars.NTFY_MIN }}
         run: |
           export JOB_SECONDS=$(( $(date +%s) - T0 ))

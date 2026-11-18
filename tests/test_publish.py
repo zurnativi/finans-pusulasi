@@ -52,6 +52,28 @@ class PublishTest(unittest.TestCase):
         self.assertEqual(self.P.publish(o, p, 'crypto'), 0); h = self.head()
         self.assertEqual(rj(h, 'bist/ASELS.json'), {'bars': [1]}); self.assertTrue(os.path.exists(os.path.join(h, 'analysis/cg-bitcoin.json')))
 
+    def test_portfolio_job_writes_only_bg_and_deletes_only_own_paths(self):
+        # v8.2: portföy işi yalnız bg/ altına (şifreli sonuç) yazabilir; .delete ile yalnız kendi yolunu silebilir
+        out = os.path.join(self.tmp, 'pf-out'); os.makedirs(out)
+        wj(out, 'bg/results.enc.json', {'format': 'finans-pusulasi-bg', 'ct': 'AAAA'}); wj(out, 'news/feed.json', {'generatedAt': 'HACK', 'items': [9]}); wj(out, 'status/portfolio.json', {'x': 1})
+        self.assertEqual(self.P.publish(out, None, 'portfolio'), 0); h = self.head()
+        self.assertEqual(rj(h, 'bg/results.enc.json')['ct'], 'AAAA'); self.assertNotEqual(rj(h, 'news/feed.json').get('generatedAt'), 'HACK') if os.path.exists(os.path.join(h, 'news/feed.json')) else None
+        self.assertFalse(os.path.exists(os.path.join(h, 'status/portfolio.json'))); self.assertEqual(sh('git', 'rev-list', '--count', 'HEAD', cwd=h).strip(), '1')
+        out2 = os.path.join(self.tmp, 'pf-out2'); os.makedirs(out2); open(os.path.join(out2, '.delete'), 'w').write('bg/results.enc.json\nbist/ASELS.json\n../x\n')
+        self.assertEqual(self.P.publish(out2, None, 'portfolio'), 0); h = self.head()
+        self.assertFalse(os.path.exists(os.path.join(h, 'bg/results.enc.json'))); self.assertEqual(rj(h, 'bist/ASELS.json'), {'bars': [1]}, 'başka işin dosyası silinmemeli')
+        self.assertFalse(os.path.exists(os.path.join(h, '.delete')))
+
+    def test_ntfy_topic_falls_back_to_portfolio_key_setup_string(self):
+        import base64
+        os.environ.pop('NTFY_TOPIC', None); os.environ.pop('PORTFOLIO_KEY', None); self.assertEqual(self.P.ntfy_topic(), '')
+        k = 'FPBG1.' + base64.urlsafe_b64encode(json.dumps({'v': 1, 'k': 'x', 'g': 'a' * 32, 't': 'fp-testkonu234'}).encode()).decode().rstrip('=')
+        os.environ['PORTFOLIO_KEY'] = k
+        try:
+            self.assertEqual(self.P.ntfy_topic(), 'fp-testkonu234'); os.environ['NTFY_TOPIC'] = 'explicit'; self.assertEqual(self.P.ntfy_topic(), 'explicit')
+            os.environ.pop('NTFY_TOPIC'); os.environ['PORTFOLIO_KEY'] = 'FPBG1.%%%'; self.assertEqual(self.P.ntfy_topic(), '')
+        finally: os.environ.pop('PORTFOLIO_KEY', None); os.environ.pop('NTFY_TOPIC', None)
+
     def test_retry_when_branch_moves_during_publish(self):
         p, o = self.start('news'); wj(o, 'news/feed.json', {'generatedAt': 'N', 'items': [7]})
         orig = self.P.build_merged; state = {'n': 0}
