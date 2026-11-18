@@ -318,7 +318,7 @@
       return '<a class="fresh-strip" href="#haberler/durum" aria-label="Veri güncelliği: ayrıntı için aç"><span class="fr-t">Arka plan verisi</span>' + dots + (ai && ai.generatedAt ? '<span class="fr-j st-ok"><i aria-hidden="true"></i>Analiz <b>' + esc(FR.ageText(Date.now() - Date.parse(ai.generatedAt))) + '</b></span>' : '') + '</a>' +
         (ev.banner ? '<div class="notice warn" role="alert">' + esc(ev.banner.text) + '</div>' : '');
     }
-    function homeFresh() { var d = HD.get(); if (!d || !FR) return ''; var ev = freshEval(); return ev.banner ? '<div class="notice warn" role="alert">' + esc(ev.banner.text) + ' <a href="#haberler/durum">Ayrıntı</a></div>' : ''; }
+    function homeFresh() { var d = HD.get(); if (!d || !FR) return ''; return freshStrip(); }
     var SKIND = { official: 'resmî kurum', rss: 'RSS', html: 'liste sayfası (RSS yok)' };
     function renderStatus() {
       var d = HD.get() || {}, now = Date.now(); if (!hasData()) return loading(); var ev = freshEval(), srcs = FR.sources(d.sources, now), ai = d.analysisIdx, mid = d.sources && d.sources.midas;

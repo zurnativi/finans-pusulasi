@@ -19,7 +19,7 @@
     function an() { var s = st(); return s.analysis && typeof s.analysis === 'object' ? s.analysis : { watchlist: [], profile: {} }; }
     function sums() { try { return JSON.parse(localStorage.getItem(SUM_KEY) || '{}') || {}; } catch (e) { return {}; } }
     /* ---------- Sunucu anlık görüntüleri (v8.1): iş akışı aynı analiz kodunu çalıştırıp analysis/*.json yazar ---------- */
-    var HDx = window.HubData, snapCache = {}, srvReq = false, srvUi = { kind: 'bist', sort: 'score' };
+    var HDx = window.HubData, snapCache = {}, srvReq = false, srvUi = { kind: 'bist', sort: 'score', all: false };
     function srvIdx() { var d = HDx && HDx.get(); return d && d.analysisIdx && d.analysisIdx.items ? d.analysisIdx : null; }
     function srvMap() { var m = {}, ix = srvIdx(); if (ix) ix.items.forEach(function (r) { m[r.key] = r; }); return m; }
     function ageTxt(iso) { var t = iso ? Date.parse(iso) : NaN; return isFinite(t) && window.Fresh ? window.Fresh.ageText(Date.now() - t) : '—'; }
@@ -55,8 +55,9 @@
         '<div class="flt"><label>Grup <select data-asrv="kind">' + Object.keys(KG).map(function (k) { return '<option value="' + k + '"' + (srvUi.kind === k ? ' selected' : '') + '>' + KG[k][1] + '</option>'; }).join('') + '</select></label> <label>Sıra <select data-asrv="sort"><option value="score"' + (srvUi.sort === 'score' ? ' selected' : '') + '>Skor</option><option value="name"' + (srvUi.sort === 'name' ? ' selected' : '') + '>Ad</option></select></label></div></div>' +
         '<p class="hint">Son güncelleme: <b>' + esc(ageTxt(ix.generatedAt)) + '</b> (' + when(ix.generatedAt) + ') · ' + ix.count + ' varlık · <a href="#haberler/durum">iş durumu</a></p>';
       if (!rows.length) return h + '<p class="muted">Bu grupta analiz yok.</p></section>';
-      h += '<div class="tablewrap"><table class="atable stack"><thead><tr><th>Varlık</th><th>Skor</th><th>Durum</th><th class="detail-only">Güven</th><th>Helal</th><th>Güncelleme</th></tr></thead><tbody>' + rows.slice(0, 60).map(function (r) {
+      h += '<div class="tablewrap"><table class="atable stack"><thead><tr><th>Varlık</th><th>Skor</th><th>Durum</th><th class="detail-only">Güven</th><th>Helal</th><th>Güncelleme</th></tr></thead><tbody>' + rows.slice(0, srvUi.all ? 200 : 12).map(function (r) {
         return '<tr><td data-label="Varlık"><a href="#analiz/varlik/' + esc(r.key) + '">' + esc(String(r.name).split(' — ')[0]) + '</a><div class="hint">' + esc(String(r.name).split(' — ').slice(1).join(' — ').slice(0, 40)) + (r.stale ? ' <span class="srv-tag">eski kopya</span>' : '') + '</div></td><td data-label="Skor">' + scoreBadge(r.total) + ' <span class="srv-bar" style="width:' + Math.round((r.total || 0) * 0.6) + 'px"></span></td><td data-label="Durum">' + esc(r.blocked ? 'Sinyal yok' : r.stance || '—') + '</td><td data-label="Güven" class="detail-only">' + (r.conf != null ? r.conf : '—') + '</td><td data-label="Helal">' + (r.halal === 'uygun' ? pill('ok', 'Uygun') : r.halal === 'supheli' ? pill('warn', 'Şüpheli') : pill('info', r.halal === 'uygun_degil' ? 'Uygun değil' : 'Bilinmiyor')) + '</td><td data-label="Güncelleme">' + esc(ageTxt(r.at)) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      if (rows.length > 12) h += '<div class="btnrow"><button class="btn small" type="button" data-act="a-srvall">' + (srvUi.all ? 'İlk 12\'yi göster' : 'Tümünü göster (' + rows.length + ')') + '</button></div>';
       return h + '<p class="hint">Skor 0–100; güven veri kalitesi ve TradingView karşılaştırmasına göre. Yalnızca teknik/temel okuma — yatırım tavsiyesi değildir; helal olmayan varlıklara alım planı önerilmez.</p></section>';
     }
     function saveSum(A) { var s = sums(); s[A.key] = { key: A.key, name: A.name, kind: A.kind, total: A.total, conf: A.confidence, confLabel: A.confLabel, stance: A.stance.label, stanceCode: A.stance.code, hold: A.stance.hold ? A.stance.hold.label : null, price: A.price, cur: A.currency, at: new Date().toISOString(), lastDate: A.lastDate, blocked: A.blocked }; try { localStorage.setItem(SUM_KEY, JSON.stringify(s)); } catch (e) { /* kota */ } }
@@ -689,7 +690,7 @@
         'a-ov': function () { cur.view.overlays[t.dataset.v] = !cur.view.overlays[t.dataset.v]; X.render(); },
         'a-news': function () { var A = cacheA[cur.key]; if (!A) return; var k = A.key; newsG[k] = { loading: true }; X.render(); MD.news(newsQuery(A)).then(function (n) { newsG[k] = n; X.render(); }, function (e) { newsG[k] = { error: e.message }; X.render(); }); },
         'a-prof': function () { var f = t.dataset.f, v = t.dataset.v; X.mutate(function (s) { s.analysis = s.analysis || { watchlist: [], profile: {} }; s.analysis.profile = s.analysis.profile || {}; s.analysis.profile[f] = v === 'true' ? true : v === 'false' ? false : v; }); },
-        'a-build': doBuild, 'a-apply': applyBuild, 'a-verify': runVerify, 'a-corr': calcCorr, 'a-bulk': bulkAnalyze
+        'a-build': doBuild, 'a-apply': applyBuild, 'a-verify': runVerify, 'a-corr': calcCorr, 'a-bulk': bulkAnalyze, 'a-srvall': function () { srvUi.all = !srvUi.all; X.render(); }
       };
     }
     function onSubmit(e) {
