@@ -51,16 +51,27 @@
     }
 
     /* ---------- ANA SAYFA: üç alanın sade özeti ---------- */
+    function bookRows(c) {
+      var byId = {};
+      c.sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
+      return c.pos.filter(function (p) {
+        var r = byId[p.id];
+        if (r && r.ledger && r.ledger.units <= 0) return false;
+        return p.valueTL > 0;
+      }).sort(function (a, b) { return b.valueTL - a.valueTL; });
+    }
+    function bookTotal(c) { return M.sum(bookRows(c).map(function (p) { return p.valueTL; })); }
     function homeCards() {
       var c; try { c = calc(); } catch (e) { console.error(e); return ''; }
       var s = c.s, b = c.an.budget, up = 0; try { up = L.badgeCount(L.upcoming(s, c.today, 30)); } catch (e) { up = 0; }
       var tracked = c.sm.rows.length, worst = c.risk.worst, onTrack = c.rep.goals.filter(function (g) { return g.onTrack; }).length;
+      var invested = bookTotal(c), all = c.an.assets.total, em = Math.max(0, M.sub(all, invested));
       var h = '<div class="areas">';
       h += '<a class="area card" href="#butce"><div class="area-h"><span class="area-ic" aria-hidden="true">🧾</span><b>Bütçe</b></div>' +
         '<div class="area-v ' + (b.surplus < 0 ? 'neg' : 'pos') + '">' + (window.Charts ? window.Charts.counter('a-sur', b.surplus) : tl(b.surplus)) + '</div><div class="hint">her ay artan para</div>' +
         '<div class="area-f">' + (up ? pill('warn', up + ' yaklaşan/geciken ödeme') : pill('ok', 'Yaklaşan ödeme yok')) + '</div></a>';
       h += '<a class="area card" href="#portfoy"><div class="area-h"><span class="area-ic" aria-hidden="true">📈</span><b>Portföy Yönetimi</b></div>' +
-        '<div class="area-v">' + (window.Charts ? window.Charts.counter('a-tot', c.an.assets.total) : tl(c.an.assets.total)) + '</div><div class="hint">toplam birikim' + (tracked ? ' · kâr/zarar <b class="' + plCls(c.sm.totalPLTL) + '">' + signTl(c.sm.totalPLTL) + '</b>' : '') + '</div>' +
+        '<div class="area-v">' + (window.Charts ? window.Charts.counter('a-tot', invested) : tl(invested)) + '</div><div class="hint">yatırımlar' + (em ? ' · acil fon ' + tl(em) : '') + (tracked ? ' · kâr/zarar <b class="' + plCls(c.sm.totalPLTL) + '">' + signTl(c.sm.totalPLTL) + '</b>' : '') + '</div>' +
         '<div class="area-f">' + pill(worst, worst === 'ok' ? 'Risk kuralları tamam' : c.risk.items.filter(function (i) { return i.level !== 'ok'; }).length + ' risk uyarısı') + ' ' + pill(onTrack === c.rep.goals.length ? 'ok' : 'warn', onTrack + '/' + c.rep.goals.length + ' hedef yolunda') + '</div></a>';
       h += X.analysisCard ? X.analysisCard() : '';
       h += '</div>';
@@ -160,11 +171,7 @@
     function bookHtml(c, withDesk) {
       var sm = c.sm, byId = {};
       sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
-      var rows = c.pos.filter(function (p) {
-        var r = byId[p.id];
-        if (r && r.ledger && r.ledger.units <= 0) return false;
-        return p.valueTL > 0;
-      }).sort(function (a, b) { return b.valueTL - a.valueTL; });
+      var rows = bookRows(c);
       var total = M.sum(rows.map(function (p) { return p.valueTL; }));
       var cost = 0, unrl = 0, rl = 0;
       rows.forEach(function (p) {
@@ -205,11 +212,13 @@
           (plBp != null ? '<div class="hint">' + sbp1(plBp) + '</div>' : '') + '</td></tr>';
       });
       h += '</tbody><tfoot><tr><td data-label="">Toplam</td><td data-label=""></td><td class="r num" data-label="Maliyet">' + tl(cost) + '</td><td data-label=""></td><td class="r num" data-label="Değer"><b>' + tl(total) + '</b></td><td class="r num" data-label="Pay">%100</td><td class="r num ' + plCls(unrl) + '" data-label="Kâr / zarar">' + signTl(unrl) + '</td></tr></tfoot></table></div>';
+      var all = c.an.assets.total, em = Math.max(0, M.sub(all, total));
+      if (em) h += '<p class="hint">Acil fon / vadesiz ' + tl(em) + ' bu tabloya girmez. Tüm birikim ' + tl(all) + '.</p>';
       return h;
     }
     function pOverview(c) {
       var s = c.s, an = c.an, sm = c.sm, CH = window.Charts, h = pVisuals(c) + '<div class="grid kpis">';
-      h += X.kpi('Toplam birikim', CH ? CH.counter('p-tot', an.assets.total) : tl(an.assets.total), 'Acil fon dahil; hesaplar ve varlıklar. Borçlar düşülmemiştir (Ana sayfada net varlık).', 'Hesaplar (kurla TL\'ye çevrilmiş) ve varlıkların bugünkü toplam değeri. Alım-satımla izlenen varlıklar son fiyat × adetle hesaplanır.');
+      h += X.kpi('Yatırımlar', CH ? CH.counter('p-tot', bookTotal(c)) : tl(bookTotal(c)), 'Ana sayfadaki Portföy kartıyla aynı rakam. Acil fon dahil değildir.', 'Eldeki açık pozisyonların bugünkü değeri. Kapanmış işlemler ve acil fon bu toplama girmez.');
       h += X.kpi('Toplam kâr / zarar', sm.rows.length ? '<span class="' + plCls(sm.totalPLTL) + '">' + (sm.totalPLTL > 0 ? '+' : '') + (CH ? CH.counter('p-pl', sm.totalPLTL) : tl(sm.totalPLTL)) + '</span>' : '<span class="muted">—</span>', sm.rows.length ? 'Yatırılana göre ' + sbp1(sm.totalPLBp) + ' (gerçekleşen ' + tl(sm.realizedTL) + (sm.divTL ? ', temettü dahil ' + tl(sm.divTL) : '') + ')' : 'Alım-satım girince hesaplanır.', 'Alım-satımla izlenen varlıklarda: (bugünkü değer − kalan maliyet) + satışlardan gerçekleşen kâr. Komisyonlar maliyete dahildir.');
       h += X.kpi('Risk kuralları', c.risk.ok + '/' + c.risk.total + ' tamam', pill(c.risk.worst, c.risk.worst === 'ok' ? 'Sorun yok' : c.risk.worst === 'danger' ? 'Önemli uyarı var' : 'Dikkat'), 'Tek varlık sınırı, riskli varlık sınırı, önce acil fon, çeşitlendirme ve helal uygunluk kuralları.');
       var on = c.rep.goals.filter(function (g) { return g.onTrack; }).length;
