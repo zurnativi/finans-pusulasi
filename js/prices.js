@@ -12,7 +12,7 @@
     goldapi: { label: 'gold-api.com — ons altın/gümüş (USD)', site: 'https://gold-api.com', what: 'Gram altın çapraz kontrolü (ons × USD/TL ÷ 31,1035)' },
     coingecko: { label: 'CoinGecko — kripto (TL)', site: 'https://www.coingecko.com', what: 'Kripto paralar' },
     binance: { label: 'Binance — kripto (TL)', site: 'https://www.binance.com', what: 'Kripto (yedek kaynak)' },
-    twelvedata: { label: 'Twelve Data — ABD hisse/ETF (ücretsiz anahtar ile)', site: 'https://twelvedata.com', what: 'SPUS, HLAL gibi ABD ETF\'leri' },
+    twelvedata: { label: 'Twelve Data — ABD hisse/ETF (ücretsiz anahtar ile, isteğe bağlı)', site: 'https://twelvedata.com', what: 'Anahtar varsa SPUS gibi ABD ETF’leri; yoksa TradingView kullanılır' },
     tefasapi: { label: 'TEFAS Fon Analiz (fon.yourapiservice.com) — TEFAS verisi', site: 'https://fon.yourapiservice.com/api', what: 'TEFAS fon birim pay fiyatı (günde bir, resmi olmayan ara servis)' },
     tradingview: { label: 'TradingView tarayıcı — BIST (resmi olmayan, 15 dk gecikmeli)', site: 'https://www.tradingview.com', what: 'Borsa İstanbul hisseleri' },
     fawaz: { label: 'Currency API (fawazahmed0, jsDelivr) — geçmiş altın', site: 'https://github.com/fawazahmed0/exchange-api', what: 'Geçmiş tarihli ons altın/TL' }
@@ -28,6 +28,7 @@
     fxSeries: function (from, to) { return 'https://api.frankfurter.dev/v1/' + from + '..' + to + '?base=USD&symbols=TRY'; },
     tefas: function (code, hist) { return 'https://fon.yourapiservice.com/api/v1/funds/' + encodeURIComponent(code) + '?history=' + (hist || 1); },
     tvScan: 'https://scanner.tradingview.com/turkey/scan',
+    tvUs: 'https://scanner.tradingview.com/america/scan',
     fawaz: function (d) { return 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@' + d + '/v1/currencies/xau.min.json'; },
     cgChart: function (id) { return 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(id) + '/market_chart?vs_currency=try&days=365&interval=daily'; }
   };
@@ -77,11 +78,17 @@
     return { p: p, date: d, name: j.name || '', active: j.active !== false, history: hist };
   }
   function tvBody(codes) { return JSON.stringify({ symbols: { tickers: codes.map(function (c) { return 'BIST:' + c; }) }, columns: ['close', 'currency', 'update_time', 'description'] }); }
+  function usBody(symbols) {
+    var prefs = ['AMEX', 'NASDAQ', 'NYSE', 'CBOE'];
+    var tickers = [];
+    symbols.forEach(function (s) { prefs.forEach(function (p) { tickers.push(p + ':' + s); }); });
+    return JSON.stringify({ symbols: { tickers: tickers }, columns: ['close', 'currency', 'update_time', 'description'] });
+  }
   function parseTradingView(j, codes) {
     if (!j || !Array.isArray(j.data)) throw new Error('TradingView yanıtı beklenen biçimde değil');
     var out = {};
     j.data.forEach(function (row) {
-      var c = String(row.s || '').replace(/^BIST:/, ''), d = row.d || []; if (codes.indexOf(c) < 0) return;
+      var c = String(row.s || '').replace(/^(BIST|AMEX|NASDAQ|NYSE|CBOE):/, ''), d = row.d || []; if (codes.indexOf(c) < 0) return;
       var p = p6(d[0]); if (!p) return;
       var at = d[2] > 0 ? new Date(d[2] * 1000).toISOString() : null;
       out[c] = { p: p, currency: d[1] || null, at: at, date: at ? isoToYmdIstanbul(at) : null, name: d[3] || '' };
@@ -125,8 +132,9 @@
     if (need['metal:XAG']) jobs.push(fetchJson(URLS.goldXAG).then(function (j) { gs = parseGoldApi(j); }, function () { }));
     var cg = keys.filter(function (k) { return /^cg:/.test(k); }).map(function (k) { return k.slice(3); }), cgRes = {};
     if (cg.length) jobs.push(fetchJson(URLS.coingecko(cg)).then(function (j) { cgRes = parseCoinGecko(j, cg); note('coingecko', true); }, function (e) { note('coingecko', false, e.message); }));
-    var td = keys.filter(function (k) { return /^td:/.test(k); }), tdRes = {};
+    var td = keys.filter(function (k) { return /^td:/.test(k); }), tdRes = {}, usRes = {};
     if (td.length && cfg.twelveKey) td.forEach(function (k) { jobs.push(fetchJson(URLS.twelve(k.slice(3), cfg.twelveKey)).then(function (j) { tdRes[k] = parseTwelve(j); note('twelvedata', true); }, function (e) { tdRes[k] = { error: e.message }; note('twelvedata', false, e.message); })); });
+    if (td.length) jobs.push(fetchJson(URLS.tvUs, 12000, usBody(td.map(function (k) { return k.slice(3); }))).then(function (j) { usRes = parseTradingView(j, td.map(function (k) { return k.slice(3); })); note('tradingview-us', true); }, function (e) { note('tradingview-us', false, e.message); }));
     var tf = keys.filter(function (k) { return /^tefas:/.test(k); }), tfRes = {};
     tf.forEach(function (k) { jobs.push(fetchJson(URLS.tefas(k.slice(6))).then(function (j) { tfRes[k] = parseTefasApi(j, k.slice(6)); note('tefasapi', true); }, function (e) { tfRes[k] = { error: e.message }; note('tefasapi', false, e.message); })); });
     var bi = keys.filter(function (k) { return /^bist:/.test(k); }).map(function (k) { return k.slice(5); }), biRes = {};
@@ -161,9 +169,10 @@
       if (need['idx:XKTUM']) { var rk = biRes.XKTUM; if (rk && rk.p) add('idx:XKTUM', 'PT', rk.p, rk.date || isoToYmdIstanbul(now), rk.at, SOURCES.tradingview.label + ' — Katılım Tüm endeksi'); else res.errors.push('Katılım Tüm endeksi alınamadı'); }
       cg.forEach(function (id) { var r = cgRes[id]; if (r && r.p) add('cg:' + id, 'TRY', r.p, r.date, r.at, r.viaBinance ? SOURCES.binance.label : SOURCES.coingecko.label); else res.errors.push(id + ' fiyatı alınamadı'); });
       td.forEach(function (k) {
-        if (!cfg.twelveKey) { res.errors.push(k.slice(3) + ': Twelve Data anahtarı girilmedi (ücretsiz alınır); fiyatı elle gir'); return; }
-        var r = tdRes[k]; if (r && r.p) add(k, 'USD', r.p, r.date, r.at, SOURCES.twelvedata.label + (r.currency && r.currency !== 'USD' ? ' — DİKKAT para birimi ' + r.currency : ''), r.currency && r.currency !== 'USD' ? { badCurrency: r.currency } : null);
-        else res.errors.push(k.slice(3) + ' fiyatı alınamadı' + (r && r.error ? ': ' + r.error : ''));
+        var sym = k.slice(3), r = tdRes[k], tv = usRes[sym];
+        if (r && r.p) add(k, 'USD', r.p, r.date, r.at, SOURCES.twelvedata.label + (r.currency && r.currency !== 'USD' ? ' — DİKKAT para birimi ' + r.currency : ''), r.currency && r.currency !== 'USD' ? { badCurrency: r.currency } : null);
+        else if (tv && tv.p && (!tv.currency || tv.currency === 'USD')) add(k, 'USD', tv.p, tv.date || isoToYmdIstanbul(now), tv.at, SOURCES.tradingview.label + ' — ' + sym + ' (gecikmeli)');
+        else res.errors.push(sym + ' fiyatı alınamadı' + (r && r.error ? ': ' + r.error : '') + (tv && tv.currency && tv.currency !== 'USD' ? ' (para birimi ' + tv.currency + ')' : ''));
       });
       tf.forEach(function (k) {
         var r = tfRes[k]; if (r && r.p) add(k, 'TRY', r.p, r.date, null, SOURCES.tefasapi.label + ' (' + r.date + ')', r.active ? null : { note: 'Fon işleme kapalı görünüyor' });
@@ -187,5 +196,5 @@
   }
   return { SOURCES: SOURCES, URLS: URLS, BINANCE: BINANCE, parseFrankfurter: parseFrankfurter, parseTruncgil: parseTruncgil, parseGoldApi: parseGoldApi, parseCoinGecko: parseCoinGecko,
     parseBinance: parseBinance, parseTwelve: parseTwelve, parseFxSeries: parseFxSeries, parseFawazGold: parseFawazGold, parseCgChart: parseCgChart, parseTefasApi: parseTefasApi, parseTradingView: parseTradingView, tvBody: tvBody, isoToYmdIstanbul: isoToYmdIstanbul,
-    fetchJson: fetchJson, fetchAll: fetchAll, fetchHistory: fetchHistory };
+    fetchJson: fetchJson, fetchAll: fetchAll, fetchHistory: fetchHistory, usBody: usBody };
 });
