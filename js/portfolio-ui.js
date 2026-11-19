@@ -141,11 +141,18 @@
       var total = M.sum(c.pos.map(function (p) { return p.valueTL; }));
       h += '<section class="card" style="margin-top:14px"><h2>Neyim var? ' + tip('Acil durum fonuna ayrılan kısım hariç, yatırım için tutulan her şey. Pay: bu toplam içindeki yüzde.') + '</h2><div class="tablewrap"><table class="holdings stack"><thead><tr><th>Varlık</th><th>Risk</th><th class="r">Değer</th><th class="r">Pay</th><th class="r">Kâr/zarar</th><th>Helal</th></tr></thead><tbody>';
       var byId = {}; sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
-      c.pos.slice().sort(function (a, b) { return b.valueTL - a.valueTL; }).forEach(function (p) {
+      var openPos = [], closedPos = [];
+      c.pos.forEach(function (p) {
+        var r = byId[p.id];
+        var closed = !p.isAccount && r && r.ledger && r.ledger.units <= 0;
+        (closed ? closedPos : openPos).push(p);
+      });
+      openPos.sort(function (a, b) { return b.valueTL - a.valueTL; }).forEach(function (p) {
         var r = byId[p.id];
         h += '<tr><td>' + esc(p.name) + (p.isAccount && !p.synthetic ? ' <span class="hint">(hesap)</span>' : '') + '</td><td><i class="dotc" style="background:' + RISKCOL[p.tier] + '"></i> ' + C.RISK[p.tier] + '</td><td class="r num">' + tl(p.valueTL) + '</td><td class="r num">' + (total ? pct(M.ratioBp(p.valueTL, total)) : '—') + '</td>' +
           '<td class="r num ' + (r && r.totalPLTL != null ? plCls(r.totalPLTL) : '') + '">' + (r && r.totalPLTL != null ? signTl(r.totalPLTL) : '<span class="muted">—</span>') + '</td><td>' + halalPill(p.halal) + '</td></tr>';
       });
+      if (closedPos.length) h += '<tr><td colspan="6" class="hint">Kapanmış (elde 0 adet, ' + closedPos.length + '): ' + closedPos.map(function (p) { var r = byId[p.id]; return esc(p.name) + (r && r.totalPLTL != null ? ' ' + signTl(r.totalPLTL) : ''); }).join(' · ') + '. Hâlâ elindeyse yanlış satış kaydını Alım-satım bölümünden sil.</td></tr>';
       h += '</tbody><tfoot><tr><th colspan="2">Yatırım toplamı</th><th class="r num">' + tl(total) + '</th><th></th><th></th><th></th></tr></tfoot></table></div>';
       h += '<p class="hint">Acil durum fonu (' + tl(an.emergency.current) + ') bu listeye dahil değildir.</p></section>';
       return h;
@@ -160,10 +167,15 @@
       h += '<section class="card"><h2>Varlıklarım ' + tip('Bir satıra dokununca ayrıntılar açılır. "Acil fon" işaretliler acil durum fonuna sayılır. Risk seviyesi dağılım hesabında kullanılır.') + '</h2>';
       var byId = {}; c.sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
       if (!s.assets.length) h += '<p class="muted">Henüz varlık yok.</p>';
-      s.assets.forEach(function (a) {
+      var assetOrder = s.assets.slice().sort(function (a, b) {
+        function rank(x) { var rr = byId[x.id]; return (x.tracking === 'trades' && rr && rr.ledger.units <= 0) ? 1 : 0; }
+        return rank(a) - rank(b);
+      });
+      assetOrder.forEach(function (a) {
         var r = byId[a.id], tracked = a.tracking === 'trades', hs = PF.halalOf(a), id = esc(a.id), pk = pkType(a.priceKey);
-        h += '<details class="acard"' + (pAssets.open === a.id ? ' open' : '') + ' data-acard="' + id + '"><summary><span class="acard-n">' + esc(a.name) + (a.symbol ? ' <span class="hint">' + esc(a.symbol) + '</span>' : '') + '</span>' +
-          '<span class="acard-v num">' + tl(a.value) + (tracked && a.valueBasis === 'cost' ? ' <span class="pill warn" title="Fiyat veya kur yok; kalan maliyetle sayıldı">maliyet</span>' : '') + '</span>' + halalPill(hs) + '</summary><div class="acard-b grid three">';
+        var closed = tracked && r && r.ledger.units <= 0;
+        h += '<details class="acard"' + (pAssets.open === a.id ? ' open' : '') + ' data-acard="' + id + '"><summary><span class="acard-n">' + esc(a.name) + (a.symbol ? ' <span class="hint">' + esc(a.symbol) + '</span>' : '') + (closed ? ' <span class="pill info">Kapanmış</span>' : '') + '</span>' +
+          '<span class="acard-v num">' + (closed ? (r.totalPLTL != null ? '<span class="' + plCls(r.totalPLTL) + '">' + signTl(r.totalPLTL) + '</span>' : '<span class="muted">elde yok</span>') : tl(a.value) + (tracked && a.valueBasis === 'cost' ? ' <span class="pill warn" title="Fiyat veya kur yok; kalan maliyetle sayıldı">maliyet</span>' : '')) + '</span>' + halalPill(hs) + '</summary><div class="acard-b grid three">';
         h += fieldRow('Ad', '<input type="text" maxlength="80" data-pfa="name" data-id="' + id + '" value="' + esc(a.name) + '">');
         h += fieldRow('Sembol / kod', '<input type="text" maxlength="30" data-pfa="symbol" data-id="' + id + '" value="' + esc(a.symbol || '') + '" placeholder="ör. ASELS, KTV, SPUS">', 'Aracı kurum dökümünden aktarırken eşleştirmek için kullanılır.');
         h += fieldRow('Tür', '<select data-pfa="cls" data-id="' + id + '">' + Object.keys(C.ASSET_CLASSES).map(function (k) { return opt(k, C.ASSET_CLASSES[k].label, a.cls); }).join('') + '</select>');
@@ -187,7 +199,7 @@
         h += '</div>';
         if (tracked && r) {
           var lg = r.ledger;
-          h += '<p class="hint">' + PF.fmtQty(lg.units) + ' adet · ortalama maliyet ' + priceTxt(lg.avgPrice, r.currency) + ' · son fiyat ' + (r.price ? priceTxt(r.price.p, r.currency) + ' (' + X.dateLabel(r.price.d) + ', ' + esc(r.price.src || '') + ')' : '—') + ' ' + staleTxt(r.stale) +
+          h += '<p class="hint">' + (lg.units <= 0 ? '<b>Elde 0 adet.</b> Satış kayıtları bu pozisyonu kapatmış; bu yüzden değer 0 görünür. Hâlâ elindeyse yanlış satış satırını sil. Gerçekleşen kâr/zarar: ' + (r.totalPLTL != null ? signTl(r.totalPLTL) : '—') + '. ' : '') + PF.fmtQty(lg.units) + ' adet · ortalama maliyet ' + priceTxt(lg.avgPrice, r.currency) + ' · son fiyat ' + (r.price ? priceTxt(r.price.p, r.currency) + ' (' + X.dateLabel(r.price.d) + ', ' + esc(r.price.src || '') + ')' : '—') + ' ' + staleTxt(r.stale) +
             (lg.errors.length ? '<br><b class="neg">' + esc(lg.errors.join('; ')) + '</b>' : '') + ' · <a href="#portfoy/islemler" data-act="pf-trade-for" data-id="' + id + '">alım-satım ekle</a></p>';
         }
         h += '<div class="row"><button class="btn small danger" data-act="pf-del-asset" data-id="' + id + '">Varlığı sil</button></div></details>';
