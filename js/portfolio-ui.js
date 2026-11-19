@@ -118,6 +118,62 @@
         '<p class="hint">Koyu: hedef · açık: şu an</p></section>';
       return h + '</div>';
     }
+    function shortName(a) {
+      var n = (a && a.name) || '';
+      var i = n.indexOf(' — ');
+      if (i > 0) n = n.slice(i + 3);
+      return n.length > 48 ? n.slice(0, 46) + '…' : n;
+    }
+    function bookHtml(c, withDesk) {
+      var sm = c.sm, byId = {};
+      sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
+      var rows = c.pos.filter(function (p) {
+        var r = byId[p.id];
+        if (r && r.ledger && r.ledger.units <= 0) return false;
+        return p.valueTL > 0;
+      }).sort(function (a, b) { return b.valueTL - a.valueTL; });
+      var total = M.sum(rows.map(function (p) { return p.valueTL; }));
+      var cost = 0, unrl = 0, rl = 0;
+      rows.forEach(function (p) {
+        var r = byId[p.id];
+        if (!r) return;
+        cost = M.add(cost, r.ledger.costTL);
+        if (r.unrealizedTL != null) unrl = M.add(unrl, r.unrealizedTL);
+        rl = M.add(rl, r.ledger.realizedTL);
+      });
+      var h = '';
+      if (withDesk) {
+        h += '<div class="desk">' +
+          '<div class="k"><div class="l">Piyasa değeri</div><div class="v">' + tl(total) + '</div></div>' +
+          '<div class="k"><div class="l">Kalan maliyet</div><div class="v">' + tl(cost) + '</div></div>' +
+          '<div class="k"><div class="l">Gerçekleşmemiş</div><div class="v ' + plCls(unrl) + '">' + signTl(unrl) + '</div></div>' +
+          '<div class="k"><div class="l">Açık pozisyonlarda gerçekleşen</div><div class="v ' + plCls(rl) + '">' + signTl(rl) + '</div></div></div>';
+      }
+      var cap = (c.s.settings && c.s.settings.riskRules && c.s.settings.riskRules.maxAssetBp) || 3000;
+      if (rows.length && total && M.ratioBp(rows[0].valueTL, total) > cap) {
+        var top = rows[0], sym = (top.asset && top.asset.symbol) || top.name;
+        h += '<div class="notice warn"><b>' + esc(sym) + '</b> defterin ' + pct(M.ratioBp(top.valueTL, total)) + '’i. Tek varlık sınırın ' + pct(cap) + '.</div>';
+      }
+      if (!rows.length) return h + '<p class="muted">Elde pozisyon yok.</p>';
+      h += '<div class="tablewrap"><table class="holdings book stack"><thead><tr><th>Varlık</th><th class="r">Adet</th><th class="r">Ort. maliyet</th><th class="r">Son fiyat</th><th class="r">Değer</th><th class="r">Pay</th><th class="r">Kâr / zarar</th></tr></thead><tbody>';
+      rows.forEach(function (p) {
+        var r = byId[p.id], a = p.asset, sym = a && a.symbol, bp = total ? M.ratioBp(p.valueTL, total) : 0;
+        var pl = r && r.unrealizedTL != null ? r.unrealizedTL : null;
+        var plBp = pl != null && r && r.ledger.costTL ? M.ratioBp(pl, r.ledger.costTL) : null;
+        h += '<tr><td data-label=""><div class="book-name"><b>' + esc(sym || p.name) + '</b>' +
+          (sym ? '<span>' + esc(shortName(a)) + '</span>' : (p.isAccount ? '<span>hesap</span>' : '')) + '</div></td>' +
+          '<td class="r num" data-label="Adet">' + (r ? esc(PF.fmtQty(r.ledger.units)) : '—') + '</td>' +
+          '<td class="r num" data-label="Ort. maliyet">' + (r && r.ledger.units ? esc(priceTxt(r.ledger.avgPrice, r.currency)) : '—') + '</td>' +
+          '<td class="r num" data-label="Son fiyat">' + (r && r.price ? esc(priceTxt(r.price.p, r.currency)) : '<span class="muted">—</span>') +
+          (a && a.valueBasis === 'cost' ? ' <span class="pill warn">maliyet</span>' : '') + '</td>' +
+          '<td class="r num" data-label="Değer"><b>' + tl(p.valueTL) + '</b></td>' +
+          '<td class="r num" data-label="Pay">' + (total ? pct(bp) : '—') + '<div class="wbar" aria-hidden="true"><span style="width:' + Math.max(0, Math.min(100, bp / 100)) + '%"></span></div></td>' +
+          '<td class="r num ' + (pl != null ? plCls(pl) : '') + '" data-label="Kâr / zarar">' + (pl != null ? signTl(pl) : '—') +
+          (plBp != null ? '<div class="hint">' + sbp1(plBp) + '</div>' : '') + '</td></tr>';
+      });
+      h += '</tbody><tfoot><tr><td data-label="">Toplam</td><td data-label=""></td><td class="r num" data-label="Maliyet">' + tl(cost) + '</td><td data-label=""></td><td class="r num" data-label="Değer"><b>' + tl(total) + '</b></td><td class="r num" data-label="Pay">%100</td><td class="r num ' + plCls(unrl) + '" data-label="Kâr / zarar">' + signTl(unrl) + '</td></tr></tfoot></table></div>';
+      return h;
+    }
     function pOverview(c) {
       var s = c.s, an = c.an, sm = c.sm, CH = window.Charts, h = pVisuals(c) + '<div class="grid kpis">';
       h += X.kpi('Toplam birikim', CH ? CH.counter('p-tot', an.assets.total) : tl(an.assets.total), 'Acil fon dahil; hesaplar ve varlıklar. Borçlar düşülmemiştir (Ana sayfada net varlık).', 'Hesaplar (kurla TL\'ye çevrilmiş) ve varlıkların bugünkü toplam değeri. Alım-satımla izlenen varlıklar son fiyat × adetle hesaplanır.');
@@ -137,24 +193,8 @@
       else h += '<ul class="actions">' + rb.buys.map(function (r) { return '<li class="lv-info"><span><b>' + tl(r.buyTL) + '</b> → ' + esc(r.pos.name) + (r.units ? ' (' + PF.fmtQty(r.units) + ' adet)' : '') + '</span></li>'; }).join('') + '</ul>';
       h += '<a class="btn small" href="#portfoy/dengeleme">Dengeleme ayrıntısı</a></section>';
       h += '<section class="card"><h2>Risk ve helal kontrolü</h2><ul class="rules">' + c.risk.items.map(function (i) { return '<li class="lv-' + i.level + '">' + pill(i.level, i.level === 'ok' ? 'Tamam' : i.level === 'danger' ? 'Önemli' : i.level === 'info' ? 'Bilgi' : 'Dikkat') + ' <b>' + esc(i.title) + '</b><div class="hint">' + esc(i.text) + '</div></li>'; }).join('') + '</ul></section></div>';
-      // Varlık listesi
-      var total = M.sum(c.pos.map(function (p) { return p.valueTL; }));
-      h += '<section class="card" style="margin-top:14px"><h2>Neyim var? ' + tip('Acil durum fonuna ayrılan kısım hariç, yatırım için tutulan her şey. Pay: bu toplam içindeki yüzde.') + '</h2><div class="tablewrap"><table class="holdings stack"><thead><tr><th>Varlık</th><th>Risk</th><th class="r">Değer</th><th class="r">Pay</th><th class="r">Kâr/zarar</th><th>Helal</th></tr></thead><tbody>';
-      var byId = {}; sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
-      var openPos = [], closedPos = [];
-      c.pos.forEach(function (p) {
-        var r = byId[p.id];
-        var closed = !p.isAccount && r && r.ledger && r.ledger.units <= 0;
-        (closed ? closedPos : openPos).push(p);
-      });
-      openPos.sort(function (a, b) { return b.valueTL - a.valueTL; }).forEach(function (p) {
-        var r = byId[p.id];
-        h += '<tr><td>' + esc(p.name) + (p.isAccount && !p.synthetic ? ' <span class="hint">(hesap)</span>' : '') + '</td><td><i class="dotc" style="background:' + RISKCOL[p.tier] + '"></i> ' + C.RISK[p.tier] + '</td><td class="r num">' + tl(p.valueTL) + '</td><td class="r num">' + (total ? pct(M.ratioBp(p.valueTL, total)) : '—') + '</td>' +
-          '<td class="r num ' + (r && r.totalPLTL != null ? plCls(r.totalPLTL) : '') + '">' + (r && r.totalPLTL != null ? signTl(r.totalPLTL) : '<span class="muted">—</span>') + '</td><td>' + halalPill(p.halal) + '</td></tr>';
-      });
-      if (closedPos.length) h += '<tr><td colspan="6" class="hint">' + closedPos.length + ' kapanmış pozisyonun elde adedi yok; toplama girmez. Liste <a href="#portfoy/varliklar">Varlıklar</a> sayfasının altında, kapalı.</td></tr>';
-      h += '</tbody><tfoot><tr><th colspan="2">Yatırım toplamı</th><th class="r num">' + tl(total) + '</th><th></th><th></th><th></th></tr></tfoot></table></div>';
-      h += '<p class="hint">Acil durum fonu (' + tl(an.emergency.current) + ') bu listeye dahil değildir.</p></section>';
+      h += '<section class="card" style="margin-top:14px"><h2>Defter ' + tip('Eldeki pozisyonlar. Değer = adet × son fiyat. Kapanmış işlemler bu tabloya girmez. Acil fon dahil değildir.') + '</h2>' + bookHtml(c, false) +
+        '<p class="hint">Ayrıntı ve kapanmış pozisyonlar <a href="#portfoy/varliklar">Varlıklar</a> sayfasında. Fiyat için <a href="#portfoy/fiyatlar">Fiyatları güncelle</a>.</p></section>';
       return h;
     }
 
@@ -163,8 +203,10 @@
     var PK_PH = { cg: 'CoinGecko kimliği, ör. bitcoin', td: 'Sembol, ör. SPUS', tefas: 'Fon kodu, ör. KTV', bist: 'Hisse kodu, ör. ASELS' };
     function codeOf(a, re, len, dflt) { var c = String(a.symbol || '').toUpperCase().replace(re, ''); return c.length >= 2 && c.length <= len ? c : dflt; }
     function pAssets(c) {
-      var s = c.s, h = '<p class="hint">Her varlık için <b>değeri elle yaz</b> ya da <b>alım-satımla izle</b> (adet ve fiyattan otomatik hesaplanır). Banka/katılım hesapları, nakit, döviz ve altın hesabı <a href="#hesaplar">Hesaplar</a>\'da tutulur; burada tekrar yazma.</p>';
-      h += '<section class="card"><h2>Varlıklarım ' + tip('Bir satıra dokununca ayrıntılar açılır. "Acil fon" işaretliler acil durum fonuna sayılır. Risk seviyesi dağılım hesabında kullanılır.') + '</h2>';
+      var s = c.s, h = '<section class="card"><h2>Defter</h2>' + bookHtml(c, true) +
+        '<p class="hint">Acil fon bu tabloya girmez. Fiyat eskiyse satır maliyeti gösterir. <a href="#portfoy/fiyatlar">Fiyatları güncelle</a> · <a href="#portfoy/islemler">Alım-satım</a></p></section>';
+      h += '<details class="card" style="margin-top:14px"' + (pAssets.open ? ' open' : '') + '><summary class="book-fold">Varlık kartlarını düzenle</summary><div style="margin-top:12px">';
+      h += '<p class="hint">Ad, risk, helal etiketi ve fiyat kaynağı. Banka hesabını <a href="#hesaplar">Hesaplar</a>’da tut; buraya tekrar yazma.</p>';
       var byId = {}; c.sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
       var closedAssets = [];
       if (!s.assets.length) h += '<p class="muted">Henüz varlık yok.</p>';
@@ -210,15 +252,15 @@
       });
       if (!shown && s.assets.length) h += '<p class="muted">Elde varlık yok. Hepsi kapanmış.</p>';
       h += '<div class="row" style="margin-top:10px"><button class="btn" data-act="pf-add-asset" data-kind="manual">+ Değeri elle yazılan varlık</button><button class="btn" data-act="pf-add-asset" data-kind="trades">+ Alım-satımla izlenen varlık</button></div>';
+      h += '<p class="hint">Helal araç örnekleri — Güvenli: katılım hesabı, kira sertifikası (sukuk) fonu. Orta: altın, katılım fonları. Riskli: katılım endeksi hisseleri, SPUS/HLAL gibi helal ETF\'ler. Faizli mevduat/fon/tahvil önerilmez.</p></div></details>';
       if (closedAssets.length) {
-        h += '<details style="margin-top:14px"><summary>Kapanmış pozisyonlar (' + closedAssets.length + ')</summary><p class="hint">Elde 0 adet. Portföy toplamına ve dağılıma girmezler; alım-satım geçmişi durur. Hâlâ elinde olan varsa satış satırını Alım-satım bölümünden sil.</p><div class="tablewrap"><table><thead><tr><th>Varlık</th><th class="r">Gerçekleşen kâr/zarar</th><th></th></tr></thead><tbody>';
+        h += '<details class="card" style="margin-top:14px"><summary class="book-fold">Kapanmış pozisyonlar (' + closedAssets.length + ')</summary><div style="margin-top:12px"><p class="hint">Elde 0 adet. Toplama girmez. Geçmiş durur.</p><div class="tablewrap"><table class="stack"><thead><tr><th>Varlık</th><th class="r">Gerçekleşen</th><th></th></tr></thead><tbody>';
         closedAssets.forEach(function (a) {
           var r = byId[a.id];
-          h += '<tr><td>' + esc(a.symbol || a.name) + (a.symbol ? ' <span class="hint">' + esc(a.name) + '</span>' : '') + '</td><td class="r num ' + (r && r.totalPLTL != null ? plCls(r.totalPLTL) : '') + '">' + (r && r.totalPLTL != null ? signTl(r.totalPLTL) : '—') + '</td><td class="r"><button class="btn small danger" data-act="pf-del-asset" data-id="' + esc(a.id) + '">Kaydı sil</button></td></tr>';
+          h += '<tr><td data-label="">' + esc(a.symbol || a.name) + (a.symbol ? ' <span class="hint">' + esc(a.name) + '</span>' : '') + '</td><td class="r num ' + (r && r.totalPLTL != null ? plCls(r.totalPLTL) : '') + '" data-label="Gerçekleşen">' + (r && r.totalPLTL != null ? signTl(r.totalPLTL) : '—') + '</td><td class="r" data-label=""><button class="btn small danger" data-act="pf-del-asset" data-id="' + esc(a.id) + '">Kaydı sil</button></td></tr>';
         });
-        h += '</tbody></table></div></details>';
+        h += '</tbody></table></div></div></details>';
       }
-      h += '<p class="hint">Helal araç örnekleri — Güvenli: katılım hesabı, kira sertifikası (sukuk) fonu. Orta: altın, katılım fonları. Riskli: katılım endeksi hisseleri, SPUS/HLAL gibi helal ETF\'ler. Faizli mevduat/fon/tahvil önerilmez.</p></section>';
       // Hesapların helal etiketi
       if ((s.accounts || []).length) {
         h += '<section class="card" style="margin-top:14px"><h2>Hesapların helal etiketi ' + tip('Hesap bakiyeleri Hesaplar bölümünden gelir. Burada yalnızca faizsiz uygunluk etiketini işaretle.') + '</h2><div class="tablewrap"><table><thead><tr><th>Hesap</th><th>Helal</th><th class="detail-only">Not</th></tr></thead><tbody>';

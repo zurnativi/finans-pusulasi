@@ -167,6 +167,18 @@ details>summary{cursor:pointer}
 .acard-v{font-weight:650}
 .acard-b{padding:4px 12px 4px}
 .acard>.hint,.acard>.row{padding:0 12px 10px}
+.book-name{display:flex;flex-direction:column;line-height:1.25;gap:1px}
+.book-name b{font-weight:720;letter-spacing:.03em}
+.book-name span{color:var(--muted);font-size:.78rem;font-weight:450}
+.wbar{height:5px;background:var(--line);border-radius:99px;overflow:hidden;min-width:72px;margin-top:5px}
+.wbar>span{display:block;height:100%;background:var(--brand);border-radius:99px}
+.desk{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 12px}
+@media (max-width:860px){.desk{grid-template-columns:1fr 1fr}}
+.desk .k{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.desk .l{color:var(--muted);font-size:.72rem;letter-spacing:.04em;text-transform:uppercase}
+.desk .v{font-size:1.15rem;font-weight:720;font-variant-numeric:tabular-nums;margin-top:2px}
+.book-fold{cursor:pointer;font-weight:700;font-size:1.05rem}
+table.book tfoot td{font-weight:650;border-bottom:0}
 ul.rules{list-style:none;padding:0;margin:0}
 ul.rules li{padding:8px 0;border-bottom:1px solid var(--line)}
 ul.rules li:last-child{border-bottom:0}
