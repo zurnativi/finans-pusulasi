@@ -152,7 +152,7 @@
         h += '<tr><td>' + esc(p.name) + (p.isAccount && !p.synthetic ? ' <span class="hint">(hesap)</span>' : '') + '</td><td><i class="dotc" style="background:' + RISKCOL[p.tier] + '"></i> ' + C.RISK[p.tier] + '</td><td class="r num">' + tl(p.valueTL) + '</td><td class="r num">' + (total ? pct(M.ratioBp(p.valueTL, total)) : '—') + '</td>' +
           '<td class="r num ' + (r && r.totalPLTL != null ? plCls(r.totalPLTL) : '') + '">' + (r && r.totalPLTL != null ? signTl(r.totalPLTL) : '<span class="muted">—</span>') + '</td><td>' + halalPill(p.halal) + '</td></tr>';
       });
-      if (closedPos.length) h += '<tr><td colspan="6" class="hint">Kapanmış (elde 0 adet, ' + closedPos.length + '): ' + closedPos.map(function (p) { var r = byId[p.id]; return esc(p.name) + (r && r.totalPLTL != null ? ' ' + signTl(r.totalPLTL) : ''); }).join(' · ') + '. Hâlâ elindeyse yanlış satış kaydını Alım-satım bölümünden sil.</td></tr>';
+      if (closedPos.length) h += '<tr><td colspan="6" class="hint">' + closedPos.length + ' kapanmış pozisyonun elde adedi yok; toplama girmez. Liste <a href="#portfoy/varliklar">Varlıklar</a> sayfasının altında, kapalı.</td></tr>';
       h += '</tbody><tfoot><tr><th colspan="2">Yatırım toplamı</th><th class="r num">' + tl(total) + '</th><th></th><th></th><th></th></tr></tfoot></table></div>';
       h += '<p class="hint">Acil durum fonu (' + tl(an.emergency.current) + ') bu listeye dahil değildir.</p></section>';
       return h;
@@ -166,14 +166,18 @@
       var s = c.s, h = '<p class="hint">Her varlık için <b>değeri elle yaz</b> ya da <b>alım-satımla izle</b> (adet ve fiyattan otomatik hesaplanır). Banka/katılım hesapları, nakit, döviz ve altın hesabı <a href="#hesaplar">Hesaplar</a>\'da tutulur; burada tekrar yazma.</p>';
       h += '<section class="card"><h2>Varlıklarım ' + tip('Bir satıra dokununca ayrıntılar açılır. "Acil fon" işaretliler acil durum fonuna sayılır. Risk seviyesi dağılım hesabında kullanılır.') + '</h2>';
       var byId = {}; c.sm.rows.forEach(function (r) { byId[r.asset.id] = r; });
+      var closedAssets = [];
       if (!s.assets.length) h += '<p class="muted">Henüz varlık yok.</p>';
       var assetOrder = s.assets.slice().sort(function (a, b) {
         function rank(x) { var rr = byId[x.id]; return (x.tracking === 'trades' && rr && rr.ledger.units <= 0) ? 1 : 0; }
         return rank(a) - rank(b);
       });
+      var shown = 0;
       assetOrder.forEach(function (a) {
         var r = byId[a.id], tracked = a.tracking === 'trades', hs = PF.halalOf(a), id = esc(a.id), pk = pkType(a.priceKey);
         var closed = tracked && r && r.ledger.units <= 0;
+        if (closed) { closedAssets.push(a); return; }
+        shown++;
         h += '<details class="acard"' + (pAssets.open === a.id ? ' open' : '') + ' data-acard="' + id + '"><summary><span class="acard-n">' + esc(a.name) + (a.symbol ? ' <span class="hint">' + esc(a.symbol) + '</span>' : '') + (closed ? ' <span class="pill info">Kapanmış</span>' : '') + '</span>' +
           '<span class="acard-v num">' + (closed ? (r.totalPLTL != null ? '<span class="' + plCls(r.totalPLTL) + '">' + signTl(r.totalPLTL) + '</span>' : '<span class="muted">elde yok</span>') : tl(a.value) + (tracked && a.valueBasis === 'cost' ? ' <span class="pill warn" title="Fiyat veya kur yok; kalan maliyetle sayıldı">maliyet</span>' : '')) + '</span>' + halalPill(hs) + '</summary><div class="acard-b grid three">';
         h += fieldRow('Ad', '<input type="text" maxlength="80" data-pfa="name" data-id="' + id + '" value="' + esc(a.name) + '">');
@@ -204,7 +208,16 @@
         }
         h += '<div class="row"><button class="btn small danger" data-act="pf-del-asset" data-id="' + id + '">Varlığı sil</button></div></details>';
       });
+      if (!shown && s.assets.length) h += '<p class="muted">Elde varlık yok. Hepsi kapanmış.</p>';
       h += '<div class="row" style="margin-top:10px"><button class="btn" data-act="pf-add-asset" data-kind="manual">+ Değeri elle yazılan varlık</button><button class="btn" data-act="pf-add-asset" data-kind="trades">+ Alım-satımla izlenen varlık</button></div>';
+      if (closedAssets.length) {
+        h += '<details style="margin-top:14px"><summary>Kapanmış pozisyonlar (' + closedAssets.length + ')</summary><p class="hint">Elde 0 adet. Portföy toplamına ve dağılıma girmezler; alım-satım geçmişi durur. Hâlâ elinde olan varsa satış satırını Alım-satım bölümünden sil.</p><div class="tablewrap"><table><thead><tr><th>Varlık</th><th class="r">Gerçekleşen kâr/zarar</th><th></th></tr></thead><tbody>';
+        closedAssets.forEach(function (a) {
+          var r = byId[a.id];
+          h += '<tr><td>' + esc(a.symbol || a.name) + (a.symbol ? ' <span class="hint">' + esc(a.name) + '</span>' : '') + '</td><td class="r num ' + (r && r.totalPLTL != null ? plCls(r.totalPLTL) : '') + '">' + (r && r.totalPLTL != null ? signTl(r.totalPLTL) : '—') + '</td><td class="r"><button class="btn small danger" data-act="pf-del-asset" data-id="' + esc(a.id) + '">Kaydı sil</button></td></tr>';
+        });
+        h += '</tbody></table></div></details>';
+      }
       h += '<p class="hint">Helal araç örnekleri — Güvenli: katılım hesabı, kira sertifikası (sukuk) fonu. Orta: altın, katılım fonları. Riskli: katılım endeksi hisseleri, SPUS/HLAL gibi helal ETF\'ler. Faizli mevduat/fon/tahvil önerilmez.</p></section>';
       // Hesapların helal etiketi
       if ((s.accounts || []).length) {
