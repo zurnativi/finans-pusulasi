@@ -178,7 +178,28 @@ details>summary{cursor:pointer}
 .desk .l{color:var(--muted);font-size:.72rem;letter-spacing:.04em;text-transform:uppercase}
 .desk .v{font-size:1.15rem;font-weight:720;font-variant-numeric:tabular-nums;margin-top:2px}
 .book-fold{cursor:pointer;font-weight:700;font-size:1.05rem}
-table.book tfoot td{font-weight:650;border-bottom:0}
+.pf-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 8px}
+.pf-head h1{margin:0;font-size:1.65rem;letter-spacing:-.03em;line-height:1.1}
+.pf-kicker{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.pf-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pf .subtabs a{border-radius:8px;background:transparent;font-size:.84rem;padding:6px 11px}
+.pf .subtabs a[aria-current=page]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pf .card{box-shadow:none}
+.pf .desk{gap:0;border:0;border-radius:0;background:transparent;margin:0 0 4px;padding-bottom:2px}
+.pf .desk .k{background:transparent;border:0;border-radius:0;border-right:1px solid var(--line);padding:2px 16px 12px 0}
+.pf .desk .k:last-child{border-right:0}
+.pf .desk .l{letter-spacing:.08em}
+.pf .desk .v{font-size:1.35rem;letter-spacing:-.02em}
+.pf table.book{font-size:.88rem}
+.pf table.book thead th{font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;padding:6px 8px 8px;background:var(--card)}
+.pf table.book td{padding:11px 8px}
+.pf table.book tbody tr:hover{background:color-mix(in srgb, var(--brand) 7%, transparent)}
+.pf table.book tfoot td{font-weight:650;border-bottom:0}
+@media (max-width:860px){
+  .pf .desk .k{border-right:0;border-bottom:1px solid var(--line);padding:8px 0}
+  .pf .desk .k:nth-child(odd){padding-right:12px}
+  .pf-head{align-items:flex-start;flex-direction:column}
+}
 ul.rules{list-style:none;padding:0;margin:0}
 ul.rules li{padding:8px 0;border-bottom:1px solid var(--line)}
 ul.rules li:last-child{border-bottom:0}
