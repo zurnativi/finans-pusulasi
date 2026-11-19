@@ -73,7 +73,7 @@
     var SUBS = [['', 'Genel bakış'], ['varliklar', 'Varlıklar'], ['islemler', 'Alım-satım'], ['dengeleme', 'Dengeleme'], ['getiri', 'Getiri'], ['hedefler', 'Hedefler'], ['risk', 'Risk ve helal'], ['fiyatlar', 'Fiyatlar']];
     function renderPortfolio() {
       var sub = X.sub(), c;
-      var h = '<div class="pf"><header class="pf-head"><div><div class="pf-kicker">Portföy</div><h1>Yönetim</h1></div><div class="pf-actions"><a class="btn small" href="#portfoy/fiyatlar">Fiyatları güncelle</a><a class="btn small primary" href="#portfoy/islemler">İşlem gir</a></div></header>' + X.subtabs('portfoy', SUBS);
+      var h = '<div class="pf"><header class="pf-head"><div><div class="pf-kicker">Portföy</div><h1>Yönetim</h1><div class="hint">Fiyatlar açıkken kendi kendine güncellenir</div></div><div class="pf-actions"><a class="btn small" href="#portfoy/fiyatlar">Fiyatlar</a><a class="btn small primary" href="#portfoy/islemler">İşlem gir</a></div></header>' + X.subtabs('portfoy', SUBS);
       if (st().isExample) h += '<p class="hint">Örnek portföydeki fiyatlar <b>ÖRNEK</b>tir, gerçek piyasa fiyatı değildir. Gerçek fiyat için Fiyatlar → "Fiyatları güncelle".</p>';
       var f = { '': pOverview, varliklar: pAssets, islemler: pTrades, dengeleme: pRebalance, getiri: pReturns, hedefler: pGoals, risk: pRisk, fiyatlar: pPrices }[sub] || pOverview;
       function errBox(e) { console.warn(e); return '<div class="notice warn section-err">Bu bölüm gösterilemedi (' + esc(e.message) + '). Verilerin güvende.</div>'; }
@@ -86,7 +86,7 @@
     }
     var autoPriceAt = 0;
     function autoPrices() {
-      if (autoPriceAt && Date.now() - autoPriceAt < 4 * 3600 * 1000) return;
+      if (autoPriceAt && Date.now() - autoPriceAt < 20 * 60 * 1000) return;
       var s0 = st(); if (!s0 || s0.isExample) return;
       var keys = [];
       (s0.assets || []).forEach(function (a) {
@@ -590,7 +590,8 @@
     function autoKeys(s) { return usedKeys(s).filter(function (k) { var ki = PF.keyInfo(k); return ki && ki.kind !== 'manual'; }); }
     function pPrices(c) {
       var s = c.s, cfg = pcfg(), keys = usedKeys(s), h = '';
-      h += '<section class="card"><h2>Fiyatları güncelle ' + tip('Ücretsiz kaynaklardan güncel fiyatlar çekilir, önce kontrol tablosunda gösterilir. Sen onaylamadan hiçbir fiyat kaydedilmez. Büyük sıçramalar ayrıca onay ister.') + '</h2>';
+      h += '<section class="card"><h2>Fiyatlar ' + tip('Site açıkken fiyatlar kendi kendine güncellenir (yaklaşık 30 dakikada bir ve sekmeye dönünce). Bu düğme anında çekmek içindir. Büyük sıçramalar onay ister.') + '</h2>';
+      h += '<p class="hint">KLU, KPC, KTV TEFAS’tan; SPUS TradingView’den; altın ve dolar kendi kaynaklarından otomatik gelir. Onay gerekmez, geçerli fiyat doğrudan yazılır.</p>';
       h += '<p>Otomatik çekilebilen: ' + autoKeys(s).map(function (k) { return esc(keyLabel(k)); }).join(', ') + '.</p>';
       h += '<div class="row"><button class="btn primary" data-act="pf-fetch"' + (fetching ? ' disabled' : '') + '>' + (fetching ? '<span class="spinner"></span> Fiyatlar alınıyor…' : 'Fiyatları güncelle') + '</button></div>';
       if (priceRun) h += priceRunTable(s, c.today);
@@ -1117,6 +1118,6 @@
     }
     return { homeCards: homeCards, calc: calc, renderPortfolio: renderPortfolio, renderAnalysis: renderAnalysis, importModes: importModes, importKind: function () { return importKind; }, setImportKind: function (k) { importKind = k; },
       handleFile: handleFile, hasReview: function () { return !!pReview; }, renderImportReview: renderImportReview, onChange: onChange, onInput: onInput, onSubmit: onSubmit, actions: actions,
-      rateEdited: rateEdited, contextSummary: contextSummary, afterRender: function () { tradePreview(); } };
+      rateEdited: rateEdited, contextSummary: contextSummary, afterRender: function () { tradePreview(); }, autoPrices: autoPrices };
   };
 })();

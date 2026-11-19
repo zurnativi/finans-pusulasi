@@ -1998,6 +1998,9 @@
       // v8.3: sitedeki şifreli kişisel veri paketi varsa ve bu cihazda yalnızca örnek/boş veri varsa şifre sor (dosya yüklemek gerekmez)
       if (PD && PDui) PDui.check().then(function () { if (state && PDui.available()) renderBanner(); }).catch(function (e) { console.error(e); });
       registerSW();
+      setTimeout(function () { if (PUI && PUI.autoPrices) PUI.autoPrices(); }, 2500);
+      setInterval(function () { if (PUI && PUI.autoPrices && !document.hidden) PUI.autoPrices(); }, 30 * 60 * 1000);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden && PUI && PUI.autoPrices) PUI.autoPrices(); });
     });
   }
   /* Çevrimdışı kabuk (sw.js). Yalnızca http(s) üzerinde; file:// ile açılınca kaydedilmez.
