@@ -387,6 +387,7 @@
   /* ---------- İŞLEMLER ---------- */
   var txFilter = { ym: null, q: '' };
   function catOptions(sel) { var list = P.CATEGORIES.slice(); if (sel && list.indexOf(sel) < 0) list.push(sel); /* listede olmayan (eski/özel) kategori kaybolmasın */ return list.map(function (c) { return '<option' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
+  var txEdit = null;
   function renderTransactions() {
     if (!txFilter.ym) txFilter.ym = C.currentYm();
     var months = {}; state.transactions.forEach(function (t) { months[t.date.slice(0, 7)] = 1; }); months[C.currentYm()] = 1;
@@ -399,7 +400,7 @@
       '<div class="field"><label for="tx-amt">Tutar (TL)</label><input id="tx-amt" class="money" type="text" inputmode="decimal" placeholder="0,00" required></div>' +
       '<div class="field"><label for="tx-type">Tür</label><select id="tx-type"><option value="-1">Harcama</option><option value="1">Gelir</option></select></div>' +
       '<div class="field"><label for="tx-cat">Kategori</label><select id="tx-cat">' + catOptions('Diğer') + '</select></div>' +
-      '<div class="field"><button class="btn primary" type="submit">Ekle</button></div></form><p class="hint">Daha hızlısı: <a href="#veri">ekstre, fiş, Excel veya fotoğraftan aktar</a>.</p></section>';
+      '<div class="field"><button class="btn primary" type="submit">Ekle</button></div></form><p class="hint">Daha hızlısı: <a href="#veri">ekstre, fiş, Excel veya fotoğraftan aktar</a>. Kayıtlı işlemi satırdaki Düzenle ile değiştirebilirsin.</p></section>';
     h += '<section class="card" style="margin-top:14px"><div class="row" style="margin-bottom:10px"><label class="sr" for="tx-month">Ay</label><select id="tx-month" style="max-width:200px"><option value="all"' + (txFilter.ym === 'all' ? ' selected' : '') + '>Tüm aylar</option>' +
       Object.keys(months).sort().reverse().map(function (m) { return '<option value="' + m + '"' + (m === txFilter.ym ? ' selected' : '') + '>' + ymLabel(m) + '</option>'; }).join('') + '</select>' +
       '<label class="sr" for="tx-q">Ara</label><input id="tx-q" type="search" placeholder="Ara…" style="max-width:240px" value="' + esc(txFilter.q) + '">' +
@@ -409,8 +410,18 @@
       h += '<div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Açıklama</th><th>Kategori</th><th class="r">Tutar</th><th class="detail-only">Kaynak</th><th></th></tr></thead><tbody>';
       list.slice(0, 500).forEach(function (t) {
         var acc = t.accountId ? accById(t.accountId) : null;
-        h += '<tr><td class="num">' + dateLabel(t.date) + '</td><td>' + esc(t.description) + (t.recurringId ? ' <span class="pill info" title="Düzenli ödemeye bağlı (' + esc(t.period) + ')">🔁 düzenli</span>' : '') + (acc ? '<div class="hint">' + esc(acc.name) + '</div>' : '') + '</td><td><select aria-label="Kategori" data-list="transactions" data-id="' + t.id + '" data-field="category">' + catOptions(t.category) + '</select></td>' +
-          '<td class="r num ' + (t.amount < 0 ? 'neg' : 'pos') + '">' + tl2(t.amount) + '</td><td class="detail-only hint">' + esc(t.source || '') + '</td><td>' + delBtn('transactions', t.id, t.description) + '</td></tr>';
+        if (txEdit === t.id) {
+          var abs = t.amount < 0 ? -t.amount : t.amount;
+          h += '<tr class="editing"><td><input id="txe-date" type="date" value="' + esc(t.date) + '" aria-label="Tarih"></td>' +
+            '<td><input id="txe-desc" type="text" maxlength="120" value="' + esc(t.description) + '" aria-label="Açıklama"></td>' +
+            '<td><select id="txe-cat" aria-label="Kategori">' + catOptions(t.category) + '</select></td>' +
+            '<td class="r"><input id="txe-amt" class="money" type="text" inputmode="decimal" style="max-width:120px;margin-left:auto;display:block" value="' + esc(curVal(abs)) + '" aria-label="Tutar"><select id="txe-type" aria-label="Tür" style="margin-top:4px"><option value="-1"' + (t.amount < 0 ? ' selected' : '') + '>Harcama</option><option value="1"' + (t.amount >= 0 ? ' selected' : '') + '>Gelir</option></select></td>' +
+            '<td class="detail-only hint">' + esc(t.source || '') + '</td>' +
+            '<td><button class="btn small primary" data-act="tx-save" data-id="' + esc(t.id) + '">Kaydet</button> <button class="btn small" data-act="tx-cancel">Vazgeç</button></td></tr>';
+        } else {
+          h += '<tr><td class="num">' + dateLabel(t.date) + '</td><td>' + esc(t.description) + (t.recurringId ? ' <span class="pill info" title="Düzenli ödemeye bağlı (' + esc(t.period) + ')">🔁 düzenli</span>' : '') + (acc ? '<div class="hint">' + esc(acc.name) + '</div>' : '') + '</td><td><select aria-label="Kategori" data-list="transactions" data-id="' + t.id + '" data-field="category">' + catOptions(t.category) + '</select></td>' +
+            '<td class="r num ' + (t.amount < 0 ? 'neg' : 'pos') + '">' + tl2(t.amount) + '</td><td class="detail-only hint">' + esc(t.source || '') + '</td><td><button class="btn small" data-act="tx-edit" data-id="' + esc(t.id) + '">Düzenle</button> ' + delBtn('transactions', t.id, t.description) + '</td></tr>';
+        }
       });
       h += '</tbody></table></div>' + (list.length > 500 ? '<p class="hint">İlk 500 işlem gösteriliyor; filtreyi daralt.</p>' : '');
     }
@@ -1694,6 +1705,21 @@
     var act = t.dataset.act;
     if (SUI && SUI.onClick(act, t)) return;
     var A = {
+      'tx-edit': function () { txEdit = t.dataset.id; render(); var d = $('#txe-desc'); if (d) { d.focus(); d.select(); } },
+      'tx-cancel': function () { txEdit = null; render(); },
+      'tx-save': function () {
+        var id = t.dataset.id, d = ($('#txe-date') || {}).value, desc = (($('#txe-desc') || {}).value || '').trim(), amt = M.parse(($('#txe-amt') || {}).value), typ = Number(($('#txe-type') || {}).value), cat = ($('#txe-cat') || {}).value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return toast('Geçerli bir tarih seç');
+        if (!desc) return toast('Açıklama boş olamaz');
+        if (amt == null || amt <= 0) return toast('Geçerli bir tutar gir');
+        var signed = typ === 1 ? amt : -amt;
+        mutate(function (s) {
+          var tx = s.transactions.find(function (x) { return x.id === id; });
+          if (!tx) return;
+          tx.date = d; tx.description = desc; tx.amount = signed; tx.category = cat || tx.category;
+        }, 'İşlem güncellendi');
+        txEdit = null;
+      },
       'example-clear': function () { if (confirm('Örnek verilerin tamamı silinsin mi? (Sonra kendi verilerini girersin.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); s.settings.view = document.body.classList.contains('detailed') ? 'detailed' : 'simple'; }, 'Örnek veri temizlendi.'); },
       'personal-open': function () { if (PDui) PDui.openManual(); },
       'example-mine': function () { mutate(function (s) { s.isExample = false; s.transactions.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); if (s.trades) s.trades.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); }, 'Veriler artık senin verilerin olarak işaretlendi.'); },
