@@ -1,0 +1,48 @@
+# SEANS İÇİ SAATLİK İŞ: saatlik mumlar (BIST/endeks/emtia/ETF), KAP bildirimleri, haberler, takvim/olasılık/uyarılar, sunucu analiz anlık görüntüleri.
+# İş günü 11:10–17:10 TSİ saat başı; hafta sonu 12:00 TSİ (KAP + haber). Günlük geçmişi (3 yıllık) değiştirmez.
+name: market-intraday
+on:
+  schedule:
+    - cron: '10 8-14 * * 1-5'
+    - cron: '0 9 * * 0,6'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: market-data-intraday, cancel-in-progress: false }
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Önceki veriyi al
+        run: |
+          git fetch --depth=1 origin market-data:prev-data && git worktree add /tmp/prev prev-data
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Saatlik mumlar, KAP, haber
+        env: { PREV_DIR: /tmp/prev, WORKERS: '5', MODE: intraday }
+        run: python3 tools/fetch_market_data.py /tmp/out
+      - name: Haber merkezi verisi
+        continue-on-error: true
+        env: { PREV_DIR: /tmp/prev, MODE: intraday }
+        run: python3 tools/fetch_hub.py /tmp/out
+      - name: Analiz anlık görüntüleri ve senaryo özeti
+        continue-on-error: true
+        env:
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}
+        run: |
+          node tools/precompute.js /tmp/out --set=bist
+          node tools/scenarios.js /tmp/out
+      - name: market-data dalına yaz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}   # yalnızca içindeki ntfy konusu okunur (kurulum tek sırla); asla yazdırılmaz
+          NTFY_MIN: ${{ vars.NTFY_MIN }}
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}
+        run: |
+          export JOB_SECONDS=$(( $(date +%s) - T0 ))
+          python3 tools/publish.py /tmp/out /tmp/prev intraday

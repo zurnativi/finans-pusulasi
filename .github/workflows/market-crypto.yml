@@ -1,0 +1,35 @@
+# KRİPTO ANALİZ İŞİ (7/24, saat başı): Binance günlük mumları + canlı fiyat + TradingView gösterge karşılaştırması → sunucu analiz anlık görüntüleri.
+# (Borsa kapalıyken de kripto verisi tazelenir.) Yalnız analysis/cg-*.json yazar.
+name: market-crypto
+on:
+  schedule:
+    - cron: '22 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: market-data-crypto, cancel-in-progress: false }
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Önceki analizleri al
+        run: |
+          git fetch --depth=1 origin market-data:prev-data && git worktree add /tmp/prev prev-data
+          mkdir -p /tmp/out && cp -r /tmp/prev/analysis /tmp/out/analysis 2>/dev/null || true
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Kripto analizleri
+        run: node tools/precompute.js /tmp/out --set=crypto
+      - name: market-data dalına yaz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}   # yalnızca içindeki ntfy konusu okunur (kurulum tek sırla); asla yazdırılmaz
+          NTFY_MIN: ${{ vars.NTFY_MIN }}
+        run: |
+          export JOB_SECONDS=$(( $(date +%s) - T0 ))
+          python3 tools/publish.py /tmp/out /tmp/prev crypto

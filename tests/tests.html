@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hesap testleri · Finans Pusulası</title>
+<style>body{font-family:system-ui,sans-serif;max-width:800px;margin:20px auto;padding:0 16px}li{margin:3px 0}.ok{color:#16794c}.no{color:#b42318}</style></head>
+<body><h1>Hesap motoru testleri</h1><p><a href="../index.html">← Uygulamaya dön</a></p><p id="sum">Çalışıyor…</p><ul id="list"></ul>
+<script src="../js/money.js"></script><script src="../js/calc.js"></script><script src="../js/ledger.js"></script><script src="../js/importparse.js"></script><script src="../js/portfolio.js"></script><script src="../js/prices.js"></script><script src="../js/alerts.js"></script><script src="../js/sample.js"></script><script src="../js/chartdata.js"></script><script src="../js/cryptobox.js"></script><script src="../js/syncmerge.js"></script><script src="../js/sync.js"></script><script src="../js/lock.js"></script><script src="fixture-v1.js"></script><script src="run-tests.js"></script><script src="run-tests-v5.js"></script>
+<script>
+function show(r) {
+  var ok = r.filter(function (x) { return x.ok; }).length;
+  document.getElementById('sum').innerHTML = '<b class="' + (ok === r.length ? 'ok' : 'no') + '">' + ok + '/' + r.length + ' test geçti</b>';
+  document.getElementById('list').innerHTML = r.map(function (x) { return '<li class="' + (x.ok ? 'ok' : 'no') + '">' + (x.ok ? '✓ ' : '✗ ') + x.name.replace(/</g, '&lt;') + (x.ok ? '' : ' — ' + String(x.err).replace(/</g, '&lt;')) + '</li>'; }).join('');
+}
+var base = window.TEST_RESULTS || []; show(base);
+if (window.runV5Tests && window.crypto && crypto.subtle) window.runV5Tests().then(function (r5) { show(base.concat(r5)); window.ALL_TEST_RESULTS = base.concat(r5); });
+else { show(base.concat([{ name: 'v5 şifreleme testleri', ok: false, err: 'Web Crypto yok (file:// yerine http(s) ile aç)' }])); }
+</script></body></html>

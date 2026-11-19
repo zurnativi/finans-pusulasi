@@ -1,0 +1,65 @@
+# GÜNLÜK TAM DERLEME (ağır iş): BIST + endeksler + Katılım endeksleri + altın/gümüş + döviz + helal ETF günlük ve saatlik mumlar, KAP, haber,
+# takvim/olasılık/benzer olay/toparlanma çalışması, sunucu analiz anlık görüntüleri. İş günü 10:30 ve 18:40 TSİ.
+# Çıktı `market-data` dalına tools/publish.py ile yazılır (başka işlerle çakışmaz; dal tek commit, geçmiş tutulmaz).
+# Diğer işler: market-intraday.yml (saatlik), market-news.yml (≈20 dk), market-crypto.yml (saatlik, 7/24), keepalive.yml (haftalık).
+# Not: GitHub zamanlanmış işleri geciktirebilir (dakikalar–yarım saat) ve 60 gün depo hareketsizliğinde durdurabilir (keepalive.yml bunu önler).
+name: market-data
+on:
+  schedule:
+    - cron: '40 15 * * 1-5'   # 18:40 TSİ — tam derleme (BIST kapanışından sonra)
+    - cron: '30 7 * * 1-5'    # 10:30 TSİ — tam derleme (sabah: ABD/emtia kapanışları)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'full = günlük + saatlik + KAP + haber; intraday = saatlik + KAP + haber'
+        type: choice
+        options: [full, intraday]
+        default: full
+permissions:
+  contents: write
+concurrency: { group: market-data-daily, cancel-in-progress: false }
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Önceki veriyi al (alınamayan semboller için)
+        run: |
+          git fetch --depth=1 origin market-data:prev-data 2>/dev/null && git worktree add /tmp/prev prev-data || echo "önceki veri yok"
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Veriyi derle
+        env:
+          PREV_DIR: /tmp/prev
+          WORKERS: '5'
+          MODE: ${{ inputs.mode || 'full' }}
+        run: python3 tools/fetch_market_data.py /tmp/out
+      - name: Haber merkezi verisi (takvim, olasılıklar, benzer olaylar, uyarılar)
+        # Hata bu adımı durdurmaz: ana piyasa verisi zaten yazıldı; alınamayan bölüm önceki sürümle (stale) kalır.
+        continue-on-error: true
+        env:
+          PREV_DIR: /tmp/prev
+          MODE: ${{ inputs.mode || 'full' }}
+        run: |
+          sudo apt-get install -y poppler-utils >/dev/null 2>&1 || true
+          python3 tools/fetch_hub.py /tmp/out
+      - name: Analiz anlık görüntüleri ve senaryo özeti (tarayıcıdaki aynı JS modülleri)
+        continue-on-error: true
+        env:
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}   # isteğe bağlı: ASELS,THYAO (evrene eklenir; tutar/adet YOK)
+        run: |
+          node tools/precompute.js /tmp/out --set=bist
+          node tools/scenarios.js /tmp/out
+      - name: market-data dalına yaz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}     # isteğe bağlı (README: "Arka plan bildirimleri")
+          PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}   # yalnızca içindeki ntfy konusu okunur (kurulum tek sırla); asla yazdırılmaz
+          NTFY_MIN: ${{ vars.NTFY_MIN }}            # boş = yalnız kritik; 'high' = yüksek ve kritik
+          WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS }}
+        run: |
+          export JOB_SECONDS=$(( $(date +%s) - T0 ))
+          python3 tools/publish.py /tmp/out /tmp/prev daily

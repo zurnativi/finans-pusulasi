@@ -1,0 +1,22 @@
+{
+  "_doc": "Tarihsel benzer olay çalışması için elle derlenmiş olay listesi. 'date' = olayın (veya hafta sonuysa ilk işlem gününün) tarihi. Getiriler bu tarihten ÖNCEKİ son kapanışa göre, gerçek günlük kapanış verisinden hesaplanır (tools/fetch_hub.py). TCMB ve Fed faiz kararları bu listede değil; resmî faiz tablolarından otomatik üretilir.",
+  "events": [
+    {"id": "coup2016", "date": "2016-07-18", "group": "turkey_shock", "title": "15 Temmuz 2016 darbe girişimi (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2016_Turkish_coup_d%27%C3%A9tat_attempt"},
+    {"id": "elec2018", "date": "2018-06-25", "group": "turkey_election", "title": "24 Haziran 2018 genel seçimi (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2018_Turkish_general_election"},
+    {"id": "tariff2018", "date": "2018-08-10", "group": "turkey_shock", "title": "ABD'nin Türkiye'ye çelik/alüminyum gümrük vergisini ikiye katlaması (kur şoku)", "src": "https://en.wikipedia.org/wiki/2018_Turkish_currency_and_debt_crisis"},
+    {"id": "gov2019", "date": "2019-07-08", "group": "cbrt_governor", "title": "TCMB Başkanı Çetinkaya'nın görevden alınması (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/Central_Bank_of_the_Republic_of_Turkey"},
+    {"id": "ist2019", "date": "2019-06-24", "group": "turkey_election", "title": "İstanbul seçimi yenilemesi (23 Haziran 2019, ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2019_Istanbul_mayoral_election"},
+    {"id": "gov2020", "date": "2020-11-09", "group": "cbrt_governor", "title": "Albayrak'ın istifası ve Ağbal'ın TCMB'ye atanması (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/Central_Bank_of_the_Republic_of_Turkey"},
+    {"id": "gov2021", "date": "2021-03-22", "group": "cbrt_governor", "title": "TCMB Başkanı Ağbal'ın görevden alınması (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/Central_Bank_of_the_Republic_of_Turkey"},
+    {"id": "covid2020", "date": "2020-03-16", "group": "global_shock", "title": "COVID-19 çöküşü: küresel piyasalarda en sert günlerden biri", "src": "https://en.wikipedia.org/wiki/2020_stock_market_crash"},
+    {"id": "ukraine2022", "date": "2022-02-24", "group": "global_shock", "title": "Rusya'nın Ukrayna'yı işgali", "src": "https://en.wikipedia.org/wiki/2022_Russian_invasion_of_Ukraine"},
+    {"id": "quake2023", "date": "2023-02-06", "group": "turkey_shock", "title": "6 Şubat 2023 Kahramanmaraş depremleri", "src": "https://en.wikipedia.org/wiki/2023_Turkey%E2%80%93Syria_earthquake"},
+    {"id": "svb2023", "date": "2023-03-13", "group": "global_shock", "title": "Silikon Vadisi Bankası'nın çöküşü sonrası ilk işlem günü (Mart 2023)", "src": "https://en.wikipedia.org/wiki/Collapse_of_Silicon_Valley_Bank"},
+    {"id": "elec2023a", "date": "2023-05-15", "group": "turkey_election", "title": "14 Mayıs 2023 genel seçimi 1. tur (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2023_Turkish_general_election"},
+    {"id": "elec2023b", "date": "2023-05-29", "group": "turkey_election", "title": "28 Mayıs 2023 cumhurbaşkanlığı 2. turu (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2023_Turkish_general_election"},
+    {"id": "local2024", "date": "2024-04-01", "group": "turkey_election", "title": "31 Mart 2024 yerel seçimleri (ilk işlem günü)", "src": "https://en.wikipedia.org/wiki/2024_Turkish_local_elections"},
+    {"id": "uselec2024", "date": "2024-11-06", "group": "global_event", "title": "ABD başkanlık seçimi sonrası ilk işlem günü", "src": "https://en.wikipedia.org/wiki/2024_United_States_presidential_election"},
+    {"id": "imamoglu2025", "date": "2025-03-19", "group": "turkey_shock", "title": "19 Mart 2025: İmamoğlu'nun gözaltına alınması", "src": "https://en.wikipedia.org/wiki/Ekrem_%C4%B0mamo%C4%9Flu"},
+    {"id": "libday2025", "date": "2025-04-03", "group": "global_shock", "title": "ABD 'Kurtuluş Günü' gümrük vergileri sonrası ilk işlem günü", "src": "https://en.wikipedia.org/wiki/Liberation_Day_tariffs"}
+  ]
+}
