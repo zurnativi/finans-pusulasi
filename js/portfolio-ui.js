@@ -78,11 +78,44 @@
       var f = { '': pOverview, varliklar: pAssets, islemler: pTrades, dengeleme: pRebalance, getiri: pReturns, hedefler: pGoals, risk: pRisk, fiyatlar: pPrices }[sub] || pOverview;
       function errBox(e) { console.warn(e); return '<div class="notice warn section-err">Bu bölüm gösterilemedi (' + esc(e.message) + '). Verilerin güvende.</div>'; }
       try { c = calc(); } catch (e) { return h + errBox(e) + goalsEditOnly() + '</div>'; }
-      try { return h + f(c) + '</div>'; } catch (e2) { return h + errBox(e2) + (sub === 'hedefler' || sub === '' || sub === 'dengeleme' ? goalsEditOnly() : '') + '</div>'; }
+      try { var html = h + f(c) + '</div>'; setTimeout(autoPrices, 400); return html; } catch (e2) { return h + errBox(e2) + (sub === 'hedefler' || sub === '' || sub === 'dengeleme' ? goalsEditOnly() : '') + '</div>'; }
     }
     function renderAnalysis() {
       return '<h1>Portföy Analizi</h1><section class="card"><h2>Yakında</h2><p>Bu alan hazırlanıyor: varlıkların piyasa analizi, haber ve trend özetleri, senaryo testleri burada olacak.</p>' +
         '<p class="hint">Şimdilik portföyünü <a href="#portfoy">Portföy Yönetimi</a> bölümünden takip edebilirsin: getiri, dengeleme, risk kuralları ve helal kontrolü orada.</p></section>';
+    }
+    var autoPriceAt = 0;
+    function autoPrices() {
+      if (autoPriceAt && Date.now() - autoPriceAt < 4 * 3600 * 1000) return;
+      var s0 = st(); if (!s0 || s0.isExample) return;
+      var keys = [];
+      (s0.assets || []).forEach(function (a) {
+        if (a.tracking !== 'trades') return;
+        var p = PF.position(s0, a, X.today());
+        if (p.ledger.units <= 0) return;
+        var k = PF.assetKey(a); if (keys.indexOf(k) < 0) keys.push(k);
+      });
+      ['fx:USD', 'metal:XAU'].forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
+      if (!keys.length) return;
+      autoPriceAt = Date.now();
+      PR.fetchAll(keys, { twelveKey: (window.Store && window.Store.apiKeys && window.Store.apiKeys().twelve) || '' }).then(function (res) {
+        if (!res || !res.candidates || !res.candidates.length) return;
+        var applied = [];
+        X.mutate(function (s) {
+          res.candidates.forEach(function (c2) {
+            var a = (s.assets || []).find(function (x) { return PF.assetKey(x) === c2.key; });
+            var old = PF.lastPoint(s, c2.key);
+            var chk = PF.checkPrice(c2.p, old, PF.kindFor(c2.key, a), c2.d, X.today());
+            if (c2.badCurrency) return;
+            if (old && old.d === c2.d && old.p === c2.p) return;
+            if (!chk.valid || chk.needsConfirm) return;
+            PF.addPricePoint(s.prices, c2.key, c2.cur || 'TRY', { d: c2.d, p: c2.p, src: String(c2.src || '').slice(0, 160), at: c2.at || null });
+            if (/^fx:/.test(c2.key)) { var cur = c2.key.slice(3); s.rates = s.rates || {}; s.rates[cur] = { rate: PF.fxKurusFromPrice(c2.p), date: c2.d }; }
+            applied.push(c2.key.replace(/^tefas:|^td:|^bist:|^metal:|^fx:/, ''));
+          });
+          if (applied.length) PF.sync(s, X.today());
+        }, applied.length ? applied.slice(0, 6).join(', ') + ' fiyatı güncellendi' : '');
+      }, function () { autoPriceAt = 0; });
     }
 
     /* Portföy panosu: değer eğrisi (zaman aralıklı) ve varlık dağılımı halkası */
