@@ -218,13 +218,13 @@
     function row(sign, label, v, cls, sub) { return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + sign + ' ' + label + (sub ? '<div class="hint">' + sub + '</div>' : '') + '</td><td class="r num">' + esc(tl(v)) + '</td></tr>'; }
     var rows = row('', 'Yatırımların <span class="muted">(Portföy → Yatırım toplamı)</span>', b.investments) +
       row('+', 'Banka ve nakit hesapları', b.cash, '', b.accounts.map(function (a) { return esc(a.name.replace(/ \(.*$/, '')) + ' ' + esc(tl(a.value)); }).join(' · ')) +
-      row('=', 'Toplam birikim <span class="muted">(Portföy Yönetimi kartındaki tutar)</span>', b.gross, 'sum') +
+      row('=', 'Toplam birikim <span class="muted">(yatırımlar + nakit)</span>', b.gross, 'sum') +
       row('−', 'Kredi kartı borcu (ekstre ve sonrası)', b.cardDebt) +
       row('−', 'Gelecek taksitler (henüz ekstreye gelmemiş)', b.futureInstallments) +
       (b.otherDebts ? row('−', 'Diğer borçlar', b.otherDebts) : '') +
       row('=', 'Net varlık', b.net, 'sum');
     return fold('nw-break', 'Net varlık nasıl hesaplandı?', 'yatırımlar + nakit − borçlar', '<div class="tablewrap"><table><tbody>' + rows + '</tbody></table></div>' +
-      '<p class="hint">Portföy Yönetimi sayfasındaki <b>Yatırımlarının değeri</b> yalnızca alım-satımla izlenen yatırımları gösterir; banka nakdi ve borçlar o rakamda yoktur, bu yüzden net varlıktan farklıdır.' +
+      '<p class="hint">Portföy Yönetimi kartı ve sayfası yalnızca eldeki yatırımları gösterir. Banka nakdi ve borçlar o rakamda yoktur; fark burada görünür.' +
       (costBased.length ? ' Kur/fiyat olmadığı için maliyetle sayılan varlıklar: ' + esc(costBased.join(', ')) + ' (güncel kuru Bütçe → Hesaplar → Kurlar bölümüne girersen piyasa değeriyle hesaplanır).' : '') +
       (b.missingRates.length ? ' Kuru girilmediği için dışarıda kalan hesaplar: ' + esc(b.missingRates.join(', ')) + '.' : '') + '</p>', true);
   }
