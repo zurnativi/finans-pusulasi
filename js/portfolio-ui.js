@@ -72,13 +72,13 @@
     /* ---------- PORTFÖY: alt sayfalar ---------- */
     var SUBS = [['', 'Genel bakış'], ['varliklar', 'Varlıklar'], ['islemler', 'Alım-satım'], ['dengeleme', 'Dengeleme'], ['getiri', 'Getiri'], ['hedefler', 'Hedefler'], ['risk', 'Risk ve helal'], ['fiyatlar', 'Fiyatlar']];
     function renderPortfolio() {
-      var sub = X.sub(), h = '<h1>Portföy Yönetimi</h1>' + X.subtabs('portfoy', SUBS), c;
+      var sub = X.sub(), c;
+      var h = '<div class="pf"><header class="pf-head"><div><div class="pf-kicker">Portföy</div><h1>Yönetim</h1></div><div class="pf-actions"><a class="btn small" href="#portfoy/fiyatlar">Fiyatları güncelle</a><a class="btn small primary" href="#portfoy/islemler">İşlem gir</a></div></header>' + X.subtabs('portfoy', SUBS);
       if (st().isExample) h += '<p class="hint">Örnek portföydeki fiyatlar <b>ÖRNEK</b>tir, gerçek piyasa fiyatı değildir. Gerçek fiyat için Fiyatlar → "Fiyatları güncelle".</p>';
       var f = { '': pOverview, varliklar: pAssets, islemler: pTrades, dengeleme: pRebalance, getiri: pReturns, hedefler: pGoals, risk: pRisk, fiyatlar: pPrices }[sub] || pOverview;
-      // Bölüm hatası tüm sayfayı kilitlemez: hedefler her durumda düzenlenebilir
       function errBox(e) { console.warn(e); return '<div class="notice warn section-err">Bu bölüm gösterilemedi (' + esc(e.message) + '). Verilerin güvende.</div>'; }
-      try { c = calc(); } catch (e) { return h + errBox(e) + goalsEditOnly(); }
-      try { return h + f(c); } catch (e2) { return h + errBox(e2) + (sub === 'hedefler' || sub === '' || sub === 'dengeleme' ? goalsEditOnly() : ''); }
+      try { c = calc(); } catch (e) { return h + errBox(e) + goalsEditOnly() + '</div>'; }
+      try { return h + f(c) + '</div>'; } catch (e2) { return h + errBox(e2) + (sub === 'hedefler' || sub === '' || sub === 'dengeleme' ? goalsEditOnly() : '') + '</div>'; }
     }
     function renderAnalysis() {
       return '<h1>Portföy Analizi</h1><section class="card"><h2>Yakında</h2><p>Bu alan hazırlanıyor: varlıkların piyasa analizi, haber ve trend özetleri, senaryo testleri burada olacak.</p>' +
