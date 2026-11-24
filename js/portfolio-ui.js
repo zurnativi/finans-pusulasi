@@ -352,7 +352,7 @@
           '<div class="tf tf-fee">' + fieldRow('BSMV / vergi (' + curSym(cur) + ')', '<input id="pt-tax" class="money" type="text" inputmode="decimal" placeholder="0,00"' + ev(fp && fp.tax ? M.format(fp.tax, { symbol: false }) : '') + '>', 'Komisyon üzerinden alınan BSMV ve işlem vergileri.') + '</div>' +
           '<div class="tf tf-fee">' + fieldRow('Diğer masraf (' + curSym(cur) + ')', '<input id="pt-ofee" class="money" type="text" inputmode="decimal" placeholder="0,00"' + ev(fp && fp.other ? M.format(fp.other, { symbol: false }) : '') + '>', 'Borsa payı, saklama, havale vb. Alışta maliyete eklenir, satışta gelirden düşülür.') + '</div>' +
           (cur !== 'TRY' ? '<div class="tf tf-fx">' + fieldRow('O günkü kur (1 ' + cur + ' = ? TL)', '<input id="pt-fx" class="money" type="text" inputmode="decimal" value="' + esc(fxVal) + '">', 'TL maliyet ve kur farkı için gerekli. Aracı kurum dökümündeki kuru yaz.') + '</div>' : '') +
-          fieldRow('Not', '<input id="pt-note" type="text" maxlength="200" placeholder="isteğe bağlı"' + ev(et ? et.note || '' : '') + '>') +
+          '<div class="field tf-note"><label for="pt-note">Gerekçe / not ' + tip('Neden aldın / sattın? (ör. "destekten döndü, stop 340", "hedefe ulaştı, kâr aldım"). İşlem geçmişinde ve seans raporlarında gösterilir. En çok 1000 karakter.') + '</label><textarea id="pt-note" maxlength="1000" rows="2" placeholder="Neden aldım/sattım? (isteğe bağlı)">' + esc(et ? et.note || '' : '') + '</textarea><button type="button" class="btn small" data-act="pf-note-an" style="margin-top:4px">Analiz gerekçesini ekle</button><div id="pt-note-msg" class="hint" aria-live="polite"></div></div>' +
           '<div class="field"><div class="row" style="gap:6px"><button class="btn primary" type="submit">' + (et ? 'Değişikliği kaydet' : 'Kaydet') + '</button>' + (et ? '<button class="btn" type="button" data-act="pf-edit-cancel">Vazgeç</button>' : '') + '</div></div></form><div id="pt-preview" class="hint" aria-live="polite"></div>';
         h += '<p class="hint">Daha hızlısı: <a href="#veri" data-act="pf-import-mode" data-mode="trades">aracı kurum dökümünü (Excel/CSV/PDF/ekran görüntüsü) aktar</a>.</p>';
       }
@@ -867,7 +867,7 @@
       pReview = { kind: 'trades', source: name, docTotal: docTotal, text: extra.text || null, preview: extra.preview || null, warn: extra.warn || [], table: extra.table || null, map: extra.map || null, rows: [] };
       pReview.rows = rows.map(function (r, i) {
         var a = PF.matchAsset(s, r.symbol), cur = r.currency || (a && a.currency) || 'TRY';
-        var x = { key: i, include: true, date: r.date, rawDate: r.rawDate, symbol: r.symbol, side: r.side, rawSide: r.rawSide, qty: r.qty, price: r.price, fee: r.fee || 0, feeParts: r.feeParts || null, written: r.written, currency: cur, assetId: a && a.tracking === 'trades' ? a.id : '', fxRate: null };
+        var x = { key: i, include: true, date: r.date, rawDate: r.rawDate, symbol: r.symbol, side: r.side, rawSide: r.rawSide, qty: r.qty, price: r.price, fee: r.fee || 0, feeParts: r.feeParts || null, written: r.written, note: r.note ? String(r.note).slice(0, 1000) : '', currency: cur, assetId: a && a.tracking === 'trades' ? a.id : '', fxRate: null };
         if (cur !== 'TRY' && x.date) x.fxRate = fxAt(s, cur, x.date);
         return x;
       });
@@ -898,7 +898,7 @@
       h += '<section class="card" style="margin-top:10px" id="ptr-summary">' + tradeSummary() + '</section>';
       if (r.preview) h += '<details class="card" style="margin-top:10px"><summary><b>Belgeyi göster</b></summary><img src="' + r.preview + '" alt="Yüklenen belge" style="max-width:100%;max-height:600px;margin-top:10px;border-radius:8px"></details>';
       h += '<section class="card" style="margin-top:10px"><div class="row" style="margin-bottom:10px"><button class="btn small" data-act="ptr-all">Tümünü seç</button><button class="btn small" data-act="ptr-none">Tümünü kaldır</button><button class="btn small" data-act="ptr-add">+ Satır ekle</button></div>';
-      h += '<div class="tablewrap"><table class="review trades-rv"><thead><tr><th>✓</th><th>Tarih</th><th>Varlık</th><th>İşlem</th><th class="r">Adet</th><th class="r">Fiyat</th><th class="r">Komisyon</th><th>Para</th><th class="r">Kur (TL)</th><th class="r">Hesaplanan ' + tip('Adet × fiyat (± komisyon). Belgedeki tutardan kopyalanmaz; kuruşu kuruşuna yeniden hesaplanır.') + '</th><th class="r">Belgede</th><th>Durum</th></tr></thead><tbody>';
+      h += '<div class="tablewrap"><table class="review trades-rv"><thead><tr><th>✓</th><th>Tarih</th><th>Varlık</th><th>İşlem</th><th class="r">Adet</th><th class="r">Fiyat</th><th class="r">Komisyon</th><th>Para</th><th class="r">Kur (TL)</th><th class="r">Hesaplanan ' + tip('Adet × fiyat (± komisyon). Belgedeki tutardan kopyalanmaz; kuruşu kuruşuna yeniden hesaplanır.') + '</th><th class="r">Belgede</th><th>Gerekçe / not</th><th>Durum</th></tr></thead><tbody>';
       r.rows.forEach(function (x) {
         var aSel = '<select data-ptr="assetId" aria-label="Varlık">' + opt('', x.symbol ? '+ Yeni: ' + x.symbol : '— seç —', x.assetId) + tracked.map(function (a) { return opt(a.id, a.name, x.assetId); }).join('') + '</select>';
         h += '<tr data-pkey="' + x.key + '" class="' + (x.include ? '' : 'excluded ') + (x.include && x.errors.length ? 'has-err' : '') + '"><td><input type="checkbox" data-ptr="include"' + (x.include ? ' checked' : '') + ' aria-label="Dahil et"></td>' +
@@ -910,7 +910,7 @@
           '<td><input type="text" class="money" inputmode="decimal" data-ptr="fee" value="' + esc(M.format(x.fee || 0, { symbol: false })) + '" aria-label="Komisyon" style="max-width:90px">' + (x.feeParts ? '<div class="hint">' + feePartsTxt({ fee: x.fee, feeParts: x.feeParts, currency: x.currency }) + '</div>' : '') + '</td>' +
           '<td><select data-ptr="currency" aria-label="Para birimi">' + ['TRY', 'USD', 'EUR'].map(function (k) { return opt(k, k === 'TRY' ? 'TL' : k, x.currency); }).join('') + '</select></td>' +
           '<td>' + (x.currency !== 'TRY' ? '<input type="text" class="money" inputmode="decimal" data-ptr="fxRate" value="' + (x.fxRate ? esc(M.format(x.fxRate, { symbol: false })) : '') + '" aria-label="Kur" style="max-width:90px">' : '<span class="muted">—</span>') + '</td>' +
-          '<td class="r num ptr-calc">' + (x.calc ? money(x.calc.cash, x.currency) + '<div class="hint">brüt ' + M.format(x.calc.gross, { symbol: false }) + '</div>' : '—') + '</td><td class="r num">' + (x.written != null ? money(x.written, x.currency) : '<span class="muted">—</span>') + '</td><td class="ptr-status">' + trStatus(x) + '</td></tr>';
+          '<td class="r num ptr-calc">' + (x.calc ? money(x.calc.cash, x.currency) + '<div class="hint">brüt ' + M.format(x.calc.gross, { symbol: false }) + '</div>' : '—') + '</td><td class="r num">' + (x.written != null ? money(x.written, x.currency) : '<span class="muted">—</span>') + '</td><td><input type="text" data-ptr="note" maxlength="1000" value="' + esc(x.note || '') + '" aria-label="Gerekçe / not" placeholder="isteğe bağlı" style="max-width:180px"></td><td class="ptr-status">' + trStatus(x) + '</td></tr>';
       });
       h += '</tbody></table></div>' + (r.rows.length ? '' : '<p class="muted">Hiç satır çıkarılamadı. Sütunlar tanınmadıysa "+ Satır ekle" ile elle gir.</p>') + '</section>';
       h += '<div class="row savebar"><button class="btn primary" data-act="ptr-save">Onayla ve kaydet</button><button class="btn" data-act="ptr-cancel">Vazgeç</button></div>';
@@ -954,6 +954,7 @@
       else if (f === 'fee') { var fv = el.value.trim() ? M.parse(el.value) : 0; x.fee = fv == null ? -1 : Math.abs(fv); x.feeParts = null; }
       else if (f === 'currency') { x.currency = el.value; x.fxRate = x.currency === 'TRY' ? null : (x.fxRate || (x.date ? fxAt(st(), x.currency, x.date) : null)); rerender = true; }
       else if (f === 'fxRate') x.fxRate = M.parse(el.value);
+      else if (f === 'note') x.note = el.value.trim().slice(0, 1000);
       revalidateTrades();
       if (rerender) X.render(); else refreshTradeRow(x);
     }
@@ -973,7 +974,7 @@
             if (!newSyms[key]) { var na = PF.newAssetFromSymbol(x.symbol.toUpperCase(), x.currency, S.uid); s.assets.push(na); newSyms[key] = na.id; }
             aid = newSyms[key];
           }
-          s.trades.push({ id: S.uid(), assetId: aid, date: x.date, side: x.side, qty: x.qty, price: x.price, fee: x.fee || 0, feeParts: x.feeParts && x.feeParts.commission + x.feeParts.tax + x.feeParts.other === (x.fee || 0) ? x.feeParts : undefined, currency: x.currency, fxRate: x.currency === 'TRY' ? null : x.fxRate, note: '', source: String(r.source).slice(0, 120) });
+          s.trades.push({ id: S.uid(), assetId: aid, date: x.date, side: x.side, qty: x.qty, price: x.price, fee: x.fee || 0, feeParts: x.feeParts && x.feeParts.commission + x.feeParts.tax + x.feeParts.other === (x.fee || 0) ? x.feeParts : undefined, currency: x.currency, fxRate: x.currency === 'TRY' ? null : x.fxRate, note: x.note ? String(x.note).slice(0, 1000) : '', source: String(r.source).slice(0, 120) });
         });
       }, sel.length + ' alım-satım kaydedildi' + (Object.keys(newSyms).length ? ', ' + Object.keys(newSyms).length + ' yeni varlık açıldı (türünü, riskini ve helal etiketini Varlıklar\'da belirle)' : '') + '.');
       if (ok) { pReview = null; location.hash = '#portfoy/islemler'; }
@@ -1124,6 +1125,17 @@
         },
         'pf-edit-trade': function () { tradeEdit = t.dataset.id; X.render(); var f = document.getElementById('pt-editing') || document.getElementById('pf-trade-form'); if (f) f.scrollIntoView({ block: 'start', behavior: 'smooth' }); setTimeout(tradePreview, 0); },
         'pf-edit-cancel': function () { tradeEdit = null; X.render(); },
+        'pf-note-an': function () { // v8.5: uygulamanın analiz gerekçesini nota ekle (kaynak ve saatle; emir dili yok)
+          var sel = document.getElementById('pt-asset'), a = sel && st().assets.find(function (x) { return x.id === sel.value; }), msg = document.getElementById('pt-note-msg'), ta = document.getElementById('pt-note');
+          var key = a && window.BgWatch ? window.BgWatch.keyOfAsset(a) : null; if (!key || !window.Report) { if (msg) msg.textContent = 'Bu varlık için piyasa analizi yok (sembol/fiyat kaynağı tanımla).'; return; }
+          if (msg) msg.innerHTML = '<span class="spinner"></span> Analiz yapılıyor…';
+          window.Report.gatherAsset({ MD: window.MData, AN: window.Analysis, SN: window.Snap, now: Date.now() }, key, { holding: true }).then(function (g) {
+            if (!g.ok) { if (msg) msg.textContent = 'Analiz yapılamadı: ' + g.error; return; }
+            var txt = window.Report.noteFromAnalysis(g, document.getElementById('pt-side') ? document.getElementById('pt-side').value : 'buy');
+            if (ta) { ta.value = (ta.value.trim() ? ta.value.trim() + ' | ' : '') + txt; ta.value = ta.value.slice(0, 1000); }
+            if (msg) msg.textContent = 'Eklendi. Kendi gerekçeni de yazabilirsin.';
+          });
+        },
         'pf-add-goal': function () { var s = st(), used = M.sum(s.goals.map(function (g) { return g.shareBp; })); X.mutate(function (s2) { s2.goals.push({ id: S.uid(), name: 'Yeni hedef', target: 0, targetYm: L.addMonthsYm(X.nowYm(), 36), glide: 'standard', shareBp: Math.max(0, 10000 - used) }); }, 'Hedef eklendi. Payı ve tutarı düzenle.'); },
         'pf-del-goal': function () { var id = t.dataset.id; if (!confirm('Hedef silinsin mi? Bağlı varlıklar ortak havuza döner.')) return; X.mutate(function (s) { s.goals = s.goals.filter(function (g) { return g.id !== id; }); s.assets.forEach(function (a) { if (a.goalId === id) a.goalId = null; }); }, 'Hedef silindi.'); },
         'pf-fetch': startFetch,

@@ -759,6 +759,13 @@
                       r84.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                       console.log('\n' + p84 + '/' + r84.length + ' v8.4 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length));
                       if (p84 !== r84.length) process.exit(1);
+                      console.log('\n— v8.5 (seans raporları: BIST/ABD/kripto saatleri ve tatiller, zarar durdur (stop) uyarıları, işlem gerekçe notları) —');
+                      return require('./run-tests-v85.js').run().then(function (r85) {
+                        var p85 = r85.filter(function (r) { return r.ok; }).length;
+                        r85.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                        console.log('\n' + p85 + '/' + r85.length + ' v8.5 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length));
+                        if (p85 !== r85.length) process.exit(1);
+                      });
                     });
                   });
                 });

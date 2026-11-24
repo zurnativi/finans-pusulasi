@@ -685,7 +685,8 @@
     tax: ['bsmv', 'vergi', 'tax', 'bsmv tutari'],
     ofee: ['diger masraf', 'diger ucret', 'diger', 'other fee', 'borsa payi', 'masraf'],
     total: ['tutar', 'toplam', 'net tutar', 'islem tutari', 'amount', 'total', 'brut tutar'],
-    currency: ['para birimi', 'doviz', 'currency', 'pb', 'doviz cinsi']
+    currency: ['para birimi', 'doviz', 'currency', 'pb', 'doviz cinsi'],
+    note: ['not', 'gerekce', 'notlar', 'note', 'notes', 'yorum', 'islem notu', 'alis/satis gerekcesi']   // v8.5: isteğe bağlı gerekçe sütunu
   };
   function detectTradeColumns(rows) {
     var best = { headerRow: -1, score: 0 };
@@ -703,7 +704,7 @@
     }
     var m = best.map || {};
     return { headerRow: best.headerRow, date: m.date != null ? m.date : -1, symbol: m.symbol != null ? m.symbol : -1, side: m.side != null ? m.side : -1, qty: m.qty != null ? m.qty : -1,
-      price: m.price != null ? m.price : -1, fee: m.fee != null ? m.fee : -1, tax: m.tax != null ? m.tax : -1, ofee: m.ofee != null ? m.ofee : -1, total: m.total != null ? m.total : -1, currency: m.currency != null ? m.currency : -1 };
+      price: m.price != null ? m.price : -1, fee: m.fee != null ? m.fee : -1, tax: m.tax != null ? m.tax : -1, ofee: m.ofee != null ? m.ofee : -1, total: m.total != null ? m.total : -1, currency: m.currency != null ? m.currency : -1, note: m.note != null ? m.note : -1 };
   }
   function normSide(v) {
     var f = fold(v);
@@ -722,6 +723,7 @@
       var item = { date: parseDateLoose(get('date'), parseDate), rawDate: String(get('date') || ''), symbol: rawSym, side: normSide(get('side')), rawSide: String(get('side') || ''),
         qty: parseScaled(get('qty'), 8), price: parseScaled(get('price'), 6), fee: map.fee >= 0 && String(get('fee')).trim() !== '' ? M.parse(get('fee')) : 0,
         written: map.total >= 0 && String(get('total')).trim() !== '' ? M.parse(get('total')) : null, currency: map.currency >= 0 ? normCur(get('currency')) : null };
+      if (map.note >= 0 && String(get('note') || '').trim()) item.note = String(get('note')).trim().slice(0, 1000);
       if (item.qty != null && item.qty < 0) { item.qty = -item.qty; if (!item.side) item.side = 'sell'; }
       if (item.fee != null && item.fee < 0) item.fee = -item.fee;
       // v8.4: ayrı BSMV/vergi ve diğer masraf sütunları toplam komisyona eklenir; kırılım saklanır

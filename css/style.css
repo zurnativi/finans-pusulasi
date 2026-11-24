@@ -627,3 +627,43 @@ form.editing,.card.editing{outline:2px solid var(--warn);outline-offset:4px;bord
 .notice.editing{margin-bottom:10px}
 .closed-pos summary{cursor:pointer}.closed-pos .actions li{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .valtable td{vertical-align:top}.price-status{margin:10px 0}
+/* v8.5: seans raporları, zarar durdur (stop) */
+.rp{display:grid;gap:14px}
+.rp-head h1{margin:2px 0 6px}.rp-kicker{color:var(--muted);font-size:.85rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+.rp-meta{color:var(--muted);font-size:.88rem}.rp-focus{margin:8px 0 0;padding:8px 10px;border-left:3px solid var(--brand);background:var(--bg);border-radius:6px}
+.rp-mk{gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.rp-kpis{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin:10px 0}
+.rp-kpi{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card)}
+.rp-kpi .label{color:var(--muted);font-size:.85rem}.rp-kpi .value{font-size:1.35rem;font-weight:750;font-variant-numeric:tabular-nums}.rp-kpi .sub{color:var(--muted);font-size:.82rem}
+.rp-lights{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin:10px 0}
+.rp-li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.rp-light{display:inline-block;flex:none;width:14px;height:14px;border-radius:50%;margin-top:4px;vertical-align:-2px;box-shadow:inset 0 0 0 2px rgba(0,0,0,.08)}
+.rp-green{background:#16a34a}.rp-amber{background:#e0a100}.rp-red{background:#dc2626}.rp-gray{background:#9aa5b8}
+.grid2{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.grid3{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:860px){.grid2,.grid3{grid-template-columns:1fr}}
+.rp-asset h2{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.rp-ah{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.rp-price{font-size:1.5rem;font-weight:750;font-variant-numeric:tabular-nums}
+.rp-story p,.rp-tech p{margin:4px 0}.rp-tech ul,.rp-news ul,.rp-ev ul{margin:4px 0;padding-left:18px}
+.rp-assess{border-radius:10px;padding:10px 12px;margin:10px 0;border:1px solid var(--line)}
+.rp-assess h3{margin:0 0 6px}.rp-assess p{margin:3px 0}
+.rp-review{background:var(--warn-bg);color:var(--warn)}.rp-positive{background:var(--ok-bg);color:var(--ok)}.rp-info{background:var(--info-bg);color:var(--info)}.rp-gap{background:var(--bg);color:var(--muted)}
+.rp-assess .hint{color:inherit;opacity:.85}
+.rp-lv{width:100%;border-collapse:collapse;font-size:.9rem}.rp-lv td{padding:4px 6px;border-bottom:1px solid var(--line)}.rp-lv tr.rp-now td{background:var(--info-bg);font-weight:700}
+.rp-stop{border-radius:10px;padding:10px 12px;margin:10px 0;border:1px solid var(--line)}.rp-stop h3{margin:0 0 4px}.rp-stop p{margin:3px 0}
+.rp-stop-red{background:var(--danger-bg);border-color:var(--danger)}.rp-stop-amber{background:var(--warn-bg)}.rp-stop-green{background:var(--ok-bg)}.rp-stop-gray{background:var(--bg)}
+.rp-halal{font-size:.88rem;padding:6px 10px;border-radius:8px;background:var(--bg);margin:8px 0}
+.rp-notes{font-size:.9rem;border-left:3px solid var(--line);padding-left:10px;margin:8px 0}
+.rp-src,.rp-end{font-size:.85rem;color:var(--muted)}
+.rp-wait{display:flex;gap:10px;align-items:center}
+.rp-edit td{background:var(--bg)}.rp-stform{display:grid;gap:10px}.rp-stform textarea,.tf-note textarea{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.rp-sugg{padding:8px 10px;border-radius:8px;background:var(--info-bg);color:var(--info);font-size:.9rem}
+.rp-log{font-size:.88rem}.sev-high{background:var(--warn-bg);color:var(--warn)}.sev-critical{background:#b42318;color:#fff}
+@media print{
+  header.top,nav,footer,.no-print,.banner,.subtabs,.savebar,#toast-root{display:none!important}
+  body,html{background:#fff;color:#000}main{max-width:none;padding:0}
+  .card{box-shadow:none;border-color:#ccc;break-inside:avoid-page}
+  .rp-asset{break-before:page}.rp-charts,.rp-asset .chartbox{break-inside:avoid}
+  a{color:#000;text-decoration:none}
+}
+.rp-mk .btn.primary .hint,.rp-mk .btn.primary .muted{color:inherit;opacity:.9}
+@media print{.rp .card{break-inside:auto}.rp-mk{display:none!important}.rp-kpis,.rp-lights,.rp-charts>*,.rp-lv,table{break-inside:avoid}.rp-head{padding:6px 10px}}

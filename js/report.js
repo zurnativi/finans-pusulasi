@@ -291,6 +291,18 @@
       return build({ slot: sl, nowMs: now, holdings: hold, assets: assets, news: news, calendar: o.calendar, scenarios: o.scenarios, probs: o.probs, macro: o.macro, alerts: o.alerts, personal: o.personal !== false, gaps: o.gaps || [], feedAt: o.feedAt, origin: o.origin });
     });
   }
-  return { VERSION: VERSION, gatherAsset: gatherAsset, priceOf: priceOf, technicals: technicals, levels: levels, assessment: assessment, narrative: narrative, build: build, buildPublic: buildPublic,
+  /* İşlem notu için kısa analiz gerekçesi (uygulama önerisi; kaynak ve saatle) */
+  function noteFromAnalysis(g, side) {
+    var s = g.snap || {}, P = priceOf(g, SS.marketOfKey(g.key), Date.now()), T = technicals(g, P), L = levels(g, P), parts = [];
+    parts.push('Uygulama analizi ' + (s.lastDate || '') + ': ' + ((s.stance && s.stance.label) || '—') + (num(s.total) ? ' (skor ' + s.total + ')' : ''));
+    if (T.trend) parts.push(T.trend.label); if (num(T.rsi)) parts.push('RSI ' + f1(T.rsi));
+    if (L.support[0]) parts.push('destek ' + fmtP(L.support[0].lo) + '–' + fmtP(L.support[0].hi)); if (L.resistance[0]) parts.push('direnç ' + fmtP(L.resistance[0].lo) + '–' + fmtP(L.resistance[0].hi));
+    if (side === 'sell' && s.stance && s.stance.hold) parts.push('elde tutma: ' + s.stance.hold.label);
+    if (side !== 'sell' && L.plan) parts.push('plan: ' + L.plan.verdict);
+    var sg = ST.suggest(s); if (side !== 'sell' && sg.ok) parts.push('önerilen stop ' + fmtP(sg.price));
+    if (s.halal && s.halal.status !== 'uygun') parts.push('helal doğrulanmadı');
+    return parts.join('; ') + '.';
+  }
+  return { VERSION: VERSION, noteFromAnalysis: noteFromAnalysis, gatherAsset: gatherAsset, priceOf: priceOf, technicals: technicals, levels: levels, assessment: assessment, narrative: narrative, build: build, buildPublic: buildPublic,
     holdingsFor: holdingsFor, marketsHeld: marketsHeld, stopQuote: stopQuote, generate: generate, eventsFor: eventsFor, scenariosFor: scenariosFor, riskLights: riskLights, groupOfKey: groupOfKey, pushText: pushText, pc: pc };
 });

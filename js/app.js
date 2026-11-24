@@ -1,7 +1,7 @@
 /* app.js — Arayüz. Hesaplar calc.js'te, para işlemleri money.js'te (tam sayı kuruş). */
 (function () {
   'use strict';
-  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, AUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, HUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
+  var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, AUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, HUI = null, RUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
   var PD = window.PersonalData || null, PDui = null, AP = window.AutoPrice || null, APui = null;
   var txEdit = null, trEdit = null, state = null, lastSaved = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
@@ -76,9 +76,10 @@
       state = S.validateState(JSON.parse(JSON.stringify(state))); // doğrulanmış kopya (alım-satımla izlenen varlık değerleri de güncellenir)
     } catch (e) { state = JSON.parse(before); toast('İşlem yapılmadı: ' + e.message); render(); return false; }
     undoStack = before;
-    var entry = recordHistory(before, msg, opts);
+    var quiet = !!(opts && opts.quiet); // v8.5: arka plan kayıtları (stop durumu/geçmişi) ekranı yeniden çizmez, yazılan formu silmez
+    var entry = quiet ? null : recordHistory(before, msg, opts);
     persist();
-    render();
+    if (!quiet) render();
     if (msg) toast(msg, function () {
       if (entry && !entry.bulk) return revertHistory(entry.id);
       state = JSON.parse(undoStack); undoStack = null; persist(); render(); toast('Geri alındı');
@@ -1722,9 +1723,9 @@
   }
 
   /* ---------- Yönlendirme ve çizim ---------- */
-  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return AUI.render(); }, veri: renderImport, haberler: function () { return HUI ? HUI.render() : '<p class="muted">Haber merkezi yüklenemedi.</p>'; }, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); }, gecmis: renderHistory };
+  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return AUI.render(); }, veri: renderImport, haberler: function () { return HUI ? HUI.render() : '<p class="muted">Haber merkezi yüklenemedi.</p>'; }, raporlar: function () { return RUI ? RUI.render() : '<p class="muted">Raporlar yüklenemedi.</p>'; }, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); }, gecmis: renderHistory };
   var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce', ayarlar: 'ayarlar', guvenlik: 'ayarlar', gecmis: 'ayarlar' };
-  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', haberler: 'Haberler ve bildirimler', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit', gecmis: 'Değişiklik geçmişi' };
+  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', haberler: 'Haberler ve bildirimler', raporlar: 'Seans raporları', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit', gecmis: 'Değişiklik geçmişi' };
   function areaNav() {
     if (AREA[tab] === 'ayarlar') return '<nav class="areanav" aria-label="Ayar bölümleri">' + [['ayarlar', 'Genel ayarlar'], ['guvenlik', 'Yedek, eşitleme, kilit'], ['gecmis', 'Değişiklik geçmişi']].map(function (x) { return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
     if (AREA[tab] !== 'butce') return '';
@@ -1791,6 +1792,7 @@
     if (t.dataset.ask) { ask(t.dataset.ask); return; }
     var act = t.dataset.act;
     if (SUI && SUI.onClick(act, t)) return;
+    if (RUI && RUI.onClick(act, t)) return;
     var A = {
       'tx-edit': function () { txEdit = t.dataset.id; render(); var d = $('#txe-desc'); if (d) { d.focus(); d.select(); } },
       'tx-cancel': function () { txEdit = null; render(); },
@@ -1989,6 +1991,7 @@
   function onSubmit(e) {
     if (PUI.onSubmit(e)) return;
     if (AUI && AUI.onSubmit(e)) return;
+    if (RUI && RUI.onSubmit(e)) return;
     if (e.target.id === 'tx-form') {
       e.preventDefault();
       var date = P.parseDate($('#tx-date').value), desc = $('#tx-desc').value.trim(), amt = M.parse($('#tx-amt').value), sign = Number($('#tx-type').value);
@@ -2039,6 +2042,12 @@
         });
         if (AUI) AUI.setHub(HUI);
       } catch (e) { console.error(e); HUI = null; }
+    }
+    if (window.ReportsUI && window.Report && window.Sessions && window.Stops) {
+      try {
+        RUI = window.ReportsUI({ state: function () { return state; }, mutate: mutate, render: function () { if (state) render(); }, toast: toast, esc: esc, tl: tl, tip: tip, today: today, subtabs: subtabs, sub: function () { return sub; }, tab: function () { return tab; } });
+        RUI.start();
+      } catch (e) { console.error(e); RUI = null; }
     }
     document.addEventListener('click', onClick);
     document.addEventListener('change', onChange);

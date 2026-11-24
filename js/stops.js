@@ -113,6 +113,7 @@
 
   /* ---------- Öneri: yapı (destek bölgesi) ve oynaklık (ATR) ----------
    * snap: snapshot.compact çıktısı (price, structure.zones, ind.atr, plans, closeOnly). Kullanıcı karar verir; öneri kaydedilmez. */
+  function rtick(v) { var d = v >= 1 ? 2 : v >= 0.01 ? 4 : 6, k = Math.pow(10, d); return Math.round(v * k) / k; } // fiyat adımına uygun yuvarlama (Midas'a girilebilir)
   function suggest(snap, opts) {
     opts = opts || {}; if (!snap || !num(snap.price) || snap.price <= 0) return { ok: false, why: 'Güncel analiz/fiyat yok; öneri üretilemedi.' };
     if (snap.ind && num(snap.ind.atrPct) && snap.ind.atrPct < 0.003 && snap.kind === 'fund') return { ok: false, why: 'Çok düşük oynaklıklı fon (günlük ortalama hareket %' + pct(snap.ind.atrPct, 2) + '): kira sertifikası/para piyasası türü fonlarda fiyat stopu anlamlı değil; risk takibi için fonun türüne ve getirisine bak.' };
@@ -121,11 +122,11 @@
     var pad = atr ? 0.5 * atr : p * 0.01;
     zones.slice(0, 2).forEach(function (z) {
       var lv = z.lo - pad, d = (p - lv) / p;
-      if (d > 0.008 && d < 0.2) cands.push({ price: r4(lv), method: 'structure', label: 'Destek altı', why: 'En yakın destek bölgesi ' + fmtP(z.lo) + '–' + fmtP(z.hi) + (z.touches ? ' (' + z.touches + ' kez test edildi)' : '') + ' altına ' + (atr ? '0,5×ATR (' + fmtP(pad) + ')' : '%1') + ' pay bırakıldı. Bölge kırılırsa yükseliş yapısı bozulur.', distPct: d, atrMult: atr ? (p - lv) / atr : null });
+      if (d > 0.008 && d < 0.2) cands.push({ price: rtick(lv), method: 'structure', label: 'Destek altı', why: 'En yakın destek bölgesi ' + fmtP(z.lo) + '–' + fmtP(z.hi) + (z.touches ? ' (' + z.touches + ' kez test edildi)' : '') + ' altına ' + (atr ? '0,5×ATR (' + fmtP(pad) + ')' : '%1') + ' pay bırakıldı. Bölge kırılırsa yükseliş yapısı bozulur.', distPct: d, atrMult: atr ? (p - lv) / atr : null });
     });
     var pl = snap.plans && snap.plans.conservative;
-    if (pl && num(pl.stop) && pl.stop < p && (p - pl.stop) / p < 0.25 && !cands.some(function (c) { return Math.abs(c.price - pl.stop) / p < 0.003; })) cands.push({ price: r4(pl.stop), method: 'plan', label: 'Analiz planı', why: 'Portföy Analizi temkinli planındaki zarar-kes seviyesi (' + (pl.how || 'plan') + ').', distPct: (p - pl.stop) / p, atrMult: atr ? (p - pl.stop) / atr : null });
-    if (atr) { var m = closeOnly ? 3 : 2.5, lv2 = p - m * atr; if (lv2 > 0) cands.push({ price: r4(lv2), method: 'atr', label: fmt(m, 1) + '×ATR', why: 'Oynaklığa göre: fiyat − ' + fmt(m, 1) + '×ATR(14) = ' + fmtP(p) + ' − ' + fmtP(m * atr) + '. Günlük normal dalgalanmada tetiklenmemesi için.', distPct: (p - lv2) / p, atrMult: m }); }
+    if (pl && num(pl.stop) && pl.stop < p && (p - pl.stop) / p < 0.25 && !cands.some(function (c) { return Math.abs(c.price - pl.stop) / p < 0.003; })) cands.push({ price: rtick(pl.stop), method: 'plan', label: 'Analiz planı', why: 'Portföy Analizi temkinli planındaki zarar-kes seviyesi (' + (pl.how || 'plan') + ').', distPct: (p - pl.stop) / p, atrMult: atr ? (p - pl.stop) / atr : null });
+    if (atr) { var m = closeOnly ? 3 : 2.5, lv2 = p - m * atr; if (lv2 > 0) cands.push({ price: rtick(lv2), method: 'atr', label: fmt(m, 1) + '×ATR', why: 'Oynaklığa göre: fiyat − ' + fmt(m, 1) + '×ATR(14) = ' + fmtP(p) + ' − ' + fmtP(m * atr) + '. Günlük normal dalgalanmada tetiklenmemesi için.', distPct: (p - lv2) / p, atrMult: m }); }
     if (!cands.length) return { ok: false, why: 'Fiyatın altında güvenilir destek ve ATR bulunamadı; seviyeyi kendin belirle.' };
     // tercih: 1,5–4 ATR aralığındaki yapı seviyesi; yoksa ATR; yoksa ilk
     var pick = cands.filter(function (c) { return c.method === 'structure' && (!c.atrMult || (c.atrMult >= 1.5 && c.atrMult <= 4)); })[0] || cands.filter(function (c) { return c.method === 'atr'; })[0] || cands[0];
