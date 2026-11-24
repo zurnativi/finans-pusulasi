@@ -168,6 +168,19 @@
   });
 
   /* ---------- Sürüm ---------- */
+  test('ABD: listede borsası olmayan sembol AMEX/NASDAQ/NYSE/CBOE\'de aranır; ilk bulunan alınır, başka sembol karışmaz', function () {
+    var body = JSON.parse(PR.usBody(['DRVN'])); eq(body.symbols.tickers, ['AMEX:DRVN', 'NASDAQ:DRVN', 'NYSE:DRVN', 'CBOE:DRVN']);
+    var r = PR.parseTradingViewUs({ data: [{ s: 'NASDAQ:DRVN', d: [17.25, 'USD', 1763928000] }, { s: 'NYSE:DRVN', d: [99, 'USD', 1763928000] }, { s: 'NASDAQ:SPUS', d: [1, 'USD', 0] }] }, ['DRVN']);
+    eq(Object.keys(r), ['DRVN']); eq(r.DRVN.p, 17250000);
+  });
+  test('Birleştirme: tek otomatik fiyat yolu (Portföy açılınca da AutoPrice çalışır); satır içi işlem düzeltmesi geçmişe ve "düzeltildi" işaretine yazılır', function () {
+    var app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), pui = fs.readFileSync(path.join(ROOT, 'js', 'portfolio-ui.js'), 'utf8');
+    ok(/autoPrice: function \(\) \{ return APui \? \(APui\.run\(\{\}\), true\) : false; \}/.test(app), 'PortfolioUI AutoPrice\'a bağlı değil');
+    ok(/if \(X\.autoPrice && X\.autoPrice\(\)\) return;/.test(pui), 'Portföy kendi ayrı fiyat çekimini yapıyor');
+    ok(/if \(!APui\) \{ \/\/ yedek/.test(app), 'eski zamanlayıcı her zaman çalışıyor (çift çekim)');
+    ok(/'tx-save'[\s\S]{0,1200}tx\.editedAt = new Date\(\)\.toISOString\(\)/.test(app) && /değişiklik yok/.test(app));
+    eq((app.match(/'tx-edit':/g) || []).length, 1, 'tek tx-edit eylemi');
+  });
   test('Sürüm: index.html ve sw.js 8.4.0; autoprice.js ve history.js sayfada ve çevrimdışı kabukta, app.js\'ten önce', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
     ok(/VERSION = '8\.4\.0'/.test(sw) && /'autoprice', 'history'/.test(sw)); ok(idx.indexOf('8.3.1') < 0);

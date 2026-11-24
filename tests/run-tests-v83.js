@@ -160,7 +160,7 @@
   test('Net varlık dökümü: ekranda satırlar ve açıklama var (Ana sayfa) ve Portföy kartı net varlığa yönlendirir', function () {
     var app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), pui = fs.readFileSync(path.join(ROOT, 'js', 'portfolio-ui.js'), 'utf8');
     ok(/Net varlık nasıl hesaplandı\?/.test(app) && /netWorthBreakdownHtml\)/.test(app) && /Gelecek taksitler/.test(app) && /Kredi kartı borcu/.test(app) && /Toplam birikim/.test(app));
-    ok(/Borçlar düşülmemiştir/.test(pui) && /banka nakdi ve borçlar dahil değildir/.test(pui));
+    ok(/Acil fon dahil değildir/.test(pui) && /banka nakdi ve borçlar dahil değildir/.test(pui));
   });
 
   function run() {
