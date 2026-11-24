@@ -620,3 +620,10 @@ table.sc td{vertical-align:top;min-width:120px}table.sc .an{font-size:.85rem}.wa
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:480px){.bgw-step{gap:8px}}
 .bgw-rem{list-style:none;padding:0;margin:6px 0}.bgw-rem li{padding:6px 0;border-bottom:1px solid var(--line)}.bgw-rem li.overdue b{color:var(--danger)}.bgw-rem li.today b{color:var(--warn)}
+/* v8.4: değişiklik geçmişi, düzeltme kipi, kapanan pozisyonlar, fiyat tablosu */
+.hist-list{list-style:none;padding:0;margin:0}.hist-item{padding:10px 0;border-bottom:1px solid var(--line)}.hist-item.reverted{opacity:.65}
+.hist-ch{margin:6px 0 0 0;padding-left:18px}.hist-ch li{margin:3px 0}.hist-ch s{color:var(--muted)}
+form.editing,.card.editing{outline:2px solid var(--warn);outline-offset:4px;border-radius:10px}
+.notice.editing{margin-bottom:10px}
+.closed-pos summary{cursor:pointer}.closed-pos .actions li{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.valtable td{vertical-align:top}.price-status{margin:10px 0}

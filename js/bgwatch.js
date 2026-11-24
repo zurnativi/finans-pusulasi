@@ -139,7 +139,7 @@
     (s.assets || []).forEach(function (a) {
       var pk = a.priceKey && s.prices && s.prices[a.priceKey]; if (!pk || !pk.points || pk.points.length < 2) return; var p1 = pk.points[pk.points.length - 1], p0 = pk.points[pk.points.length - 2];
       if (!(p0.p > 0) || !(p1.p > 0) || EV.daysBetween(p0.d, p1.d) > 5 || EV.daysBetween(p1.d, EV.tsiYmd(now)) > 3) return;
-      var tr = (s.trades || []).some(function (t) { return t.assetId === a.id; }); if (!tr) return;
+      var tr = (s.trades || []).some(function (t) { return t.assetId === a.id; }); if (!tr || PF.isClosed(s, a)) return;
       out.push({ key: a.id, name: a.name, pct: (p1.p - p0.p) / p0.p, asOf: p1.d, prevD: p0.d, src: p1.src || 'Fiyat geçmişi' });
     });
     return out;
@@ -169,17 +169,12 @@
 
   /* ======================= FİYAT YENİLEME (uygulamadaki "Fiyatları güncelle" ile aynı doğrulama; onaysız yalnız geçerli ve büyük sıçrama olmayanlar) ======================= */
   function usedKeys(s) {
-    var keys = []; (s.assets || []).forEach(function (a) { if (a.tracking === 'trades') { var k = PF.assetKey(a); if (keys.indexOf(k) < 0) keys.push(k); } });
+    var keys = []; (s.assets || []).forEach(function (a) { if (a.tracking === 'trades' && !PF.isClosed(s, a) && !PF.isIdle(s, a)) { var k = PF.assetKey(a); if (keys.indexOf(k) < 0) keys.push(k); } });
     ['fx:USD', 'fx:EUR', 'metal:XAU', 'idx:KATLM', 'idx:XKTUM', 'idx:XU100'].forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
     Object.keys(s.prices || {}).forEach(function (k) { if (keys.indexOf(k) < 0 && PF.keyInfo(k)) keys.push(k); });
     return keys;
   }
-  function setPrice(s, key, d, p, src, at) {
-    var ki = PF.keyInfo(key), cur = ki && ki.cur ? ki.cur : ((s.assets || []).find(function (a) { return PF.assetKey(a) === key; }) || {}).currency || 'TRY';
-    var pt = { d: d, p: p, src: String(src || '').slice(0, 160) }; if (at) pt.at = at; PF.addPricePoint(s.prices, key, cur, pt);
-    var m = /^(fx:(USD|EUR)|metal:(XAU))$/.exec(key);
-    if (m) { var c2 = m[2] || m[3], used = (s.accounts || []).some(function (a) { return a.currency === c2; }) || (s.assets || []).some(function (a) { return a.currency === c2; }) || (s.rates && s.rates[c2]); var lp = PF.lastPoint(s, key); if (used && lp && lp.d === d) s.rates[c2] = { rate: PF.fxKurusFromPrice(p), date: d }; }
-  }
+  function setPrice(s, key, d, p, src, at) { PF.setPrice(s, key, d, p, src, at); } // uygulamadakiyle aynı yol (Portfolio.setPrice)
   function refreshPrices(s, today, opts) {
     var keys = usedKeys(s).filter(function (k) { var ki = PF.keyInfo(k); return ki && ki.kind !== 'manual'; }), out = { applied: [], skipped: [], errors: [] };
     return PR.fetchAll(keys, { twelveKey: '' }).then(function (res) {

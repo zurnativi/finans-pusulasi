@@ -753,6 +753,13 @@
                     r83.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                     console.log('\n' + p83 + '/' + r83.length + ' v8.3 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length));
                     if (p83 !== r83.length) process.exit(1);
+                    console.log('\n— v8.4 (canlı fiyatla tek değerleme, kapanan/işlemsiz pozisyonlar, komisyon/BSMV kırılımı, düzeltme doğrulaması, değişiklik geçmişi ve geri al) —');
+                    return require('./run-tests-v84.js').run().then(function (r84) {
+                      var p84 = r84.filter(function (r) { return r.ok; }).length;
+                      r84.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                      console.log('\n' + p84 + '/' + r84.length + ' v8.4 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length));
+                      if (p84 !== r84.length) process.exit(1);
+                    });
                   });
                 });
               });

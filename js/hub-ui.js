@@ -51,7 +51,7 @@
       (s.assets || []).forEach(function (a) {
         var pk = a.priceKey && s.prices && s.prices[a.priceKey]; if (!pk || !pk.points || pk.points.length < 2) return; var p1 = pk.points[pk.points.length - 1], p0 = pk.points[pk.points.length - 2];
         if (!(p0.p > 0) || !(p1.p > 0) || EV.daysBetween(p0.d, p1.d) > 5 || EV.daysBetween(p1.d, EV.tsiYmd(now)) > 3) return;
-        var tr = (s.trades || []).some(function (t) { return t.assetId === a.id; }); if (!tr) return;
+        var tr = (s.trades || []).some(function (t) { return t.assetId === a.id; }); if (!tr || window.Portfolio.isClosed(s, a)) return;
         out.push({ key: a.id, name: a.name, pct: (p1.p - p0.p) / p0.p, asOf: p1.d, prevD: p0.d, src: p1.src || 'Fiyat geçmişi' });
       });
       return out;

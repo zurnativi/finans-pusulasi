@@ -115,7 +115,7 @@
     if (/^cg:[a-z0-9-]{1,60}$/.test(key)) return { label: 'Kripto: ' + key.slice(3) + ' (TL, CoinGecko)', cur: 'TRY', kind: 'crypto' };
     if (/^tefas:[A-Z0-9]{2,6}$/.test(key)) return { label: key.slice(6) + ' (TEFAS fonu, TL)', cur: 'TRY', kind: 'fund' };
     if (/^bist:[A-Z0-9]{2,8}$/.test(key)) return { label: key.slice(5) + ' (BIST hissesi, TL, 15 dk gecikmeli)', cur: 'TRY', kind: 'stock' };
-    if (/^td:[A-Z0-9.:-]{1,20}$/.test(key)) return { label: key.slice(3) + ' (USD, Twelve Data)', cur: 'USD', kind: 'etf' };
+    if (/^td:[A-Z0-9.:-]{1,20}$/.test(key)) return { label: key.slice(3) + ' (USD, ABD borsası)', cur: 'USD', kind: 'etf' };
     if (/^m:[A-Za-z0-9_-]{1,64}$/.test(key)) return { label: 'Elle girilen fiyat', cur: null, kind: 'manual' };
     return null;
   }
@@ -275,9 +275,20 @@
     return state;
   }
   function summary(state, todayYmd) {
-    var rows = (state.assets || []).filter(function (a) { return a.tracking === 'trades'; }).map(function (a) { return position(state, a, todayYmd); });
-    var s = { rows: rows, costTL: 0, mvTL: 0, unrealizedTL: 0, realizedTL: 0, feesTL: 0, boughtTL: 0, divTL: 0, withholdingTL: 0, missing: [] };
-    rows.forEach(function (r) {
+    // v8.4: rows yalnızca AÇIK pozisyonlar (elde adet var veya hatalı defter). Tamamı satılmış (kapanan) ve hiç işlemi olmayan (boş) varlıklar
+    // listelere/grafiklere/sayımlara girmez; ama kapananların gerçekleşen kâr/zararı, komisyonu ve temettüsü toplamlara DAHİLDİR.
+    var all = (state.assets || []).filter(function (a) { return a.tracking === 'trades'; }).map(function (a) { return position(state, a, todayYmd); });
+    var rows = [], closedRows = [], idle = [];
+    all.forEach(function (r) { var n = tradesOf(state, r.asset.id).length; if (!n) idle.push(r.asset); else if (!r.ledger.errors.length && r.ledger.units === 0) closedRows.push(r); else rows.push(r); });
+    var s = { rows: rows, closedRows: closedRows, idle: idle, allRows: all, costTL: 0, mvTL: 0, unrealizedTL: 0, realizedTL: 0, feesTL: 0, boughtTL: 0, divTL: 0, withholdingTL: 0, missing: [], openRealizedTL: 0, closedRealizedTL: 0 };
+    closedRows.forEach(function (r) { s.closedRealizedTL = M.add(s.closedRealizedTL, r.ledger.realizedTL); });
+    rows.forEach(function (r) { s.openRealizedTL = M.add(s.openRealizedTL, r.ledger.realizedTL); });
+    rows.concat(closedRows).forEach(function (r) {
+      if (r.ledger.units === 0 && !r.ledger.errors.length) { // kapanan: yalnız gerçekleşen tutarlar
+        s.divTL = M.add(s.divTL, r.ledger.divTL); s.withholdingTL = M.add(s.withholdingTL, r.ledger.withholdingTL);
+        s.realizedTL = M.add(s.realizedTL, r.ledger.realizedTL); s.feesTL = M.add(s.feesTL, r.ledger.feesTL); s.boughtTL = M.add(s.boughtTL, r.ledger.boughtTL);
+        return;
+      }
       s.divTL = M.add(s.divTL, r.ledger.divTL); s.withholdingTL = M.add(s.withholdingTL, r.ledger.withholdingTL);
       s.costTL = M.add(s.costTL, r.ledger.costTL); s.realizedTL = M.add(s.realizedTL, r.ledger.realizedTL); s.feesTL = M.add(s.feesTL, r.ledger.feesTL); s.boughtTL = M.add(s.boughtTL, r.ledger.boughtTL);
       if (r.mvTL == null) { s.missing.push(r.asset.name); s.mvTL = M.add(s.mvTL, r.ledger.costTL); }
@@ -285,6 +296,7 @@
     });
     s.totalPLTL = M.add(s.unrealizedTL, s.realizedTL);
     s.totalPLBp = s.boughtTL ? M.ratioBp(s.totalPLTL, s.boughtTL) : 0;
+    s.openPLTL = M.add(s.unrealizedTL, s.openRealizedTL);
     return s;
   }
 
@@ -411,10 +423,54 @@
     { key: 'fx:USD', label: 'ABD doları', unit: 'USD' },
     { key: 'idx:XU100', label: 'BIST 100 (faizli şirketler dahil)', unit: 'endeks payı', detailOnly: true }
   ];
+
+  /* Fiyatı kaydeder (otomatik güncelleme ve elle giriş ortak yolu). Döviz ve gram altın, en yeni fiyatsa Hesaplar'daki kurla da eşitlenir. */
+  function setPrice(s, key, d, p, src, at) {
+    var ki = keyInfo(key), cur = ki && ki.cur ? ki.cur : 'TRY';
+    var pt = { d: d, p: p, src: String(src || '').slice(0, 160) }; if (at) pt.at = at;
+    if (!s.prices) s.prices = {};
+    addPricePoint(s.prices, key, cur, pt);
+    var m = /^(fx:(USD|EUR)|metal:(XAU))$/.exec(key);
+    if (m) {
+      var c = m[2] || m[3], used = (s.accounts || []).some(function (a) { return a.currency === c; }) || (s.assets || []).some(function (a) { return a.currency === c; }) || (s.rates && s.rates[c]);
+      var lp = lastPoint(s, key);
+      if (used && lp && lp.d === d) { if (!s.rates) s.rates = {}; s.rates[c] = { rate: fxKurusFromPrice(p), date: d }; }
+    }
+  }
+
+  /* Kapanan pozisyon: alım-satımla izlenen, işlemi olan ve elde adedi kalmayan varlık (tamamı satılmış). Listelerde/grafiklerde/sayımlarda yer almaz;
+   * gerçekleşen kâr/zarar ve tarihleriyle "Kapanan pozisyonlar" bölümünde görünür. İşlemi hiç olmayan varlık "boş"tur (kapanmış sayılmaz). */
+  function isClosed(state, a) {
+    if (!a || a.tracking !== 'trades') return false;
+    var t = tradesOf(state, a.id); if (!t.length) return false;
+    var lg = ledger(t); return !lg.errors.length && lg.units === 0;
+  }
+  function isIdle(state, a) { return !!a && a.tracking === 'trades' && !tradesOf(state, a.id).length; }
+  /* Kapanan pozisyonlar: ilk alış, son satış tarihi, alınan/satılan tutar, komisyon, gerçekleşen kâr/zarar (komisyon ve temettü dahil) */
+  function closedPositions(state, todayYmd) {
+    return (state.assets || []).filter(function (a) { return isClosed(state, a); }).map(function (a) {
+      var ts = sortTrades(tradesOf(state, a.id)), lg = ledger(ts), buys = ts.filter(isBuyLike), sells = ts.filter(function (t) { return t.side === 'sell'; });
+      return { asset: a, id: a.id, name: a.name, currency: a.currency || 'TRY', trades: ts.length, firstBuy: buys.length ? buys[0].date : ts[0].date,
+        lastSell: sells.length ? sells[sells.length - 1].date : ts[ts.length - 1].date, boughtTL: lg.boughtTL, soldTL: lg.soldTL, feesTL: lg.feesTL, divTL: lg.divTL,
+        realizedTL: lg.realizedTL, realizedBp: lg.boughtTL ? M.ratioBp(lg.realizedTL, lg.boughtTL) : 0 };
+    }).sort(function (x, y) { return x.lastSell < y.lastSell ? 1 : x.lastSell > y.lastSell ? -1 : 0; });
+  }
+  /* Değerleme dökümü: alım-satımla izlenen her varlığın değeri, fiyatı, fiyat tarihi/kaynağı ve eskime durumu (ekran ve testler aynı kaynağı kullanır) */
+  function valuationRows(state, todayYmd) {
+    var fxSrc = {}; ['USD', 'EUR'].forEach(function (c) { var lp = lastPoint(state, 'fx:' + c); if (lp) fxSrc[c] = lp; });
+    return summary(state, todayYmd).rows.filter(function (r) { return r.ledger.units > 0 || r.asset.value > 0; }).map(function (r) {
+      var a = r.asset, valueTL = r.mvTL != null ? r.mvTL : r.ledger.costTL, rate = state.rates && state.rates[r.currency];
+      return { id: a.id, name: a.name, cls: a.cls, key: assetKey(a), currency: r.currency, units: r.ledger.units, valueTL: valueTL, costTL: r.ledger.costTL, basis: r.mvTL != null ? 'market' : 'cost',
+        price: r.price, kind: r.kind, stale: r.stale, fx: r.currency !== 'TRY' ? { rate: r.fx, date: rate ? rate.date : null, src: fxSrc[r.currency] ? fxSrc[r.currency].src : '' } : null };
+    });
+  }
+
   function returnsReport(state, todayYmd) {
     var vs = valuationSeries(state, todayYmd);
     if (!vs.points.length) return { empty: true };
     var last = vs.points[vs.points.length - 1];
+    // Bugünkü değer, net varlık ve varlık listesiyle AYNI hesaptan gelir (pozisyon değeri: adet × son fiyat × kur); tek fark kalmasın.
+    try { var smNow = summary(state, todayYmd); if (!smNow.missing.length && last.date === todayYmd) last.value = smNow.mvTL; } catch (eNow) { /* seri değeri kalır */ }
     var xf = vs.flows.map(function (f) { return { date: f.date, amount: -f.amount }; }).concat([{ date: todayYmd, amount: last.value }]);
     var invested = M.sum(vs.flows.filter(function (f) { return f.amount > 0; }).map(function (f) { return f.amount; }));
     var withdrawn = M.sum(vs.flows.filter(function (f) { return f.amount < 0; }).map(function (f) { return -f.amount; }));
@@ -625,7 +681,9 @@
     side: ['islem', 'islem turu', 'islem tipi', 'yon', 'tip', 'tur', 'alis/satis', 'a/s', 'side', 'type', 'buy/sell', 'emir tipi'],
     qty: ['adet', 'miktar', 'lot', 'nominal', 'pay', 'quantity', 'qty', 'units', 'gerceklesen adet', 'pay adedi'],
     price: ['fiyat', 'birim fiyat', 'gerceklesen fiyat', 'ortalama fiyat', 'price', 'islem fiyati', 'pay fiyati'],
-    fee: ['komisyon', 'masraf', 'ucret', 'bsmv', 'fee', 'commission', 'islem ucreti'],
+    fee: ['komisyon', 'masraf', 'ucret', 'fee', 'commission', 'islem ucreti'],
+    tax: ['bsmv', 'vergi', 'tax', 'bsmv tutari'],
+    ofee: ['diger masraf', 'diger ucret', 'diger', 'other fee', 'borsa payi', 'masraf'],
     total: ['tutar', 'toplam', 'net tutar', 'islem tutari', 'amount', 'total', 'brut tutar'],
     currency: ['para birimi', 'doviz', 'currency', 'pb', 'doviz cinsi']
   };
@@ -645,7 +703,7 @@
     }
     var m = best.map || {};
     return { headerRow: best.headerRow, date: m.date != null ? m.date : -1, symbol: m.symbol != null ? m.symbol : -1, side: m.side != null ? m.side : -1, qty: m.qty != null ? m.qty : -1,
-      price: m.price != null ? m.price : -1, fee: m.fee != null ? m.fee : -1, total: m.total != null ? m.total : -1, currency: m.currency != null ? m.currency : -1 };
+      price: m.price != null ? m.price : -1, fee: m.fee != null ? m.fee : -1, tax: m.tax != null ? m.tax : -1, ofee: m.ofee != null ? m.ofee : -1, total: m.total != null ? m.total : -1, currency: m.currency != null ? m.currency : -1 };
   }
   function normSide(v) {
     var f = fold(v);
@@ -666,6 +724,11 @@
         written: map.total >= 0 && String(get('total')).trim() !== '' ? M.parse(get('total')) : null, currency: map.currency >= 0 ? normCur(get('currency')) : null };
       if (item.qty != null && item.qty < 0) { item.qty = -item.qty; if (!item.side) item.side = 'sell'; }
       if (item.fee != null && item.fee < 0) item.fee = -item.fee;
+      // v8.4: ayrı BSMV/vergi ve diğer masraf sütunları toplam komisyona eklenir; kırılım saklanır
+      var tx = map.tax >= 0 && String(get('tax')).trim() !== '' ? M.parse(get('tax')) : 0, ox = map.ofee >= 0 && String(get('ofee')).trim() !== '' ? M.parse(get('ofee')) : 0;
+      if (tx != null && tx < 0) tx = -tx; if (ox != null && ox < 0) ox = -ox;
+      if (item.fee == null || tx == null || ox == null) item.fee = null;
+      else if (tx || ox) { item.feeParts = { commission: item.fee, tax: tx, other: ox }; item.fee = M.add(M.add(item.fee, tx), ox); }
       if (item.written != null && item.written < 0) item.written = -item.written;
       if (!item.symbol && item.qty == null && item.price == null) continue;
       out.push(item);
@@ -819,7 +882,7 @@
     points: points, lastPoint: lastPoint, addPricePoint: addPricePoint, priceAt: priceAt, mergePoints: mergePoints,
     checkPrice: checkPrice, staleness: staleness, crossCheck: crossCheck, gramFromOunce: gramFromOunce,
     SIDES: SIDES, isBuyLike: isBuyLike, hasMarketPrice: hasMarketPrice, tradeFlow: tradeFlow, splitAdded: splitAdded,
-    sortTrades: sortTrades, tradeGross: tradeGross, tradeCash: tradeCash, tradeTL: tradeTL, ledger: ledger, tradesOf: tradesOf, fxNow: fxNow, currentPrice: currentPrice, position: position, sync: sync, summary: summary,
+    setPrice: setPrice, valuationRows: valuationRows, isClosed: isClosed, isIdle: isIdle, closedPositions: closedPositions, sortTrades: sortTrades, tradeGross: tradeGross, tradeCash: tradeCash, tradeTL: tradeTL, ledger: ledger, tradesOf: tradesOf, fxNow: fxNow, currentPrice: currentPrice, position: position, sync: sync, summary: summary,
     xirr: xirr, twr: twr, valuationSeries: valuationSeries, fxPoints: fxPoints, inflationFactor: inflationFactor, realReturn: realReturn, simulateBenchmark: simulateBenchmark, returnsReport: returnsReport,
     glideOf: glideOf, legacyEquivalent: legacyEquivalent, goalsReport: goalsReport, patchAnalysis: patchAnalysis,
     positions: positions, rebalance: rebalance, riskReport: riskReport,

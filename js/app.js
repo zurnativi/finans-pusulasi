@@ -2,8 +2,8 @@
 (function () {
   'use strict';
   var M = window.Money, C = window.Calc, L = window.Ledger, P = window.ImportParse, S = window.Sample, Store = window.Store, AI = window.AI, PF = window.Portfolio, PUI = null, AUI = null, CD = window.ChartData, CH = window.Charts || null, SUI = null, HUI = null, SM = window.SyncMerge, CB = window.CryptoBox;
-  var PD = window.PersonalData || null, PDui = null;
-  var state = null, lastSaved = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
+  var PD = window.PersonalData || null, PDui = null, AP = window.AutoPrice || null, APui = null;
+  var txEdit = null, trEdit = null, state = null, lastSaved = null, undoStack = null, aiCfg = Store.loadAi(), chatLog = [], review = null, tab = 'ozet';
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
 
@@ -49,17 +49,50 @@
   }
 
   /* ---------- Durum değişikliği: önce kopya al (geri al), sonra doğrula ve kaydet ---------- */
-  function mutate(fn, msg) {
+  /* v8.4: her değişiklik geçmişe (denetim izi) yazılır: ne zaman, hangi kayıt, alan alan eski → yeni. "Geri al" o değişikliği tersine çevirir. */
+  var HLOG_KEY = 'finans-pusulasi:degisiklik-gecmisi', HI = window.ChangeLog || null;
+  function hlog() { try { var v = JSON.parse(localStorage.getItem(HLOG_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+  function hlogSave(l) { try { localStorage.setItem(HLOG_KEY, JSON.stringify(l)); } catch (e) { try { localStorage.setItem(HLOG_KEY, JSON.stringify(l.slice(-80))); } catch (e2) { /* depolama dolu */ } } }
+  function autoMsg(ch) {
+    if (!ch.length) return '';
+    var c = ch[0], L0 = HI.LISTS[c.list] || c.list, more = ch.length > 1 ? ' (+' + (ch.length - 1) + ' kayıt)' : '';
+    if (c.op === 'add') return L0 + ' eklendi: ' + c.label + more;
+    if (c.op === 'del') return L0 + ' silindi: ' + c.label + more;
+    return L0 + ' düzenlendi: ' + c.label + ' (' + c.fields.map(function (f) { return HI.fieldLabel(f.f); }).join(', ') + ')' + more;
+  }
+  function recordHistory(beforeStr, msg, opts) {
+    if (!HI || !state || state.isExample) return null;
+    try {
+      var b = JSON.parse(beforeStr); if (b && b.isExample) return null; // örnek veriden gerçek veriye geçiş geçmişe yazılmaz
+      var ch = HI.diff(b, state); if (!ch.length) return null;
+      var e = HI.makeEntry(ch, msg || autoMsg(ch)); if (opts && opts.revertOf) e.revertOf = opts.revertOf;
+      hlogSave(HI.push(hlog(), e)); return e;
+    } catch (er) { console.error(er); return null; }
+  }
+  function mutate(fn, msg, opts) {
     var before = JSON.stringify(state);
     try {
       fn(state);
       state = S.validateState(JSON.parse(JSON.stringify(state))); // doğrulanmış kopya (alım-satımla izlenen varlık değerleri de güncellenir)
     } catch (e) { state = JSON.parse(before); toast('İşlem yapılmadı: ' + e.message); render(); return false; }
     undoStack = before;
+    var entry = recordHistory(before, msg, opts);
     persist();
     render();
-    if (msg) toast(msg, function () { state = JSON.parse(undoStack); undoStack = null; persist(); render(); toast('Geri alındı'); });
+    if (msg) toast(msg, function () {
+      if (entry && !entry.bulk) return revertHistory(entry.id);
+      state = JSON.parse(undoStack); undoStack = null; persist(); render(); toast('Geri alındı');
+    });
     return true;
+  }
+  /* Geçmişteki bir değişikliği geri al (çakışma/doğrulama hatasında hiçbir şey değişmez, neden söylenir) */
+  function revertHistory(id) {
+    var log = hlog(), e = log.find(function (x) { return x.id === id; }); if (!e) { toast('Geçmiş kaydı bulunamadı.'); return false; }
+    var err = null, okm = mutate(function (s) { try { HI.revert(s, e); } catch (x) { err = x; throw x; } }, null, { revertOf: e.id });
+    if (!okm) return false;
+    log = hlog(); var e2 = log.find(function (x) { return x.id === id; }); if (e2) { e2.reverted = new Date().toISOString(); hlogSave(log); }
+    var last = log[log.length - 1]; if (last && last.revertOf === id) { last.msg = 'Geri alındı: ' + (e.msg || ''); hlogSave(log); }
+    render(); toast('Geri alındı: ' + (e.msg || 'değişiklik')); return true;
   }
   /* Net varlık geçmişi: her kayıtta bugünün değeri yazılır (örnek veride geçmiş, bugünün değeriyle biten örnek seri olarak üretilir). */
   function recordNw() {
@@ -89,6 +122,8 @@
     mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, noUndo ? null : (msg || 'Geri yüklendi.'));
     if (noUndo) { undoStack = null; toast(msg || 'Geri yüklendi.'); }
     setView(state.settings.view);
+    // v8.4: yeni yüklenen veride yatırımların fiyatları hemen güncellenir (örnek veriden gerçek veriye geçişte bekleme yok)
+    if (APui && state && !state.isExample) setTimeout(function () { APui.run({ fresh: true }); }, 50);
   }
 
   /* ---------- Görünüm (sade/detaylı) ---------- */
@@ -214,7 +249,6 @@
   /* Net varlık nasıl hesaplandı: yatırımlar + nakit − borçlar (Portföy sayfasındaki tutarlarla farkı açıklar) */
   function netWorthBreakdownHtml() {
     var b = L.netWorthBreakdown(state, today()); if (state.isExample || (!b.investments && !b.cash && !b.debts)) return '';
-    var costBased = (state.assets || []).filter(function (a) { return a.tracking === 'trades' && a.valueBasis === 'cost' && a.value > 0; }).map(function (a) { return a.name.replace(/ [—(].*$/, ''); });
     function row(sign, label, v, cls, sub) { return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + sign + ' ' + label + (sub ? '<div class="hint">' + sub + '</div>' : '') + '</td><td class="r num">' + esc(tl(v)) + '</td></tr>'; }
     var rows = row('', 'Yatırımların <span class="muted">(Portföy → Yatırım toplamı)</span>', b.investments) +
       row('+', 'Banka ve nakit hesapları', b.cash, '', b.accounts.map(function (a) { return esc(a.name.replace(/ \(.*$/, '')) + ' ' + esc(tl(a.value)); }).join(' · ')) +
@@ -223,10 +257,12 @@
       row('−', 'Gelecek taksitler (henüz ekstreye gelmemiş)', b.futureInstallments) +
       (b.otherDebts ? row('−', 'Diğer borçlar', b.otherDebts) : '') +
       row('=', 'Net varlık', b.net, 'sum');
+    var usdMissing = (state.assets || []).some(function (a) { return a.tracking === 'trades' && a.currency === 'USD' && a.valueBasis === 'cost' && a.value > 0; });
     return fold('nw-break', 'Net varlık nasıl hesaplandı?', 'yatırımlar + nakit − borçlar', '<div class="tablewrap"><table><tbody>' + rows + '</tbody></table></div>' +
-      '<p class="hint">Portföy Yönetimi kartı ve sayfası yalnızca eldeki yatırımları gösterir. Banka nakdi ve borçlar o rakamda yoktur; fark burada görünür.' +
-      (costBased.length ? ' Kur/fiyat olmadığı için maliyetle sayılan varlıklar: ' + esc(costBased.join(', ')) + ' (güncel kuru Bütçe → Hesaplar → Kurlar bölümüne girersen piyasa değeriyle hesaplanır).' : '') +
-      (b.missingRates.length ? ' Kuru girilmediği için dışarıda kalan hesaplar: ' + esc(b.missingRates.join(', ')) + '.' : '') + '</p>', true);
+      '<p class="hint">Portföy Yönetimi sayfasındaki <b>Yatırımlarının değeri</b> yalnızca alım-satımla izlenen yatırımları gösterir; banka nakdi ve borçlar o rakamda yoktur, bu yüzden net varlıktan farklıdır. İki sayfa da yatırımları <b>aynı değerlemeyle</b> hesaplar (adet × son fiyat × kur).' +
+      (usdMissing ? ' <b class="neg">USD/TL kuru alınamadığı için dolar fonları maliyetle sayıldı.</b>' : '') +
+      (b.missingRates.length ? ' Kuru girilmediği için dışarıda kalan hesaplar: ' + esc(b.missingRates.join(', ')) + '.' : '') + '</p>' +
+      (APui ? '<h3 style="margin:14px 0 6px">Yatırımların fiyatları</h3>' + APui.statusHtml() + APui.tableHtml(8) : ''), true);
   }
   function homeHero(an) {
     var hist = CD ? CD.normalize(state.nwHistory) : [], nw = an.assets.netWorth, t = today(), tot = an.assets.total || 0;
@@ -387,7 +423,6 @@
   /* ---------- İŞLEMLER ---------- */
   var txFilter = { ym: null, q: '' };
   function catOptions(sel) { var list = P.CATEGORIES.slice(); if (sel && list.indexOf(sel) < 0) list.push(sel); /* listede olmayan (eski/özel) kategori kaybolmasın */ return list.map(function (c) { return '<option' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
-  var txEdit = null;
   function renderTransactions() {
     if (!txFilter.ym) txFilter.ym = C.currentYm();
     var months = {}; state.transactions.forEach(function (t) { months[t.date.slice(0, 7)] = 1; }); months[C.currentYm()] = 1;
@@ -420,7 +455,7 @@
             '<td><button class="btn small primary" data-act="tx-save" data-id="' + esc(t.id) + '">Kaydet</button> <button class="btn small" data-act="tx-cancel">Vazgeç</button></td></tr>';
         } else {
           h += '<tr><td class="num">' + dateLabel(t.date) + '</td><td>' + esc(t.description) + (t.recurringId ? ' <span class="pill info" title="Düzenli ödemeye bağlı (' + esc(t.period) + ')">🔁 düzenli</span>' : '') + (acc ? '<div class="hint">' + esc(acc.name) + '</div>' : '') + '</td><td><select aria-label="Kategori" data-list="transactions" data-id="' + t.id + '" data-field="category">' + catOptions(t.category) + '</select></td>' +
-            '<td class="r num ' + (t.amount < 0 ? 'neg' : 'pos') + '">' + tl2(t.amount) + '</td><td class="detail-only hint">' + esc(t.source || '') + '</td><td><button class="btn small" data-act="tx-edit" data-id="' + esc(t.id) + '">Düzenle</button> ' + delBtn('transactions', t.id, t.description) + '</td></tr>';
+            '<td class="r num ' + (t.amount < 0 ? 'neg' : 'pos') + '">' + tl2(t.amount) + (t.editedAt ? '<div class="hint">düzeltildi</div>' : '') + '</td><td class="detail-only hint">' + esc(t.source || '') + '</td><td><button class="btn small" data-act="tx-edit" data-id="' + esc(t.id) + '">Düzenle</button> ' + delBtn('transactions', t.id, t.description) + '</td></tr>';
         }
       });
       h += '</tbody></table></div>' + (list.length > 500 ? '<p class="hint">İlk 500 işlem gösteriliyor; filtreyi daralt.</p>' : '');
@@ -1069,6 +1104,45 @@
       .then(function () { if (tab === 'asistan') { render(); var c = $('#chat'); if (c) c.scrollTop = c.scrollHeight; } });
   }
 
+  /* ---------- DEĞİŞİKLİK GEÇMİŞİ (denetim izi + geri al) ---------- */
+  var histAll = false;
+  function histVal(list, f, v) {
+    f = String(f).split('.').pop(); // iç içe alan (card.paid) → son parça
+    if (v === undefined || v === null || v === '') return '—';
+    if (typeof v === 'boolean') return v ? 'evet' : 'hayır';
+    if (/^(accountId|cardId|fromId|toId)$/.test(f)) { var a = accById(v); return a ? a.name : String(v); }
+    if (f === 'assetId') { var as = (state.assets || []).find(function (x) { return x.id === v; }); return as ? as.name : String(v); }
+    if (f === 'qty' && typeof v === 'number') return PF.fmtQty(v);
+    if (f === 'price' && typeof v === 'number') return (v / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: 6 });
+    if ((f === 'ratioBp' || f === 'shareBp') && typeof v === 'number') return '%' + (v / 100).toLocaleString('tr-TR');
+    if (f === 'feeParts' && typeof v === 'object') return ['commission', 'tax', 'other'].filter(function (k) { return v[k]; }).map(function (k) { return { commission: 'komisyon', tax: 'BSMV/vergi', other: 'diğer' }[k] + ' ' + M.format(v[k], { symbol: false }); }).join(', ') || '0';
+    if (typeof v === 'number' && /^(amount|balance|total|target|fee|amountFrom|amountTo|withholding|value|paidApplied|fxRate|limit|debt|saved|paid|statementDebt|commission|tax|other)$/.test(f)) return M.format(v, { symbol: false });
+    if (typeof v === 'object') { var j = JSON.stringify(v); return j.length > 80 ? j.slice(0, 77) + '…' : j; }
+    return String(v);
+  }
+  function fmtHistAt(iso) { var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' TSİ'; }
+  function renderHistory() {
+    var log = hlog().slice().reverse(), shown = histAll ? log : log.slice(0, 60);
+    var h = '<h1>Değişiklik geçmişi</h1><p class="hint">Alım-satım, işlem, transfer, taksit, düzenli ödeme, varlık, hesap ve hedeflerde yaptığın her ekleme, düzeltme ve silme burada <b>ne zaman</b> ve <b>eski → yeni</b> değeriyle durur. ' +
+      '"Geri al" yalnızca o değişikliği tersine çevirir; kayıt sonradan yeniden değiştiyse veya geri alınca hesaplar tutmayacaksa (ör. sonraki bir satış eldeki adedi aşacaksa) hiçbir şey değişmez ve nedeni söylenir. Tüm tutarlar (ortalama maliyet, bakiyeler, net varlık) kendiliğinden yeniden hesaplanır. Geçmiş yalnızca bu cihazda tutulur (en fazla ' + (HI ? HI.MAX_ENTRIES : 300) + ' kayıt).</p>';
+    if (!log.length) return h + '<section class="card"><p class="muted">Henüz kayıtlı değişiklik yok. Bir kaydı düzenlediğinde veya sildiğinde burada görünür.</p></section>';
+    h += '<section class="card"><ol class="hist-list">';
+    shown.forEach(function (e) {
+      h += '<li class="hist-item' + (e.reverted ? ' reverted' : '') + (e.revertOf ? ' is-revert' : '') + '" data-hid="' + esc(e.id) + '"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div><b>' + esc(e.msg || 'Değişiklik') + '</b>' + (e.revertOf ? ' <span class="pill info">geri alma</span>' : '') + (e.reverted ? ' <span class="pill warn">geri alındı ' + esc(fmtHistAt(e.reverted)) + '</span>' : '') + '<div class="hint">' + esc(fmtHistAt(e.at)) + '</div></div>' +
+        (e.bulk ? '<span class="hint">toplu değişiklik · ' + e.n + ' kayıt</span>' : e.reverted ? '' : '<button type="button" class="btn small" data-act="hist-revert" data-id="' + esc(e.id) + '">' + (e.revertOf ? 'Yeniden uygula' : 'Geri al') + '</button>') + '</div>';
+      if (e.bulk) h += '<div class="hint">' + esc(Object.keys(e.counts || {}).map(function (k) { var p = k.split(':'); return (HI.LISTS[p[0]] || p[0]) + ' ' + ({ add: 'eklendi', del: 'silindi', edit: 'değişti' }[p[1]] || p[1]) + ': ' + e.counts[k]; }).join(' · ')) + '. Toplu değişiklik tek tek geri alınamaz; Yedek, eşitleme, kilit → Otomatik kopyalar\'dan önceki hâle dönebilirsin.</div>';
+      else h += '<ul class="hist-ch">' + (e.changes || []).map(function (c) {
+        var L0 = (HI.LISTS[c.list] || c.list);
+        if (c.op === 'add') return '<li><span class="pill ok">eklendi</span> ' + esc(L0) + ': ' + esc(c.label) + '</li>';
+        if (c.op === 'del') return '<li><span class="pill err">silindi</span> ' + esc(L0) + ': ' + esc(c.label) + '</li>';
+        return '<li><span class="pill info">düzeltildi</span> ' + esc(L0) + ': ' + esc(c.label) + '<div class="hint">' + c.fields.map(function (f) { return esc(HI.fieldLabel(f.f)) + ': <s>' + esc(histVal(c.list, f.f, f.old)) + '</s> → <b>' + esc(histVal(c.list, f.f, f.new)) + '</b>'; }).join(' · ') + '</div></li>';
+      }).join('') + '</ul>';
+      h += '</li>';
+    });
+    h += '</ol>' + (!histAll && log.length > shown.length ? '<button type="button" class="btn small" data-act="hist-all">Tümünü göster (' + log.length + ')</button>' : '') + '</section>';
+    return h;
+  }
+
   /* ---------- AYARLAR ve YEDEK ---------- */
   function renderSettings() {
     var st = state.settings, sc = st.scenarios;
@@ -1408,22 +1482,24 @@
     h += '<p class="hint">Bakiyeleri ara ara bankandaki rakamla güncelle. Harcama işlemleri bakiyeyi kendiliğinden değiştirmez; transferler ise iki hesabı da otomatik günceller. Faizli vadeli mevduat yerine katılım hesabı, altın hesabı gibi helal seçenekleri tercih et.</p></section>';
     var accs = state.accounts;
     h += '<section class="card" style="margin-top:14px"><h2>Hesaplar arası transfer ' + tip('Kendi hesapların arasında para aktarımı, kart borcu ödemesi, döviz/altın alımı. Gelir veya gider sayılmaz; iki hesabın bakiyesi otomatik güncellenir.') + '</h2>';
+    var te = trEdit ? state.transfers.find(function (x) { return x.id === trEdit; }) : null; if (!te) trEdit = null;
     if (accs.length < 2) h += '<p class="muted">Transfer için en az iki hesap gerekir.</p>';
     else {
+      if (te) h += '<div class="notice info editing">✎ <b>Transferi düzeltiyorsun</b> (' + esc(dateLabel(te.date)) + '). Kaydedince eski transfer iki hesaptan geri alınır, yenisi uygulanır; bakiyeler ve kart ödemesi yeniden hesaplanır.</div>';
       h += '<form id="tr-form" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end" novalidate>' +
-        '<div class="field"><label for="tr-date">Tarih</label><input id="tr-date" type="date" value="' + t + '"></div>' +
-        '<div class="field"><label for="tr-from">Nereden</label><select id="tr-from">' + accOptions(accs[0].id) + '</select></div>' +
-        '<div class="field"><label for="tr-to">Nereye</label><select id="tr-to">' + accOptions(accs[1].id) + '</select></div>' +
-        '<div class="field"><label for="tr-amt" id="tr-amt-l">Giden tutar</label><input id="tr-amt" class="money" type="text" inputmode="decimal" placeholder="0,00"></div>' +
-        '<div class="field" id="tr-amt2-f"><label for="tr-amt2" id="tr-amt2-l">Gelen tutar</label><input id="tr-amt2" class="money" type="text" inputmode="decimal" placeholder="farklı para biriminde"></div>' +
-        '<div class="field"><label for="tr-note">Not</label><input id="tr-note" type="text" maxlength="120" placeholder="ör. kart ödemesi"></div>' +
-        '<div class="field"><button class="btn primary" type="submit">Transferi kaydet</button></div></form><p class="hint" id="tr-hint"></p>';
+        '<div class="field"><label for="tr-date">Tarih</label><input id="tr-date" type="date" value="' + (te ? esc(te.date) : t) + '"></div>' +
+        '<div class="field"><label for="tr-from">Nereden</label><select id="tr-from">' + accOptions(te ? te.fromId : accs[0].id) + '</select></div>' +
+        '<div class="field"><label for="tr-to">Nereye</label><select id="tr-to">' + accOptions(te ? te.toId : accs[1].id) + '</select></div>' +
+        '<div class="field"><label for="tr-amt" id="tr-amt-l">Giden tutar</label><input id="tr-amt" class="money" type="text" inputmode="decimal" placeholder="0,00" value="' + (te ? esc(M.format(te.amountFrom, { symbol: false })) : '') + '"></div>' +
+        '<div class="field" id="tr-amt2-f"><label for="tr-amt2" id="tr-amt2-l">Gelen tutar</label><input id="tr-amt2" class="money" type="text" inputmode="decimal" placeholder="farklı para biriminde" value="' + (te ? esc(M.format(te.amountTo, { symbol: false })) : '') + '"></div>' +
+        '<div class="field"><label for="tr-note">Not</label><input id="tr-note" type="text" maxlength="120" placeholder="ör. kart ödemesi" value="' + (te ? esc(te.note || '') : '') + '"></div>' +
+        '<div class="field"><div class="row" style="gap:6px"><button class="btn primary" type="submit">' + (te ? 'Değişikliği kaydet' : 'Transferi kaydet') + '</button>' + (te ? '<button class="btn" type="button" data-act="tr-edit-cancel">Vazgeç</button>' : '') + '</div></div></form><p class="hint" id="tr-hint"></p>';
     }
     if (state.transfers.length) {
       h += '<div class="tablewrap"><table class="stack"><thead><tr><th>Tarih</th><th>Nereden → Nereye</th><th class="r">Tutar</th><th>Not</th><th></th></tr></thead><tbody>';
       state.transfers.map(function (x, i) { return [x, i]; }).sort(function (a, b) { return a[0].date < b[0].date ? 1 : a[0].date > b[0].date ? -1 : b[1] - a[1]; }).map(function (p) { return p[0]; }).slice(0, 100).forEach(function (x) {
         var f = accById(x.fromId), to = accById(x.toId);
-        h += '<tr><td class="num">' + dateLabel(x.date) + '</td><td>' + esc(f ? f.name : '?') + ' → ' + esc(to ? to.name : '?') + '</td><td class="r num">' + esc(L.formatCur(x.amountFrom, f ? f.currency : 'TRY')) + (f && to && f.currency !== to.currency ? ' → ' + esc(L.formatCur(x.amountTo, to.currency)) : '') + '</td><td>' + esc(x.note || '') + '</td><td><button class="btn small danger" data-act="tr-del" data-id="' + esc(x.id) + '">Sil (geri al)</button></td></tr>';
+        h += '<tr><td class="num">' + dateLabel(x.date) + '</td><td>' + esc(f ? f.name : '?') + ' → ' + esc(to ? to.name : '?') + '</td><td class="r num">' + esc(L.formatCur(x.amountFrom, f ? f.currency : 'TRY')) + (f && to && f.currency !== to.currency ? ' → ' + esc(L.formatCur(x.amountTo, to.currency)) : '') + '</td><td>' + esc(x.note || '') + (x.editedAt ? '<div class="hint">düzeltildi</div>' : '') + '</td><td><div class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn small" data-act="tr-edit" data-id="' + esc(x.id) + '">Düzenle</button><button class="btn small danger" data-act="tr-del" data-id="' + esc(x.id) + '">Sil (geri al)</button></div></td></tr>';
       });
       h += '</tbody></table></div>';
     }
@@ -1465,12 +1541,23 @@
     if (f.type !== 'card' && f.balance < 0) throw new Error(f.name + ' bakiyesi yetersiz');
     if (to.type !== 'card' && to.balance < 0) throw new Error(to.name + ' bakiyesi eksiye düşerdi; önce bakiyeyi kontrol et');
   }
-  function submitTransfer(fromId, toId, date, amtFrom, amtTo, note) {
+  function submitTransfer(fromId, toId, date, amtFrom, amtTo, note, editId) {
     var f = accById(fromId), to = accById(toId), errs = [];
     if (!f || !to) errs.push('hesap'); else if (fromId === toId) return toast('Aynı hesaba transfer yapılamaz.');
     if (!date) errs.push('tarih'); if (amtFrom == null || amtFrom <= 0) errs.push('tutar');
     if (f && to && f.currency === to.currency) amtTo = amtFrom; else if (amtTo == null || amtTo <= 0) errs.push('gelen tutar');
     if (errs.length) return toast('Kontrol et: ' + errs.join(', '));
+    if (editId) {
+      if (!state.transfers.some(function (q) { return q.id === editId; })) { trEdit = null; return toast('Düzeltilen transfer artık yok.'); }
+      var cur0 = state.transfers.find(function (q) { return q.id === editId; });
+      var moneyChanged = cur0.fromId !== fromId || cur0.toId !== toId || cur0.amountFrom !== amtFrom || cur0.amountTo !== amtTo;
+      if (!moneyChanged && cur0.date === date && (cur0.note || '') === (note || '')) { trEdit = null; render(); return toast('Değişiklik yok.'); }
+      return mutate(function (s) {
+        var y = s.transfers.find(function (q) { return q.id === editId; });
+        if (moneyChanged) { applyTransfer(s, y, -1); y.fromId = fromId; y.toId = toId; y.amountFrom = amtFrom; y.amountTo = amtTo; y.paidApplied = 0; applyTransfer(s, y, 1); } // eski transfer iki hesaptan geri alınır, yenisi uygulanır
+        y.date = date; y.note = note || ''; y.editedAt = new Date().toISOString(); trEdit = null; // yalnız tarih/not değiştiyse bakiyelere dokunulmaz
+      }, 'Transfer düzeltildi: ' + L.formatCur(amtFrom, f.currency) + (moneyChanged ? ' (bakiyeler yeniden hesaplandı)' : ' (tutar aynı; bakiyeler değişmedi)'));
+    }
     var x = { id: S.uid(), date: date, fromId: fromId, toId: toId, amountFrom: amtFrom, amountTo: amtTo, note: note || '', paidApplied: 0 };
     mutate(function (s) { applyTransfer(s, x, 1); s.transfers.push(x); }, 'Transfer kaydedildi: ' + L.formatCur(amtFrom, f.currency) + ' (gelir/gider sayılmaz)');
   }
@@ -1635,11 +1722,11 @@
   }
 
   /* ---------- Yönlendirme ve çizim ---------- */
-  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return AUI.render(); }, veri: renderImport, haberler: function () { return HUI ? HUI.render() : '<p class="muted">Haber merkezi yüklenemedi.</p>'; }, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); } };
-  var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce', ayarlar: 'ayarlar', guvenlik: 'ayarlar' };
-  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', haberler: 'Haberler ve bildirimler', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit' };
+  var VIEWS = { ozet: renderDashboard, butce: renderBudgetTab, odemeler: renderPayments, hesaplar: renderAccounts, islemler: renderTransactions, portfoy: function () { return PUI.renderPortfolio(); }, analiz: function () { return AUI.render(); }, veri: renderImport, haberler: function () { return HUI ? HUI.render() : '<p class="muted">Haber merkezi yüklenemedi.</p>'; }, asistan: renderAssistant, ayarlar: renderSettings, guvenlik: function () { return SUI.renderPage(); }, gecmis: renderHistory };
+  var AREA = { butce: 'butce', odemeler: 'butce', hesaplar: 'butce', islemler: 'butce', ayarlar: 'ayarlar', guvenlik: 'ayarlar', gecmis: 'ayarlar' };
+  var TITLES = { ozet: 'Ana sayfa', butce: 'Bütçe', odemeler: 'Ödemeler', hesaplar: 'Hesaplar', islemler: 'İşlemler', portfoy: 'Portföy Yönetimi', analiz: 'Portföy Analizi', veri: 'Veri ekle', haberler: 'Haberler ve bildirimler', asistan: 'Yapay zekâ asistanı', ayarlar: 'Ayarlar ve yedek', guvenlik: 'Yedek, eşitleme ve kilit', gecmis: 'Değişiklik geçmişi' };
   function areaNav() {
-    if (AREA[tab] === 'ayarlar') return '<nav class="areanav" aria-label="Ayar bölümleri">' + [['ayarlar', 'Genel ayarlar'], ['guvenlik', 'Yedek, eşitleme, kilit']].map(function (x) { return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
+    if (AREA[tab] === 'ayarlar') return '<nav class="areanav" aria-label="Ayar bölümleri">' + [['ayarlar', 'Genel ayarlar'], ['guvenlik', 'Yedek, eşitleme, kilit'], ['gecmis', 'Değişiklik geçmişi']].map(function (x) { return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
     if (AREA[tab] !== 'butce') return '';
     return '<nav class="areanav" aria-label="Bütçe bölümleri">' + [['butce', 'Plan ve sınırlar'], ['odemeler', 'Ödemeler'], ['hesaplar', 'Hesaplar'], ['islemler', 'İşlemler']].map(function (x) {
       return '<a href="#' + x[0] + '"' + (tab === x[0] ? ' aria-current="page"' : '') + '>' + x[1] + '</a>'; }).join('') + '</nav>';
@@ -1715,12 +1802,18 @@
         var signed = typ === 1 ? amt : -amt;
         mutate(function (s) {
           var tx = s.transactions.find(function (x) { return x.id === id; });
-          if (!tx) return;
-          tx.date = d; tx.description = desc; tx.amount = signed; tx.category = cat || tx.category;
-        }, 'İşlem güncellendi');
-        txEdit = null;
+          if (!tx) throw new Error('düzeltilen işlem artık yok');
+          var nv = { date: d, description: desc, amount: signed, category: cat || tx.category };
+          if (!Object.keys(nv).some(function (k) { return tx[k] !== nv[k]; })) throw new Error('değişiklik yok');
+          Object.keys(nv).forEach(function (k) { tx[k] = nv[k]; }); tx.editedAt = new Date().toISOString(); txEdit = null;
+        }, 'İşlem düzeltildi: ' + desc + ' ' + tl2(signed));
       },
       'example-clear': function () { if (confirm('Örnek verilerin tamamı silinsin mi? (Sonra kendi verilerini girersin.)')) mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); s.settings.view = document.body.classList.contains('detailed') ? 'detailed' : 'simple'; }, 'Örnek veri temizlendi.'); },
+      'ap-refresh': function () { if (APui) APui.run({ force: true }); },
+      'hist-revert': function () { revertHistory(t.dataset.id); },
+      'tr-edit': function () { trEdit = t.dataset.id; render(); var c = $('#tr-form'); if (c) c.scrollIntoView({ block: 'center', behavior: 'smooth' }); },
+      'tr-edit-cancel': function () { trEdit = null; render(); },
+      'hist-all': function () { histAll = true; render(); },
       'personal-open': function () { if (PDui) PDui.openManual(); },
       'example-mine': function () { mutate(function (s) { s.isExample = false; s.transactions.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); if (s.trades) s.trades.forEach(function (t2) { if (t2.source === 'örnek') t2.source = 'elle'; }); }, 'Veriler artık senin verilerin olarak işaretlendi.'); },
       'refresh-example': function () {
@@ -1877,7 +1970,7 @@
     if (el.id === 'ai-prov') { aiCfg.provider = el.value; Store.saveAi(aiCfg); return render(); }
     if (el.id === 'ai-key' || el.id === 'ai-model' || el.id === 'ai-vmodel' || el.id === 'ai-ollama') { saveAiFromForm(); return; }
     if (el.id === 'ai-ctx') { aiCfg.sendContext = el.checked; Store.saveAi(aiCfg); return; }
-    if (el.id === 'tx-desc') { var amt = M.parse(($('#tx-amt') || {}).value) || -1; $('#tx-cat').value = P.suggestCategory(el.value, Number($('#tx-type').value) * Math.abs(amt)); }
+    if (el.id === 'tx-desc' && !txEdit) { var amt = M.parse(($('#tx-amt') || {}).value) || -1; $('#tx-cat').value = P.suggestCategory(el.value, Number($('#tx-type').value) * Math.abs(amt)); }
   }
   function importBackup(file) {
     if (!file) return;
@@ -1910,7 +2003,7 @@
     }
     if (e.target.id === 'tr-form') {
       e.preventDefault();
-      return submitTransfer($('#tr-from').value, $('#tr-to').value, P.parseDate($('#tr-date').value), M.parse($('#tr-amt').value), M.parse($('#tr-amt2').value), $('#tr-note').value.trim());
+      return submitTransfer($('#tr-from').value, $('#tr-to').value, P.parseDate($('#tr-date').value), M.parse($('#tr-amt').value), M.parse($('#tr-amt2').value), $('#tr-note').value.trim(), trEdit);
     }
     if (e.target.dataset && e.target.dataset.cardpay) {
       e.preventDefault();
@@ -1923,12 +2016,13 @@
 
   /* ---------- Başlat ---------- */
   function init() {
-    PUI = window.PortfolioUI({
+    PUI = window.PortfolioUI({ autoPrice: function () { return APui ? (APui.run({}), true) : false; },
       state: function () { return state; }, mutate: mutate, render: render, toast: toast, esc: esc, tl: tl, tl2: tl2, tip: tip, pct: pct, sbp: sbp, kpi: kpi, progress: progress,
       dateLabel: dateLabel, ymLabel: ymLabel, monthsLabel: monthsLabel, today: today, nowYm: nowYm, eff: eff, sub: function () { return sub; }, subtabs: subtabs, debtsCard: debtsCard,
       loadScript: loadScript, decodeText: decodeText, loadPdfLib: loadPdfLib, pdfText: pdfText, pdfToImages: pdfToImages, readImage: readImage, getOcrWorker: getOcrWorker, ocrRecognize: ocrRecognize,
       aiReady: aiReady, aiCfg: function () { return aiCfg; }, setStatus: setStatus, busy: busy,
-      analysisCard: function () { return AUI ? AUI.homeCard() : ''; }
+      analysisCard: function () { return AUI ? AUI.homeCard() : ''; },
+      priceStatus: function () { return APui ? APui.statusHtml() : ''; }
     });
     if (window.AnalysisUI) AUI = window.AnalysisUI({
       state: function () { return state; }, mutate: mutate, render: render, toast: toast, esc: esc, tl: tl, tip: tip, today: today, subtabs: subtabs,
@@ -1970,6 +2064,7 @@
       state: function () { return state; }, mutate: mutate, render: function () { if (state) render(); }, toast: toast, esc: esc, tip: tip, today: today, dateLabel: dateLabel, tab: function () { return tab; },
       replaceState: replaceState, restoreState: restoreState, download: function (n, t) { Store.download(n, t); }, busyToast: function (m) { toast(m); }
     });
+    APui = AP ? AP.create({ state: function () { return state; }, mutate: mutate, render: function () { if (state) render(); }, toast: toast, esc: esc, tl: tl, today: today, dateLabel: dateLabel, afterApply: function () { try { if (recordNw()) persist(); } catch (e) { console.error(e); } } }) : null;
     PDui = PD ? PD.ui({ state: function () { return state; }, restoreState: restoreState, snapshot: SUI.snapshot, toast: toast, esc: esc }) : null;
     // Kilit: kilit açıksa (veya veri diskte şifreliyse) önce PIN sorulur; anahtar yalnızca bellekte tutulur
     var lockCfg = SUI.lockCfg();
@@ -2022,11 +2117,13 @@
       if (HUI) HUI.start();
       SUI.start();
       // v8.3: sitedeki şifreli kişisel veri paketi varsa ve bu cihazda yalnızca örnek/boş veri varsa şifre sor (dosya yüklemek gerekmez)
+      if (APui) APui.start();
       if (PD && PDui) PDui.check().then(function () { if (state && PDui.available()) renderBanner(); }).catch(function (e) { console.error(e); });
       registerSW();
-      setTimeout(function () { if (PUI && PUI.autoPrices) PUI.autoPrices(); }, 2500);
-      setInterval(function () { if (PUI && PUI.autoPrices && !document.hidden) PUI.autoPrices(); }, 30 * 60 * 1000);
-      document.addEventListener('visibilitychange', function () { if (!document.hidden && PUI && PUI.autoPrices) PUI.autoPrices(); });
+      if (!APui) { // yedek: AutoPrice modülü yüklenemezse eski otomatik fiyat yolu
+        setTimeout(function () { if (PUI && PUI.autoPrices) PUI.autoPrices(); }, 2500);
+        setInterval(function () { if (PUI && PUI.autoPrices && !document.hidden) PUI.autoPrices(); }, 30 * 60 * 1000);
+      }
     });
   }
   /* Çevrimdışı kabuk (sw.js). Yalnızca http(s) üzerinde; file:// ile açılınca kaydedilmez.

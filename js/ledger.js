@@ -380,7 +380,8 @@
       if (a.inNetWorth === false) return;
       extraAssets.push({ id: 'acc:' + a.id, name: a.name, cls: t.cls, risk: a.risk || t.risk, emergency: !!a.emergency, value: Math.max(0, v), auto: true });
     });
-    s.assets = (state.assets || []).concat(extraAssets);
+    // Elde adedi kalmayan (tamamı satılmış) veya hiç işlemi olmayan, alım-satımla izlenen varlıklar (değer 0) analize, dağılıma, sayımlara ve sağlık puanına girmez
+    s.assets = (state.assets || []).filter(function (a) { return !(a.tracking === 'trades' && !(a.value > 0)); }).concat(extraAssets);
     s.debts = (state.debts || []).concat(extraDebts);
     var sink = sinkingTotals(state, nowYm).monthlyNeed;
     s.expenses = (state.expenses || []).slice();
