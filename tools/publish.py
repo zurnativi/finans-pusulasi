@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """publish.py — market-data dalına çakışmasız yayın (v8.1).
-Kullanım: python3 tools/publish.py OUT_DIR PREV_DIR JOB     (JOB: news | intraday | daily | crypto)
+Kullanım: python3 tools/publish.py OUT_DIR PREV_DIR JOB     (JOB: news | intraday | daily | crypto | portfolio | reports)
 
 Neden gerekli: birden çok zamanlanmış iş (haber ≈20 dk, saatlik seans içi, günlük tam, kripto saatlik) aynı dala yazar. Her iş başında dalın o anki halini
 (PREV) okur; bitirdiğinde dal başka bir iş tarafından değişmiş olabilir. Bu betik yayın anında dalın GÜNCEL halini alır, yalnızca bu işin BAŞLANGIÇ halinden
@@ -19,6 +19,7 @@ OWN = {  # işin yazabileceği yollar (güvenlik ağı)
     'crypto': ('analysis/', 'status/crypto.json'),
     'daily': ('',),
     'portfolio': ('bg/',),   # v8.2: yalnız ŞİFRELİ sonuç dosyası (bg/results.enc.json); düz metin portföy verisi asla
+    'reports': ('reports/', 'bg/reports.enc.json', 'status/reports.json'),   # v8.5: herkese açık piyasa raporları + ŞİFRELİ kişisel raporlar
 }
 INDEX_LATEST = ('intraday', 'kap', 'news')      # index.json'da "en yeni generatedAt kazanır" anahtarlar
 PRIVATE = os.environ.get('PRIVATE_DIR', '/tmp/fp-private')
@@ -186,7 +187,7 @@ def build_merged(out, prev, job, work, sent_cache):
     if os.path.exists(dp):
         for rel in open(dp, encoding='utf-8').read().split():
             if allowed(job, rel) and rel != '' and os.path.isfile(os.path.join(headdir, rel)): os.remove(os.path.join(headdir, rel))
-    if job == 'portfolio': return headdir, headsha, copied, {'enabled': False, 'sent': 0}
+    if job in ('portfolio', 'reports'): return headdir, headsha, copied, {'enabled': False, 'sent': 0}   # kendi bildirimini kendisi gönderir
     rebuild_analysis_index(headdir)
     st = {'job': job, 'ok': True, 'generatedAt': NOWS, 'seconds': int(os.environ.get('JOB_SECONDS', '0') or 0)}
     if os.environ.get('GITHUB_RUN_ID'): st['run'] = '%s/%s/actions/runs/%s' % (os.environ.get('GITHUB_SERVER_URL', 'https://github.com'), os.environ.get('GITHUB_REPOSITORY', ''), os.environ['GITHUB_RUN_ID'])

@@ -5,11 +5,11 @@
  * Bu dosyada hiçbir sır, anahtar ya da kullanıcı verisi yoktur. Saf mantık: ağ/depolama dışarıdan verilir (testli). */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory({ CB: require('./cryptobox.js'), PF: require('./portfolio.js'), C: require('./calc.js'), L: require('./ledger.js'), PR: require('./prices.js'), AN: require('./analysis.js'),
-    NT: require('./notify.js'), N: require('./news.js'), EV: require('./events.js'), MO: require('./mood.js'), AL: require('./alerts.js'), SN: require('./snapshot.js'), CD: require('./chartdata.js') });
-  else root.BgWatch = factory({ CB: root.CryptoBox, PF: root.Portfolio, C: root.Calc, L: root.Ledger, PR: root.Prices, AN: root.Analysis, NT: root.Notify, N: root.News, EV: root.Events, MO: root.Mood, AL: root.Alerts, SN: root.Snap, CD: root.ChartData });
+    NT: require('./notify.js'), N: require('./news.js'), EV: require('./events.js'), MO: require('./mood.js'), AL: require('./alerts.js'), SN: require('./snapshot.js'), CD: require('./chartdata.js'), ST: require('./stops.js') });
+  else root.BgWatch = factory({ CB: root.CryptoBox, PF: root.Portfolio, C: root.Calc, L: root.Ledger, PR: root.Prices, AN: root.Analysis, NT: root.Notify, N: root.News, EV: root.Events, MO: root.Mood, AL: root.Alerts, SN: root.Snap, CD: root.ChartData, ST: root.Stops });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var CB = D.CB, PF = D.PF, C = D.C, L = D.L, PR = D.PR, AN = D.AN, NT = D.NT, N = D.N, EV = D.EV, MO = D.MO, AL = D.AL, SN = D.SN, CD = D.CD;
+  var CB = D.CB, PF = D.PF, C = D.C, L = D.L, PR = D.PR, AN = D.AN, NT = D.NT, N = D.N, EV = D.EV, MO = D.MO, AL = D.AL, SN = D.SN, CD = D.CD, ST = D.ST;
   var VERSION = 1, FORMAT = 'finans-pusulasi-bg', GIST_FILE = 'finans-pusulasi-portfoy.sifreli.json', RESULT_PATH = 'bg/results.enc.json', SETUP_PREFIX = 'FPBG1.', BUCKET = 16384, MAX_PAYLOAD_AGE_D = 30;
   var te = new TextEncoder(), td = new TextDecoder();
   function cr() { var c = globalThis.crypto; if (!c || !c.subtle) throw new Error('Bu ortamda Web Crypto yok'); return c; }
@@ -231,6 +231,29 @@
   }
   /* payload: şifresi çözülmüş yük; data: herkese açık piyasa verisi {feed, calendar, probs, macro, analogs, recovery, status, alerts};
    * opts: { now, MD, prev (önceki sonuçlar), snapOf(key)→Promise<anlık görüntü|null>, quoteOf(key,sym)→Promise, refresh:true } */
+  /* v8.5: Zarar durdur (stop) kontrolü — kullanıcının koyduğu seviyeler, gerçek fiyatla. Tekrar önleme durumu önceki şifreli sonuçta (prev.stopState) tutulur. */
+  function checkStops(state, hold, prev, opts, now, nowIso, res) {
+    if (!ST) return Promise.resolve([]);
+    var held = {}; hold.forEach(function (h) { if (h.asset) held[h.asset.id] = h; });
+    var list = (state.assets || []).filter(function (a) { return a.stop && held[a.id] && ST.clean(a.stop) && a.stop.active !== false; });
+    var prevMap = ST.cleanStateMap((prev && prev.stopState) || (state.analysis && state.analysis.stopState) || {}), next = {}, cands = [], rows = [], logs = [];
+    res.stopState = prevMap;
+    if (!list.length) { res.stops = []; return Promise.resolve([]); }
+    return Promise.all(list.map(function (a) {
+      var st = ST.clean(a.stop), key = keyOfAsset(a);
+      var qp = key && opts.stopQuoteOf ? opts.stopQuoteOf(a, key, st) : Promise.reject(new Error(key ? 'fiyat kaynağı yok' : 'piyasa anahtarı yok'));
+      return qp.then(function (q) {
+        var ev = ST.evaluate(st, q), stp = ST.step(prevMap[a.id], st, ev, nowIso); next[a.id] = stp.state;
+        rows.push({ assetId: a.id, name: a.name, level: ev.level, eff: ev.eff ? ev.eff.level : st.price, how: ev.eff ? ev.eff.how : null, distPct: ev.distPct != null ? Math.round(ev.distPct * 10000) / 10000 : null, price: ev.price || null, at: ev.at || null, src: ev.source || null, text: ev.text });
+        if (stp.event) { cands.push(ST.notifCand(a, st, stp.event)); logs.push(ST.logEntry(a, st, stp.event, 'bg')); }
+      }, function (e) { if (prevMap[a.id]) next[a.id] = prevMap[a.id]; rows.push({ assetId: a.id, name: a.name, level: null, eff: st.price, text: 'Fiyat alınamadı — stop kontrol edilemedi (' + String(e && e.message || e).slice(0, 60) + ')' }); });
+    })).then(function () {
+      res.stops = rows; res.stopState = next;
+      var lg = (prev && prev.stopLog) || []; logs.forEach(function (l) { lg = ST.addLog(lg, l); }); res.stopLog = ST.cleanLog(lg);
+      res.stopEvents = logs;
+      return cands;
+    });
+  }
   function check(payload, data, opts) {
     opts = opts || {}; var now = opts.now || Date.now(), nowIso = iso(now), state = JSON.parse(JSON.stringify(payload.state)), today = tsiYmd(now), ym = today.slice(0, 7), prev = opts.prev || null;
     var res = { v: VERSION, generatedAt: nowIso, payloadAt: payload.at, isExample: !!state.isExample, errors: [], steps: {} };
@@ -254,6 +277,8 @@
         var ev = AL.evaluate(alerts, prices, nowIso); state.analysis = state.analysis || {}; state.analysis.alerts = ev.alerts;
         res.alertsChecked = { total: act.length, priced: Object.keys(prices).length, errors: qerr.slice(0, 8) };
         res.alertsFired = ev.fired.map(function (a) { return { id: a.id, key: a.key, triggeredAt: a.triggeredAt, firedPrice: a.firedPrice, firedSource: a.firedSource }; });
+        return checkStops(state, hold, prev, opts, now, nowIso, res);
+      }).then(function (stopCands) {
         // 2) Varlık analizleri (taze anlık görüntüler): portföy + izleme listesi
         var wl = (state.analysis && state.analysis.watchlist) || [], keys = {}; hold.forEach(function (h) { if (/^(bist|tefas|cg|metal|fx|idx|us):/.test(h.key)) keys[h.key] = 1; }); wl.forEach(function (w) { if (w.key) keys[w.key] = 1; });
         var snaps = {}, ks = Object.keys(keys).slice(0, 40);
@@ -263,7 +288,7 @@
           return (opts.MD ? kapItems(opts.MD, hold) : Promise.resolve([])).then(function (kap) {
             var items = ((data.feed && data.feed.items) || []).concat(kap), news = N.process(items, hold, now);
             var health = H, meta = prevLog.meta, ctx = buildCtx({ state: state, calc: c, now: now, hold: hold, settings: S, health: health, news: news, hub: data, meta: meta });
-            var ev2 = NT.evaluate(ctx), rm = reminderCands(payload.reminders, today, nowIso), cands = ev2.cands.concat(pa.cands, rm.cands); res.reminders = rm.rows.slice(0, 20);
+            var ev2 = NT.evaluate(ctx), rm = reminderCands(payload.reminders, today, nowIso), cands = ev2.cands.concat(stopCands || [], pa.cands, rm.cands); res.reminders = rm.rows.slice(0, 20);
             var firstRun = !prev || !prev.log, fresh = NT.merge(prevLog, cands, now, ev2.metaPatch);
             prevLog.items.forEach(function (it) { if (/^an:/.test(it.id) && !it.resolvedAt && now - (it.firstAt || it.at || now) > 36 * 3600000) it.resolvedAt = now; }); // geçiş uyarıları 36 sa sonra kutudan kalkar
             var dl = NT.deliverable(prevLog, fresh, S, now).filter(function (it) { return it.origin !== 'workflow'; }); // piyasa geneli uyarıları zaten tools/publish.py ntfy'ye gönderir (çift bildirim olmasın)

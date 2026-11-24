@@ -12,7 +12,7 @@ var MDDIR = process.argv[2] || 'market-data-out', OUT = process.argv[3] || 'bg-o
 var NONET = process.env.BG_NO_NET === '1', NOW = process.env.BG_NOW ? Date.parse(process.env.BG_NOW) : Date.now();
 var REALFETCH = globalThis.fetch;
 require('./nodefetch.js').install(MDDIR, { noNet: NONET });
-var BG = require('../js/bgwatch.js'), MD = require('../js/mdata.js'), AN = require('../js/analysis.js'), SN = require('../js/snapshot.js');
+var RP = require('../js/report.js'), SS = require('../js/sessions.js'), BG = require('../js/bgwatch.js'), MD = require('../js/mdata.js'), AN = require('../js/analysis.js'), SN = require('../js/snapshot.js');
 var NTFY_URL = process.env.NTFY_URL || 'https://ntfy.sh/', APP = 'https://zurnativi.github.io/finans-pusulasi/';
 
 function mask(v) { if (process.env.GITHUB_ACTIONS && v) console.log('::add-mask::' + String(v).replace(/\r?\n/g, '')); }
@@ -64,6 +64,7 @@ function main() {
     var base = { v: BG.VERSION, kid: kid, generatedAt: BG.iso(NOW) };
     function writeRes(res) {
       if (prev && !res.log && prev.log) { res.log = prev.log; res.analysis = res.analysis || prev.analysis; }
+      if (prev && !res.stopState && prev.stopState) { res.stopState = prev.stopState; res.stopLog = prev.stopLog; }
       res.kid = kid; res.run = process.env.GITHUB_RUN_ID ? String(process.env.GITHUB_RUN_ID) : null;
       return BG.seal(S.key, res, kid).then(function (e) { writeOut(BG.RESULT_PATH, JSON.stringify(e)); });
     }
@@ -73,7 +74,8 @@ function main() {
     }
     return BG.open(S.key, env).then(function (payload) {
       var data = { feed: readJson('news/feed.json'), calendar: readJson('hub/calendar.json'), probs: readJson('hub/probs.json'), macro: readJson('hub/macro.json'), analogs: readJson('hub/analogs.json'), recovery: readJson('hub/recovery.json'), status: readJson('hub/status.json'), alerts: readJson('hub/alerts.json') };
-      var opts = { now: NOW, MD: NONET ? { kap: function () { return Promise.resolve({ items: [] }); } } : MD, prev: prev, refresh: !NONET, snapOf: snapOf, quoteOf: function (key, sym) { return NONET ? Promise.reject(new Error('ağ kapalı')) : BG.quote(MD, key, sym); } };
+      var opts = { now: NOW, MD: NONET ? { kap: function () { return Promise.resolve({ items: [] }); } } : MD, prev: prev, refresh: !NONET, snapOf: snapOf, quoteOf: function (key, sym) { return NONET ? Promise.reject(new Error('ağ kapalı')) : BG.quote(MD, key, sym); },
+        stopQuoteOf: function (a, key, st) { return MD.load(key, {}).then(function (series) { var q = RP.stopQuote({ ok: true, bars: (series.bars || []).filter(function (b) { return b && typeof b.c === 'number'; }), live: series.live || null, hist: series.histSource || null }, SS.marketOfKey(key), NOW, st); if (!q) throw new Error('fiyat yok'); return q; }); } };
       return BG.check(payload, data, opts).then(function (r) {
         var res = Object.assign(base, r.res), topic = S.topic, ntfy = { enabled: !!topic, sent: 0, failed: 0, skippedExample: false };
         res.ntfy = ntfy; res.payloadKid = env.kid; res.device = payload.device || '';
@@ -91,7 +93,7 @@ function main() {
           jobs = jobs.then(function () { return sendNtfy(topic, { title: '✅ Finans Pusulası — zincir çalışıyor', message: 'Arka plan portföy izleme bu bildirimi GitHub Actions üzerinden gönderdi. Uygulamada "Arka plan son kontrol" saatini görebilirsin.', priority: 3 }).then(function () { res.testAck = { id: payload.testPush.id, at: BG.iso(NOW) }; ntfy.sent++; }, function () { ntfy.failed++; }); });
         } else if (prev && prev.testAck) res.testAck = prev.testAck;
         return jobs.then(function () { res.pending = pending; return writeRes(res).then(function () {
-          log('durum=' + res.status + ' örnek=' + !!res.isExample + ' kalem=' + (res.positions ? res.positions.length : 0) + ' sağlık=' + (res.health ? res.health.total : '-') + ' görünür_uyarı=' + (res.items ? res.items.length : 0) + ' yeni=' + (res.fresh ? res.fresh.length : 0) + ' ntfy_gönderilen=' + ntfy.sent + ' ntfy_hata=' + ntfy.failed + ' fiyat_güncellenen=' + (res.steps && res.steps.prices && res.steps.prices.applied ? res.steps.prices.applied.length : 0) + ' hata=' + (res.errors ? res.errors.length : 0));
+          log('durum=' + res.status + ' örnek=' + !!res.isExample + ' kalem=' + (res.positions ? res.positions.length : 0) + ' sağlık=' + (res.health ? res.health.total : '-') + ' görünür_uyarı=' + (res.items ? res.items.length : 0) + ' yeni=' + (res.fresh ? res.fresh.length : 0) + ' ntfy_gönderilen=' + ntfy.sent + ' ntfy_hata=' + ntfy.failed + ' stop=' + (res.stops ? res.stops.length : 0) + ' stop_olay=' + (res.stopEvents ? res.stopEvents.length : 0) + ' fiyat_güncellenen=' + (res.steps && res.steps.prices && res.steps.prices.applied ? res.steps.prices.applied.length : 0) + ' hata=' + (res.errors ? res.errors.length : 0));
           return res.ok ? 0 : 1; }); });
       });
     }, function (e) {

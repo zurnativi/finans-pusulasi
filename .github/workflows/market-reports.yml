@@ -1,0 +1,50 @@
+# SEANS RAPORLARI (v8.5): her piyasa için açılış öncesi / seans ortası / kapanış sonrası raporu.
+# Zamanlama TSİ: BIST (+altın, TEFAS fonları) 09:30 · 13:30 · 18:30 (arife: 09:30 · 11:30 · 13:30); ABD 09:00 · 12:45 · 16:30 New York saati
+# (kış 17:00 · 20:45 · 00:30, yaz 16:00 · 19:45 · 23:30 TSİ; NYSE tatilleri atlanır); kripto (elinde varsa) 09:00 · 15:00 · 21:00.
+# GitHub cron UTC'dir ve gecikebilir: iş 15 dakikada bir uyanır, hangi raporun zamanı geldiğine js/sessions.js karar verir (yaz saati ve tatiller dahil),
+# zamanı gelmemişse market-data dalını indirmeden saniyeler içinde biter. Rapor saatinden sonra 100 dk içinde üretilmemiş rapor üretilir; aynı rapor iki kez üretilmez.
+# Kişisel rapor yalnızca portföy anahtarı sırrı tanımlıysa üretilir (şifreli; bg/reports.enc.json). Yoksa yalnız herkese açık piyasa raporu (reports/public/).
+name: market-reports
+on:
+  schedule:
+    - cron: '*/15 5-22 * * 1-5'
+    - cron: '0,20 6,12,18 * * 0,6'
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: "Rapor: auto | bist:pre | bist:mid | bist:post | us:pre | us:mid | us:post | crypto:pre | crypto:mid | crypto:post"
+        required: false
+        default: auto
+permissions:
+  contents: write
+concurrency: { group: market-data-reports, cancel-in-progress: false }
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Rapor zamanı mı?
+        id: due
+        env: { FORCE_SLOT: '${{ github.event.inputs.slot }}' }
+        run: node tools/session_report.js --check
+      - name: Piyasa verisini al
+        if: steps.due.outputs.due == '1'
+        run: git fetch --depth=1 origin market-data:md-data && git worktree add /tmp/md md-data
+      - name: Raporları üret (kişisel kısım yalnız bellekte; çıktı şifreli)
+        if: steps.due.outputs.due == '1'
+        env:
+          FORCE_SLOT: ${{ github.event.inputs.slot }}
+          PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/session_report.js /tmp/md /tmp/rep-out
+      - name: market-data dalına yaz
+        if: steps.due.outputs.due == '1'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -d /tmp/rep-out ]; then python3 tools/publish.py /tmp/rep-out /tmp/md reports; else echo "yazılacak rapor yok"; fi

@@ -336,6 +336,7 @@
       s.incomes.forEach(function (x, i) { if (!isK(x.amount) || x.amount < 0) errs.push('Gelir ' + (i + 1) + ': tutar hatalı'); });
       s.expenses.forEach(function (x, i) { if (!isK(x.amount) || x.amount < 0) errs.push('Gider ' + (i + 1) + ': tutar hatalı'); if (x.type !== 'fixed' && x.type !== 'variable') errs.push('Gider ' + (i + 1) + ': tür hatalı'); });
       s.assets.forEach(function (x, i) { if (!isK(x.value) || x.value < 0) errs.push('Varlık ' + (i + 1) + ': değer hatalı'); if (['safe', 'medium', 'risky'].indexOf(x.risk) < 0) errs.push('Varlık ' + (i + 1) + ': risk hatalı'); });
+      s.assets.forEach(function (x) { if (x.stop != null) { var STm = (typeof require === 'function' && typeof module === 'object') ? require('./stops.js') : (typeof self !== 'undefined' ? self.Stops : null); var cs = STm ? STm.clean(x.stop) : null; if (cs) x.stop = cs; else delete x.stop; } }); // v8.5: hatalı stop sessizce kaldırılır
       s.debts.forEach(function (x, i) { if (!isK(x.amount) || x.amount < 0) errs.push('Borç ' + (i + 1) + ': tutar hatalı'); });
       // Kurlar
       Object.keys(s.rates).forEach(function (c) {
@@ -491,7 +492,7 @@
         if (t.currency !== (a.currency || 'TRY')) errs.push(n + ': para birimi varlığınkiyle aynı olmalı');
         else if (t.currency !== 'TRY' && t.side !== 'split' && (!isK(t.fxRate) || t.fxRate <= 0)) errs.push(n + ': işlem günündeki kur gerekli');
         if ((t.currency === 'TRY' || t.side === 'split') && t.fxRate != null) errs.push(n + ': ' + (t.side === 'split' ? 'bedelsiz/bölünmede' : 'TL işlemde') + ' kur olmaz');
-        if (t.note != null && (typeof t.note !== 'string' || t.note.length > 200)) errs.push(n + ': not hatalı');
+        if (t.note != null && (typeof t.note !== 'string' || t.note.length > 1000)) errs.push(n + ': not hatalı (en çok 1000 karakter)');
         (byAsset[t.assetId] = byAsset[t.assetId] || []).push(t);
       });
       if (!errs.length) Object.keys(byAsset).forEach(function (id) { var lg = PF.ledger(byAsset[id]); lg.errors.forEach(function (e) { errs.push(assetIds[id].name + ': ' + e); }); });
@@ -540,6 +541,9 @@
     if (['low', 'medium', 'high'].indexOf(p.risk) >= 0) out.profile.risk = p.risk;
     if (typeof p.usd === 'boolean') out.profile.usd = p.usd;
     out.profile.halal = true;
+    var STm = (typeof require === 'function' && typeof module === 'object') ? require('./stops.js') : (typeof self !== 'undefined' ? self.Stops : null);
+    if (STm && Array.isArray(a.stopLog)) out.stopLog = STm.cleanLog(a.stopLog);
+    if (STm && a.stopState && typeof a.stopState === 'object') out.stopState = STm.cleanStateMap(a.stopState);
     if (Array.isArray(a.alerts)) { var AL = (typeof require === 'function' && typeof module === 'object') ? require('./alerts.js') : (typeof self !== 'undefined' ? self.Alerts : null); out.alerts = AL ? AL.clean(a.alerts) : []; }
     return out;
   }

@@ -1,11 +1,12 @@
 # ARKA PLAN PORTFÖY İZLEME (v8.2, isteğe bağlı): kullanıcının cihazda ŞİFRELENİP gizli Gist'e yüklenen portföy verisini çözer, aynı JS modülleriyle kontrol eder,
 # sonucu yine şifreleyip market-data dalına yazar ve (isteğe bağlı) ntfy ile telefona bildirim gönderir. PORTFOLIO_KEY sırrı tanımlı değilse hiçbir şey yapmaz.
 # Düz metin portföy verisi: yalnızca bu işin belleğinde. Günlüğe yalnızca sayılar yazılır; sırlar maskelenir.
-# Zamanlama: haber işinden 7 dk sonra (:14, :34, :54), her günlük/saatlik veri işinden sonra ve elle. Tek grup: çalışmalar sıraya girer, sonuç dosyası çakışmaz.
+# Zamanlama: haber işinden 7 dk sonra (:14, :34, :54), hafta içi seans saatlerinde ayrıca :04, :24, :44 (stoplar ~10 dk'da bir), her günlük/saatlik veri işinden sonra ve elle. Tek grup: çalışmalar sıraya girer, sonuç dosyası çakışmaz.
 name: market-portfolio
 on:
   schedule:
     - cron: '14,34,54 * * * *'
+    - cron: '4,24,44 6-21 * * 1-5'   # v8.5: seans saatlerinde (BIST 07–15, ABD 13:30–21 UTC) stop kontrolü ~10 dakikada bir
   workflow_run:
     workflows: [market-data, market-intraday]
     types: [completed]
