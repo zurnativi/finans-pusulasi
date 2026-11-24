@@ -1145,7 +1145,48 @@
   }
 
   /* ---------- AYARLAR ve YEDEK ---------- */
-  function renderSettings() {
+  /* v8.6: tüm varlıkları temizle — onay kutulu pencere, otomatik kopya + yedek indirme, sonra mutate (Geri al = mevcut geçmiş/undo yığını). */
+  function openHoldingsWipeDialog() {
+    if (!state || !PF || !PF.holdingsWipePlan) return;
+    var plan = PF.holdingsWipePlan(state);
+    if (plan.empty) { toast('Temizlenecek varlık, alım-satım veya varlık uyarısı yok.'); return; }
+    if (document.getElementById('wipe-holdings')) return;
+    var rootEl = document.createElement('div');
+    rootEl.className = 'modal-bg'; rootEl.id = 'wipe-holdings';
+    rootEl.setAttribute('role', 'dialog'); rootEl.setAttribute('aria-modal', 'true'); rootEl.setAttribute('aria-label', 'Tüm varlıkları temizle');
+    function item(n, label) { return n ? '<li><b>' + n + '</b> ' + esc(label) + '</li>' : ''; }
+    var del = item(plan.assets, 'varlık') + item(plan.trades, 'alım-satım' + (plan.notes ? ' (' + plan.notes + ' işlem notu)' : '')) +
+      item(plan.stops, 'zarar durdur (stop)') + item(plan.alerts, 'seviye uyarısı') + item(plan.stopEvents, 'stop uyarı kaydı');
+    var syncNote = (SUI && SUI.syncEnabled()) ? '<div class="notice warn">Eşitleme açık — temizlik diğer cihazlarına da yansır. Yalnızca bu cihazda silmek için önce Yedek, eşitleme ve kilit sayfasından eşitlemeyi kapat.</div>' : '';
+    rootEl.innerHTML = '<form class="modal card wipe-dialog" autocomplete="off"><h2>Tüm varlıkları temizle</h2>' +
+      '<p>Portföyündeki varlıklar, alım-satımlar, stoplar ve varlık uyarıları silinir. <b>Bütçe verilerin durur</b> (işlemler, hesaplar, transferler, taksitler, düzenli ödemeler, hedefler). Silmeden önce otomatik bir kopya alınır ve yedek dosyası indirilir. Hemen ardından <b>Geri al</b> ile veya Ayarlar → Yedek, eşitleme, kilit → Otomatik kopyalar\'dan önceki hâle dönebilirsin.</p>' +
+      syncNote +
+      '<div class="wipe-cols"><section><h3>Silinecek</h3><ul>' + del + '</ul></section>' +
+      '<section><h3>Kalacak</h3><ul><li>Bütçe: işlemler, hesaplar, transferler, taksitler, düzenli ödemeler, gelir ve gider kalemleri</li><li>Hedefler, ayarlar, kurlar ve TÜFE</li></ul></section></div>' +
+      '<label class="row wipe-ack"><input type="checkbox" id="wipe-ok"> Anladım — bütçem duracak, tüm varlık ve alım-satımlarım silinecek.</label>' +
+      '<div class="row" style="margin-top:14px"><button class="btn" type="button" data-wipe="cancel">Vazgeç</button><button class="btn danger" type="submit" id="wipe-go" disabled>Tüm varlıkları temizle</button></div></form>';
+    document.body.appendChild(rootEl);
+    var go = rootEl.querySelector('#wipe-go'), ok = rootEl.querySelector('#wipe-ok');
+    ok.onchange = function () { go.disabled = !ok.checked; };
+    function close() { rootEl.remove(); }
+    rootEl.querySelector('[data-wipe=cancel]').onclick = function () { close(); };
+    rootEl.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+    rootEl.addEventListener('click', function (e) { if (e.target === rootEl) close(); });
+    rootEl.querySelector('form').onsubmit = function (e) { e.preventDefault(); if (!ok.checked) return; close(); doWipeHoldings(); };
+  }
+  function doWipeHoldings() {
+    var plan = PF.holdingsWipePlan(state);
+    if (plan.empty) { toast('Temizlenecek varlık, alım-satım veya varlık uyarısı yok.'); return; }
+    var copy = JSON.parse(JSON.stringify(state)); copy.exportedAt = new Date().toISOString(); copy.app = 'Finans Pusulası';
+    var json = JSON.stringify(copy, null, 2);
+    var run = function () {
+      Store.download('finans-yedek-varliklar-oncesi-' + todayYmd() + '.json', json);
+      mutate(function (s) { PF.wipeHoldings(s); }, 'Tüm varlıklar temizlendi. Bütçe verilerin duruyor. (Yedek indirildi; otomatik kopyalarda da var.)');
+    };
+    if (SUI && SUI.snapshot) SUI.snapshot('Tüm varlıklar temizlenmeden önce').then(run, run); else run();
+  }
+
+    function renderSettings() {
     var st = state.settings, sc = st.scenarios;
     var h = '<h1>Ayarlar ve yedek</h1><div class="grid two"><section class="card"><h2>Yedekleme ' + tip('Verilerin sadece bu tarayıcıda durur. Tarayıcı verisini silersen veya başka cihaza geçersen kaybolmaması için düzenli yedek al.') + '</h2>' +
       '<p>Son kayıt: <b>' + (state.updatedAt ? new Date(state.updatedAt).toLocaleString('tr-TR') : '—') + '</b></p>' +
@@ -1162,8 +1203,8 @@
       h += '<tr><td>' + esc(sc[k].label) + '</td>' + ['safe', 'medium', 'risky'].map(function (r) { return '<td><input type="number" step="0.5" min="-90" max="100" aria-label="' + esc(sc[k].label + ' ' + C.RISK[r]) + '" data-scen="' + k + '" data-risk="' + r + '" value="' + sc[k].returnsBp[r] / 100 + '"></td>'; }).join('') + '</tr>';
     });
     h += '</tbody></table></div><button class="btn small" data-act="scen-reset">Varsayılana dön</button></section>';
-    h += '<section class="card"><h2>Veri yönetimi</h2><div class="row"><button class="btn" data-act="load-example">Örnek veriyi yükle</button><button class="btn danger" data-act="clear-all">Tüm verileri sil</button></div>' +
-      '<p class="hint">Örnek veriyi yüklemek mevcut verilerinin yerine geçer (önce yedek almayı unutma). Silme işlemi asistan anahtarlarını silmez; onlar Asistan bölümünden silinir.</p>' +
+    h += '<section class="card"><h2>Veri yönetimi</h2><div class="row"><button class="btn" data-act="load-example">Örnek veriyi yükle</button><button class="btn danger" data-act="wipe-holdings">Tüm varlıkları temizle</button><button class="btn danger" data-act="clear-all">Tüm verileri sil</button></div>' +
+      '<p class="hint">«Tüm varlıkları temizle» yalnız portföy varlıklarını, alım-satımları, stopları ve varlık uyarılarını siler; bütçe, hesaplar, işlemler ve hedefler durur. Silmeden önce otomatik kopya alınır ve yedek dosyası indirilir. «Tüm verileri sil» her şeyi siler. Örnek veri yüklemek mevcut verilerinin yerine geçer. Asistan anahtarları Asistan bölümünden silinir.</p>' +
       '<p class="hint detail-only">Uygulama sürümü 7.1 · Veri şeması v' + S.SCHEMA_VERSION + ' · Para hesapları tam sayı kuruşla yapılır · <a href="tests/tests.html">Hesap testlerini çalıştır</a></p></section></div>';
     return h;
   }
@@ -1839,6 +1880,7 @@
         var go = function () { mutate(function (s) { var view = s.settings && s.settings.view, n = S.exampleState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); if (view) s.settings.view = view; }, 'Örnek veri yüklendi.'); };
         if (nReal > 0 && SUI) SUI.snapshot('Örnek veri yüklenmeden önce').then(go, go); else go();
       },
+      'wipe-holdings': function () { openHoldingsWipeDialog(); },
       'clear-all': function () { if (confirm('TÜM veriler bu cihazdan silinecek. Emin misin? (Önce yedek almanı öneririz; ayrıca otomatik bir kopya alınır.)' + (SUI && SUI.syncEnabled() ? '\n\nDİKKAT: Eşitleme açık — silme diğer cihazlarına da yansır. Yalnızca bu cihazdan silmek için önce Yedek ve güvenlik sayfasından eşitlemeyi kapat.' : ''))) SUI.snapshot('Tümünü silmeden önce').then(function () { mutate(function (s) { var n = S.emptyState(); Object.keys(n).forEach(function (k) { s[k] = n[k]; }); }, 'Tüm veriler silindi.'); }); },
       'add': function () {
         var l = t.dataset.list;

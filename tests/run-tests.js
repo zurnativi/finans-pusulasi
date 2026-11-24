@@ -765,6 +765,13 @@
                         r85.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                         console.log('\n' + p85 + '/' + r85.length + ' v8.5 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length));
                         if (p85 !== r85.length) process.exit(1);
+                        console.log('\n— v8.6 (tüm varlıkları temizle: bütçe durur, otomatik yedek ve geri al, boş portföy) —');
+                        return require('./run-tests-v86.js').run().then(function (r86) {
+                          var p86 = r86.filter(function (r) { return r.ok; }).length;
+                          r86.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                          console.log('\n' + p86 + '/' + r86.length + ' v8.6 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length));
+                          if (p86 !== r86.length) process.exit(1);
+                        });
                       });
                     });
                   });

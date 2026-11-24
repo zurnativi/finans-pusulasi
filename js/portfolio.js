@@ -877,6 +877,42 @@
       lot: 'whole', priceKey: null, withinTierBp: null, goalId: null, halal: { status: 'bilinmiyor', note: '', source: '', date: null } };
   }
 
+  /* v8.6: tüm portföy varlıklarını (alım-satımlar, stoplar, varlık uyarıları, varlık fiyat geçmişi) sil; bütçe/hesap/hedef durur.
+   * Kur fiyatları (fx:USD / fx:EUR) hesap bakiyesi için kalır. İzleme listesi ve analiz profili durur. */
+  function holdingsWipePlan(state) {
+    var assets = Array.isArray(state && state.assets) ? state.assets : [];
+    var trades = Array.isArray(state && state.trades) ? state.trades : [];
+    var an = state && state.analysis && typeof state.analysis === 'object' && !Array.isArray(state.analysis) ? state.analysis : {};
+    var alerts = Array.isArray(an.alerts) ? an.alerts : [];
+    var stopLog = Array.isArray(an.stopLog) ? an.stopLog : [];
+    var stopState = an.stopState && typeof an.stopState === 'object' && !Array.isArray(an.stopState) ? an.stopState : {};
+    var priceKeys = [];
+    function addKey(k) {
+      if (!k || /^fx:/.test(k) || priceKeys.indexOf(k) >= 0) return;
+      if (state && state.prices && state.prices[k]) priceKeys.push(k);
+    }
+    assets.forEach(function (a) { if (a) { addKey(a.priceKey); addKey(assetKey(a)); } });
+    Object.keys((state && state.prices) || {}).forEach(function (k) { if (/^m:/.test(k)) addKey(k); });
+    var stops = 0; assets.forEach(function (a) { if (a && a.stop) stops++; });
+    var notes = 0; trades.forEach(function (t) { if (t && t.note) notes++; });
+    return {
+      assets: assets.length, trades: trades.length, stops: stops, alerts: alerts.length, notes: notes,
+      stopEvents: stopLog.length, stopStates: Object.keys(stopState).length, priceKeys: priceKeys,
+      empty: !assets.length && !trades.length && !alerts.length && !stopLog.length && !Object.keys(stopState).length
+    };
+  }
+  function wipeHoldings(state) {
+    var plan = holdingsWipePlan(state);
+    state.assets = [];
+    state.trades = [];
+    if (!state.analysis || typeof state.analysis !== 'object' || Array.isArray(state.analysis)) state.analysis = { watchlist: [], profile: {} };
+    state.analysis.alerts = [];
+    state.analysis.stopLog = [];
+    state.analysis.stopState = {};
+    if (state.prices && typeof state.prices === 'object') plan.priceKeys.forEach(function (k) { delete state.prices[k]; });
+    return plan;
+  }
+
   return { QS: QS, PS: PS, TIERS: TIERS, HALAL: HALAL, LOTS: LOTS, PRICE_KINDS: PRICE_KINDS, GLIDES: GLIDES, BENCHMARKS: BENCHMARKS, DEFAULT_RULES: DEFAULT_RULES, JUMP_BP: JUMP_BP, STALE_DAYS: STALE_DAYS, GENERIC: GENERIC,
     isInt: isInt, mulDiv: mulDiv, valueMinor: valueMinor, qtyForAmount: qtyForAmount, toTL: toTL, priceToTL: priceToTL, fxKurusFromPrice: fxKurusFromPrice, fxPriceFromKurus: fxPriceFromKurus, changeBp: changeBp,
     qtyDecimals: qtyDecimals, roundQty: roundQty, parseScaled: parseScaled, formatScaled: formatScaled, fmtQty: fmtQty, fmtPrice: fmtPrice,
@@ -890,5 +926,6 @@
     positions: positions, rebalance: rebalance, riskReport: riskReport,
     detectTradeColumns: detectTradeColumns, tradeRowsFromTable: tradeRowsFromTable, parseTradeText: parseTradeText, parsePriceText: parsePriceText, rowsFromAiTrades: rowsFromAiTrades, normSide: normSide, normCur: normCur,
     matchAsset: matchAsset, tradeKey: tradeKey, validateTradeRow: validateTradeRow, tradeTotals: tradeTotals, tradeTotalsCheck: tradeTotalsCheck,
-    detectPriceColumns: detectPriceColumns, priceRowsFromTable: priceRowsFromTable, newAssetFromSymbol: newAssetFromSymbol, fold: fold };
+    detectPriceColumns: detectPriceColumns, priceRowsFromTable: priceRowsFromTable, newAssetFromSymbol: newAssetFromSymbol, fold: fold,
+    holdingsWipePlan: holdingsWipePlan, wipeHoldings: wipeHoldings };
 });

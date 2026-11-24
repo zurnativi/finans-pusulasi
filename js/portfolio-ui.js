@@ -85,7 +85,7 @@
     var SUBS = [['', 'Genel bakış'], ['varliklar', 'Varlıklar'], ['islemler', 'Alım-satım'], ['dengeleme', 'Dengeleme'], ['getiri', 'Getiri'], ['hedefler', 'Hedefler'], ['risk', 'Risk ve helal'], ['fiyatlar', 'Fiyatlar']];
     function renderPortfolio() {
       var sub = X.sub(), c;
-      var h = '<div class="pf"><header class="pf-head"><div><div class="pf-kicker">Portföy</div><h1>Yönetim</h1><div class="hint">Fiyatlar açıkken kendi kendine güncellenir</div></div><div class="pf-actions"><a class="btn small" href="#portfoy/fiyatlar">Fiyatlar</a><a class="btn small primary" href="#portfoy/islemler">İşlem gir</a></div></header>' + X.subtabs('portfoy', SUBS);
+      var h = '<div class="pf"><header class="pf-head"><div><div class="pf-kicker">Portföy</div><h1>Yönetim</h1><div class="hint">Fiyatlar açıkken kendi kendine güncellenir</div></div><div class="pf-actions"><a class="btn small" href="#portfoy/fiyatlar">Fiyatlar</a><a class="btn small primary" href="#portfoy/islemler">İşlem gir</a><button type="button" class="btn small danger" data-act="wipe-holdings">Tüm varlıkları temizle</button></div></header>' + X.subtabs('portfoy', SUBS);
       if (st().isExample) h += '<p class="hint">Örnek portföydeki fiyatlar <b>ÖRNEK</b>tir, gerçek piyasa fiyatı değildir. Gerçek fiyat için Fiyatlar → "Fiyatları güncelle".</p>';
       var f = { '': pOverview, varliklar: pAssets, islemler: pTrades, dengeleme: pRebalance, getiri: pReturns, hedefler: pGoals, risk: pRisk, fiyatlar: pPrices }[sub] || pOverview;
       function errBox(e) { console.warn(e); return '<div class="notice warn section-err">Bu bölüm gösterilemedi (' + esc(e.message) + '). Verilerin güvende.</div>'; }

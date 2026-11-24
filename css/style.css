@@ -667,3 +667,12 @@ form.editing,.card.editing{outline:2px solid var(--warn);outline-offset:4px;bord
 }
 .rp-mk .btn.primary .hint,.rp-mk .btn.primary .muted{color:inherit;opacity:.9}
 @media print{.rp .card{break-inside:auto}.rp-mk{display:none!important}.rp-kpis,.rp-lights,.rp-charts>*,.rp-lv,table{break-inside:avoid}.rp-head{padding:6px 10px}}
+
+/* v8.6: tüm varlıkları temizle onay penceresi */
+.wipe-dialog{max-width:520px}
+.wipe-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.wipe-cols h3{margin:0;font-size:.95rem}
+.wipe-cols ul{margin:6px 0 0;padding-left:1.2em}
+.wipe-ack{align-items:flex-start;gap:8px;margin-top:8px}
+.wipe-ack input{margin-top:3px;flex:none}
+@media (max-width:640px){.wipe-cols{grid-template-columns:1fr}}
