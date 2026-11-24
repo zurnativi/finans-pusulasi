@@ -179,6 +179,7 @@
   function sortTrades(list) {
     return list.map(function (t, i) { return [t, i]; }).sort(function (a, b) {
       if (a[0].date !== b[0].date) return a[0].date < b[0].date ? -1 : 1;
+      if (a[0].time && b[0].time && a[0].time !== b[0].time) return a[0].time < b[0].time ? -1 : 1; // v8.6.1: saat biliniyorsa gün içi sıra
       var oa = SIDE_ORDER[a[0].side] == null ? 3 : SIDE_ORDER[a[0].side], ob = SIDE_ORDER[b[0].side] == null ? 3 : SIDE_ORDER[b[0].side];
       if (oa !== ob) return oa - ob;
       return a[1] - b[1];
@@ -913,6 +914,106 @@
     return plan;
   }
 
+  /* v8.6.1: aracı kurum geçmiş dosyası ("finans-pusulasi-araci-kurum"). Dosyadaki her sembolün alım-satımları dosyadakilerle
+   * DEĞİŞTİRİLİR (varlık yoksa tam bilgisiyle açılır); diğer varlıklar ve bütçe verileri dokunulmaz. Saf: plan + uygula. */
+  var BROKER_FORMAT = 'finans-pusulasi-araci-kurum';
+  var TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+  function isBrokerFile(o) { return !!(o && typeof o === 'object' && o.format === BROKER_FORMAT); }
+  function brokerFileErrors(o) {
+    var e = [];
+    if (!isBrokerFile(o)) return ['Bu dosya aracı kurum geçmiş dosyası değil'];
+    if (o.version !== 1) e.push('Desteklenmeyen dosya sürümü: ' + o.version);
+    if (!Array.isArray(o.assets) || !o.assets.length) e.push('Dosyada varlık yok');
+    if (!Array.isArray(o.trades) || !o.trades.length) e.push('Dosyada alım-satım yok');
+    if (e.length) return e;
+    var syms = {};
+    o.assets.forEach(function (a, i) {
+      var n = 'Varlık ' + (i + 1);
+      if (!a || typeof a.symbol !== 'string' || !/^[A-Z0-9.]{1,12}$/.test(a.symbol)) { e.push(n + ': sembol hatalı'); return; }
+      if (syms[a.symbol]) e.push(n + ': sembol tekrarlı (' + a.symbol + ')'); syms[a.symbol] = a;
+      if (!/^(TRY|USD|EUR)$/.test(a.currency || '')) e.push(a.symbol + ': para birimi hatalı');
+      if (a.priceKey != null) { var ki = keyInfo(a.priceKey); if (!ki || ki.kind === 'manual' || ki.cur !== a.currency) e.push(a.symbol + ': fiyat kaynağı hatalı'); }
+      if (a.lot != null && !LOTS[a.lot]) e.push(a.symbol + ': adet türü hatalı');
+      if (a.halal != null && (typeof a.halal !== 'object' || !HALAL[a.halal.status])) e.push(a.symbol + ': helal etiketi hatalı');
+    });
+    o.trades.forEach(function (t, i) {
+      var n = 'İşlem ' + (i + 1) + (t && t.symbol ? ' (' + t.symbol + ')' : ''), a = t && syms[t.symbol];
+      if (!a) { e.push(n + ': varlığı dosyada yok'); return; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(t.date || '')) e.push(n + ': tarih hatalı');
+      if (t.time != null && !TIME_RE.test(t.time)) e.push(n + ': saat hatalı');
+      if (t.side !== 'buy' && t.side !== 'sell') e.push(n + ': alış/satış hatalı');
+      if (!isInt(t.qty) || t.qty <= 0) e.push(n + ': adet hatalı');
+      if (!isInt(t.price) || t.price <= 0) e.push(n + ': fiyat hatalı');
+      if (!isInt(t.fee || 0) || (t.fee || 0) < 0) e.push(n + ': komisyon hatalı');
+      if (t.currency !== a.currency) e.push(n + ': para birimi varlığınkiyle aynı olmalı');
+      else if (t.currency !== 'TRY' && (!isInt(t.fxRate) || t.fxRate <= 0)) e.push(n + ': işlem günündeki kur eksik');
+      if (t.note != null && (typeof t.note !== 'string' || t.note.length > 1000)) e.push(n + ': not hatalı');
+    });
+    return e;
+  }
+  function brokerTarget(state, a) {
+    var f = fold(a.symbol);
+    return (state.assets || []).find(function (x) { return x && x.symbol && fold(x.symbol) === f; }) || null;
+  }
+  function brokerTrades(o, sym) {
+    return o.trades.filter(function (t) { return t.symbol === sym; }).map(function (t, i) { return [t, i]; }).sort(function (x, y) {
+      var a = x[0].date + ' ' + (x[0].time || ''), b = y[0].date + ' ' + (y[0].time || ''); return a < b ? -1 : a > b ? 1 : x[1] - y[1];
+    }).map(function (p) { return p[0]; });
+  }
+  function brokerImportPlan(state, o) {
+    var errors = brokerFileErrors(o); if (errors.length) return { errors: errors };
+    var rows = [], touched = {};
+    o.assets.forEach(function (fa) {
+      var ex = brokerTarget(state, fa), list = brokerTrades(o, fa.symbol), qty = 0;
+      list.forEach(function (t) { qty += t.side === 'buy' ? t.qty : -t.qty; });
+      if (qty < 0) errors.push(fa.symbol + ': satılan adet alınandan fazla');
+      if (ex && ex.tracking === 'manual') errors.push(fa.symbol + ': mevcut varlık elle değerle izleniyor; önce Varlıklar\'da "alım-satımla izle" yap');
+      var old = ex ? (state.trades || []).filter(function (t) { return t.assetId === ex.id; }).length : 0;
+      if (ex) touched[ex.id] = true;
+      rows.push({ symbol: fa.symbol, name: ex ? ex.name : fa.name || fa.symbol, action: ex ? 'replace' : 'new', assetId: ex ? ex.id : null, oldTrades: old, newTrades: list.length, qty: qty, currency: fa.currency, open: qty > 0 });
+    });
+    var kept = (state.assets || []).filter(function (a) { return a && !touched[a.id]; }).map(function (a) {
+      return { name: a.name, trades: (state.trades || []).filter(function (t) { return t.assetId === a.id; }).length };
+    });
+    return { errors: errors, rows: rows, kept: kept, trades: o.trades.length, broker: o.broker || 'Aracı kurum',
+      added: rows.filter(function (r) { return r.action === 'new'; }).length, replaced: rows.filter(function (r) { return r.action === 'replace'; }).length,
+      removedTrades: rows.reduce(function (s, r) { return s + r.oldTrades; }, 0) };
+  }
+  function applyBrokerImport(state, o, uid) {
+    var plan = brokerImportPlan(state, o);
+    if (plan.errors.length) throw new Error(plan.errors.slice(0, 3).join(' · '));
+    if (!Array.isArray(state.assets)) state.assets = [];
+    if (!Array.isArray(state.trades)) state.trades = [];
+    var src = String(o.source || o.broker || 'Aracı kurum dosyası').slice(0, 120);
+    o.assets.forEach(function (fa) {
+      var a = brokerTarget(state, fa);
+      if (!a) {
+        a = { id: uid(), name: String(fa.name || fa.symbol).slice(0, 80), symbol: fa.symbol, cls: C.ASSET_CLASSES[fa.cls] ? fa.cls : 'other', risk: fa.risk || 'risky', emergency: false, value: 0,
+          tracking: 'trades', currency: fa.currency, lot: fa.lot || 'whole', priceKey: fa.priceKey || null, withinTierBp: null, goalId: null,
+          halal: fa.halal ? JSON.parse(JSON.stringify(fa.halal)) : { status: 'bilinmiyor', note: '', source: '', date: null } };
+        if (fa.valueBasis) a.valueBasis = fa.valueBasis;
+        state.assets.push(a);
+      } else {
+        // mevcut kayıt korunur (stop, hedef, notlar); yalnız eksik/çıplak alanlar dosyadakiyle tamamlanır
+        a.tracking = 'trades';
+        if (!a.priceKey && fa.priceKey) a.priceKey = fa.priceKey;
+        if ((!a.cls || a.cls === 'other') && fa.cls && C.ASSET_CLASSES[fa.cls]) a.cls = fa.cls;
+        if ((!a.halal || a.halal.status === 'bilinmiyor') && fa.halal) a.halal = JSON.parse(JSON.stringify(fa.halal));
+        if (!a.lot && fa.lot) a.lot = fa.lot;
+        if (a.currency !== fa.currency) { a.currency = fa.currency; if (a.priceKey && keyInfo(a.priceKey) && keyInfo(a.priceKey).cur !== fa.currency) a.priceKey = fa.priceKey || null; }
+        if (a.name === a.symbol && fa.name) a.name = String(fa.name).slice(0, 80);
+        state.trades = state.trades.filter(function (t) { return t.assetId !== a.id; });
+      }
+      brokerTrades(o, fa.symbol).forEach(function (t) {
+        var x = { id: uid(), assetId: a.id, date: t.date, side: t.side, qty: t.qty, price: t.price, fee: t.fee || 0, currency: t.currency, fxRate: t.currency === 'TRY' ? null : t.fxRate,
+          note: t.note ? String(t.note).slice(0, 1000) : '', source: src };
+        if (t.time) x.time = t.time;
+        state.trades.push(x);
+      });
+    });
+    return plan;
+  }
+
   return { QS: QS, PS: PS, TIERS: TIERS, HALAL: HALAL, LOTS: LOTS, PRICE_KINDS: PRICE_KINDS, GLIDES: GLIDES, BENCHMARKS: BENCHMARKS, DEFAULT_RULES: DEFAULT_RULES, JUMP_BP: JUMP_BP, STALE_DAYS: STALE_DAYS, GENERIC: GENERIC,
     isInt: isInt, mulDiv: mulDiv, valueMinor: valueMinor, qtyForAmount: qtyForAmount, toTL: toTL, priceToTL: priceToTL, fxKurusFromPrice: fxKurusFromPrice, fxPriceFromKurus: fxPriceFromKurus, changeBp: changeBp,
     qtyDecimals: qtyDecimals, roundQty: roundQty, parseScaled: parseScaled, formatScaled: formatScaled, fmtQty: fmtQty, fmtPrice: fmtPrice,
@@ -927,5 +1028,6 @@
     detectTradeColumns: detectTradeColumns, tradeRowsFromTable: tradeRowsFromTable, parseTradeText: parseTradeText, parsePriceText: parsePriceText, rowsFromAiTrades: rowsFromAiTrades, normSide: normSide, normCur: normCur,
     matchAsset: matchAsset, tradeKey: tradeKey, validateTradeRow: validateTradeRow, tradeTotals: tradeTotals, tradeTotalsCheck: tradeTotalsCheck,
     detectPriceColumns: detectPriceColumns, priceRowsFromTable: priceRowsFromTable, newAssetFromSymbol: newAssetFromSymbol, fold: fold,
-    holdingsWipePlan: holdingsWipePlan, wipeHoldings: wipeHoldings };
+    holdingsWipePlan: holdingsWipePlan, wipeHoldings: wipeHoldings,
+    BROKER_FORMAT: BROKER_FORMAT, isBrokerFile: isBrokerFile, brokerFileErrors: brokerFileErrors, brokerImportPlan: brokerImportPlan, applyBrokerImport: applyBrokerImport };
 });

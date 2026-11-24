@@ -393,7 +393,7 @@
           var qtyTd = sd === 'div' ? '—' : sd === 'split' ? (added[t.id] != null ? (added[t.id] >= 0 ? '+' : '−') + PF.fmtQty(Math.abs(added[t.id])) : '?') + '<div class="hint">%' + String(t.ratioBp / 100).replace('.', ',') + '</div>' : PF.fmtQty(t.qty);
           var priceTd = sd === 'div' || sd === 'split' ? '—' : priceTxt(t.price, t.currency);
           var cashTd = sd === 'split' ? '<span class="muted">nakit yok</span>' : (sd === 'div' ? '<span class="pos">+' + money(cash, t.currency) + '</span><div class="hint">brüt ' + money(t.amount, t.currency) + (t.withholding ? ' − stopaj ' + money(t.withholding, t.currency) : '') + '</div>' : money(cash, t.currency)) + (t.currency !== 'TRY' && sd !== 'split' ? '<div class="hint">≈ ' + tl2(PF.tradeTL(t, cash)) + '</div>' : '');
-          h += '<tr><td class="num">' + X.dateLabel(t.date) + '</td><td>' + esc(a.name) + (t.note ? '<div class="hint">' + esc(t.note) + '</div>' : '') + '</td><td>' + pl + '</td><td class="r num">' + qtyTd + '</td><td class="r num">' + priceTd + '</td>' +
+          h += '<tr><td class="num">' + X.dateLabel(t.date) + (t.time ? '<div class="hint">' + esc(t.time.slice(0, 5)) + '</div>' : '') + '</td><td>' + esc(a.name) + (t.note ? '<div class="hint">' + esc(t.note) + '</div>' : '') + '</td><td>' + pl + '</td><td class="r num">' + qtyTd + '</td><td class="r num">' + priceTd + '</td>' +
             '<td class="r num">' + (t.fee ? money(t.fee, t.currency) : '<span class="muted">—</span>') + (t.feeParts ? '<div class="hint">' + feePartsTxt(t) + '</div>' : '') + '</td><td class="r num">' + cashTd + (t.editedAt ? '<div class="hint">düzeltildi</div>' : '') + '</td><td class="r num detail-only">' + (t.fxRate ? tl2(t.fxRate) : '—') + '</td>' +
             '<td><div class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn small" data-act="pf-edit-trade" data-id="' + esc(t.id) + '" aria-label="İşlemi düzenle">Düzenle</button><button class="btn small danger" data-act="pf-del-trade" data-id="' + esc(t.id) + '" aria-label="İşlemi sil">Sil</button></div></td></tr>';
         });
@@ -461,7 +461,7 @@
       if (errs.length) return X.toast('Kontrol et: ' + errs.join(', '));
       if (tradeEdit) { // düzeltme: aynı kimlik ve kaynak korunur, defter baştan doğrulanır
         var old = s.trades.find(function (x) { return x.id === tradeEdit; }); if (!old) { tradeEdit = null; return X.toast('Düzeltilen işlem artık yok.'); }
-        t.id = old.id; t.source = old.source || 'elle'; t.editedAt = new Date().toISOString();
+        t.id = old.id; t.source = old.source || 'elle'; t.editedAt = new Date().toISOString(); if (old.time && old.date === t.date) t.time = old.time; // v8.6.1: aracı kurum saati, tarih değişmedikçe korunur
         var vErr = ledgerCheck(s, a.id, function (list) { return list.map(function (x) { return x.id === old.id ? t : x; }); });
         if (vErr) return X.toast('Kaydedilmedi: ' + vErr);
         var same = ['date', 'side', 'qty', 'price', 'fee', 'fxRate', 'note', 'amount', 'withholding', 'ratioBp'].every(function (k) { return (old[k] == null ? null : old[k]) === (t[k] == null ? null : t[k]); }) && JSON.stringify(old.feeParts || null) === JSON.stringify(t.feeParts || null);
@@ -776,7 +776,7 @@
         h += '<button type="button" role="radio" class="seg-b" aria-checked="' + (importKind === m[0]) + '" data-act="pf-import-mode" data-mode="' + m[0] + '"><b>' + m[1] + '</b><span class="hint">' + m[2] + '</span></button>';
       });
       h += '</div></div>';
-      if (importKind === 'trades') h += '<div class="notice info">Aracı kurum dökümünü (Excel/CSV, PDF veya ekran görüntüsü) seç. Tarih, sembol, alış/satış, adet, fiyat, komisyon ve tutar okunur; satır satır <b>adet × fiyat</b> hesaplanıp belgedeki tutarla karşılaştırılır.</div>';
+      if (importKind === 'trades') h += '<div class="notice info">Aracı kurum dökümünü (Excel/CSV, PDF veya ekran görüntüsü) seç. Tarih, sembol, alış/satış, adet, fiyat, komisyon ve tutar okunur; satır satır <b>adet × fiyat</b> hesaplanıp belgedeki tutarla karşılaştırılır. Elinde hazır <b>aracı kurum geçmiş dosyası (.json, ör. Midas)</b> varsa aşağıdan «Aracı kurum geçmişini uygula»yı seç.</div>';
       if (importKind === 'prices') h += '<div class="notice info">İçinde <b>sembol/kod</b> ve <b>fiyat</b> olan bir Excel/CSV, PDF veya <b>ekran görüntüsü</b> seç (ücretsiz OCR ile okunur) ya da listeyi aşağıya yapıştır. Varlıklarınla koddan eşleşir; kaynak ve okunma saati kaydedilir, büyük sıçramalar işaretlenir.</div>' +
         '<div class="card paste-prices" style="margin-bottom:12px"><label for="pp-paste"><b>📋 Listeyi yapıştır</b> <span class="hint">her satır: KOD fiyat (tarih isteğe bağlı)</span></label><textarea id="pp-paste" rows="4" style="width:100%" placeholder="KTV 8,326309&#10;ASELS 345,50&#10;13.11.2026 KTN 3,2514"></textarea><button class="btn small primary" data-act="pf-paste-prices">Listeyi oku ve kontrol et</button></div>';
       return h;

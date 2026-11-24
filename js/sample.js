@@ -489,6 +489,7 @@
         // v8.4: komisyon kırılımı (komisyon + BSMV/vergi + diğer) isteğe bağlı; toplamı fee ile tutmuyorsa atılır (fee esastır, veri kaybı olmaz)
         if (t.feeParts != null) { var fp = t.feeParts; if (!fp || typeof fp !== 'object' || ['commission', 'tax', 'other'].some(function (k) { return fp[k] != null && (!isK(fp[k]) || fp[k] < 0); }) || (fp.commission || 0) + (fp.tax || 0) + (fp.other || 0) !== (t.fee || 0)) delete t.feeParts; else t.feeParts = { commission: fp.commission || 0, tax: fp.tax || 0, other: fp.other || 0 }; }
         if (t.editedAt != null && (typeof t.editedAt !== 'string' || t.editedAt.length > 40)) delete t.editedAt;
+        if (t.time != null && (typeof t.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(t.time))) delete t.time; // v8.6.1: isteğe bağlı işlem saati
         if (t.currency !== (a.currency || 'TRY')) errs.push(n + ': para birimi varlığınkiyle aynı olmalı');
         else if (t.currency !== 'TRY' && t.side !== 'split' && (!isK(t.fxRate) || t.fxRate <= 0)) errs.push(n + ': işlem günündeki kur gerekli');
         if ((t.currency === 'TRY' || t.side === 'split') && t.fxRate != null) errs.push(n + ': ' + (t.side === 'split' ? 'bedelsiz/bölünmede' : 'TL işlemde') + ' kur olmaz');

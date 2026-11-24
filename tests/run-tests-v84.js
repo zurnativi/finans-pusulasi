@@ -181,10 +181,10 @@
     ok(/'tx-save'[\s\S]{0,1200}tx\.editedAt = new Date\(\)\.toISOString\(\)/.test(app) && /değişiklik yok/.test(app));
     eq((app.match(/'tx-edit':/g) || []).length, 1, 'tek tx-edit eylemi');
   });
-  test('Sürüm: index.html ve sw.js 8.6.0; autoprice.js ve history.js sayfada ve çevrimdışı kabukta, app.js\'ten önce', function () {
+  test('Sürüm: index.html ve sw.js 8.6.1; autoprice.js ve history.js sayfada ve çevrimdışı kabukta, app.js\'ten önce', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/VERSION = '8\.6\.0'/.test(sw) && /'autoprice', 'history'/.test(sw)); ok(idx.indexOf('8.3.1') < 0);
-    ok(idx.indexOf('js/history.js?v=8.6.0') > 0 && idx.indexOf('js/history.js') < idx.indexOf('js/app.js') && idx.indexOf('js/autoprice.js') < idx.indexOf('js/app.js'));
+    ok(/VERSION = '8\.6\.1'/.test(sw) && /'autoprice', 'history'/.test(sw)); ok(idx.indexOf('8.3.1') < 0);
+    ok(idx.indexOf('js/history.js?v=8.6.1') > 0 && idx.indexOf('js/history.js') < idx.indexOf('js/app.js') && idx.indexOf('js/autoprice.js') < idx.indexOf('js/app.js'));
   });
 
   function run() {

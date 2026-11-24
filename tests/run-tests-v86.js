@@ -1,5 +1,5 @@
 /* v8.6 testleri: tüm varlıkları temizle (bütçe durur), plan sayıları, doğrulama, net varlık, boş sayfa halleri,
- * değişiklik geçmişi / geri al, arayüz (düğme, onay, Anladım, yedek), sürüm 8.6.0.
+ * değişiklik geçmişi / geri al, arayüz (düğme, onay, Anladım, yedek), sürüm 8.6.1.
  * Çalıştırma: node tests/run-tests-v86.js (run-tests.js de çalıştırır). Ağ gerekmez. */
 (function () {
   var fs = require('fs'), path = require('path');
@@ -167,9 +167,9 @@
     ok(/Tüm varlıklar temizlendi\. Bütçe verilerin duruyor/.test(app), 'toast + Geri al mesajı');
   });
 
-  test('Sürüm: index.html ve sw.js 8.6.0; wipeHoldings dışa açık; çevrimdışı kabuk sürümü eşleşir', function () {
+  test('Sürüm: index.html ve sw.js 8.6.1; wipeHoldings dışa açık; çevrimdışı kabuk sürümü eşleşir', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/VERSION = '8\.6\.0'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.6.0') > 0); ok(idx.indexOf('8.5.0') < 0);
+    ok(/VERSION = '8\.6\.1'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.6.1') > 0); ok(idx.indexOf('8.6.0') < 0);
     ok(typeof PF.wipeHoldings === 'function' && typeof PF.holdingsWipePlan === 'function');
     var pf = fs.readFileSync(path.join(ROOT, 'js', 'portfolio.js'), 'utf8');
     ok(/holdingsWipePlan: holdingsWipePlan, wipeHoldings: wipeHoldings/.test(pf));

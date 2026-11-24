@@ -676,3 +676,8 @@ form.editing,.card.editing{outline:2px solid var(--warn);outline-offset:4px;bord
 .wipe-ack{align-items:flex-start;gap:8px;margin-top:8px}
 .wipe-ack input{margin-top:3px;flex:none}
 @media (max-width:640px){.wipe-cols{grid-template-columns:1fr}}
+/* v8.6.1: aracı kurum geçmişi önizlemesi — uzun listede pencere kayar, düğmeler hep erişilebilir */
+.broker-dialog{max-width:640px;max-height:calc(100vh - 32px);overflow-y:auto;display:flex;flex-direction:column}
+.broker-dialog .tablewrap{max-height:42vh;overflow-y:auto;flex:0 1 auto}
+.broker-dialog .tablewrap thead th{position:sticky;top:0;background:var(--card,#fff)}
+.broker-dialog > .row:last-child{position:sticky;bottom:0;background:var(--card,#fff);padding-top:8px;margin-top:8px}

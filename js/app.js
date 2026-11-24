@@ -20,8 +20,11 @@
   function dateLabel(ymd) { var p = ymd.split('-'); return p[2] + '.' + p[1] + '.' + p[0]; }
   function monthsLabel(n) { if (n == null) return '—'; var y = Math.floor(n / 12), m = n % 12; return (y ? y + ' yıl ' : '') + (m || !y ? m + ' ay' : ''); }
   function toast(msg, undo) {
-    var root = $('#toast-root'); root.innerHTML = '';
-    var el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status');
+    var root = $('#toast-root');
+    // v8.6.1: arka plan bildirisi (ör. "Fiyatlar güncellendi") açık bir Geri al bildirisini silmez; üstüne kısa süreli eklenir
+    if (!undo && root.querySelector('.toast.has-undo')) { var info = document.createElement('div'); info.className = 'toast'; info.setAttribute('role', 'status'); info.innerHTML = '<span>' + esc(msg) + '</span>'; root.insertBefore(info, root.firstChild); setTimeout(function () { info.remove(); }, 3500); return; }
+    root.innerHTML = '';
+    var el = document.createElement('div'); el.className = 'toast' + (undo ? ' has-undo' : ''); el.setAttribute('role', 'status');
     el.innerHTML = '<span>' + esc(msg) + '</span>' + (undo ? '<button type="button">Geri al</button>' : '');
     root.appendChild(el);
     if (undo) el.querySelector('button').onclick = function () { undo(); root.innerHTML = ''; };
@@ -478,6 +481,7 @@
     h += '<div class="choices">' +
       '<a class="choice" href="' + (PUI.importKind() === 'trades' ? '#portfoy/islemler' : PUI.importKind() === 'prices' ? '#portfoy/fiyatlar' : '#islemler') + '" style="text-decoration:none;color:inherit"><b>✍️ Elle gir</b><span>' + (PUI.importKind() === 'tx' ? 'Tek tek işlem ekle' : PUI.importKind() === 'trades' ? 'Tek tek alım-satım ekle' : 'Tek tek fiyat gir') + '</span></a>' +
       '<button class="choice" data-pick=".xlsx,.xls,.csv,.ods,.txt"><b>📊 Excel / CSV</b><span>Banka hareket dökümü, kendi tablon</span></button>' +
+      '<button class="choice" data-pick=".json,application/json"><b>🏦 Aracı kurum geçmişini uygula</b><span>Hazır geçmiş dosyası (.json, ör. Midas): o varlıkların alım-satımları dosyadakiyle değişir, gerisi durur</span></button>' +
       '<button class="choice" data-pick=".pdf,application/pdf"><b>📄 PDF ekstre</b><span>Hesap veya kredi kartı ekstresi</span></button>' +
       '<button class="choice" data-pick="image/*,.heic,.heif"><b>📷 Fotoğraf / fiş / ekran görüntüsü</b><span>Alışveriş fişi, uygulama ekranı (galeriden)</span></button>' +
       (COARSE ? '<button class="choice" data-pick="image/*" data-capture="environment"><b>📸 Kamerayla fiş çek</b><span>Fişi düz bir yere koy, yakından ve net çek</span></button>' : '') + '</div>';
@@ -507,7 +511,7 @@
     else if (/^(xlsx|xls|csv|ods|txt|tsv)$/.test(ext)) job = importSheet(file);
     else if (ext === 'pdf' || file.type === 'application/pdf') job = importPdf(file);
     else if (/^image\//.test(file.type) || /^(jpe?g|png|webp|gif|bmp|heic|heif|avif)$/.test(ext) || (!file.type && !ext)) job = importImage(file);
-    else if (ext === 'json') return setStatus('Yedek dosyası mı? Onu <a href="#ayarlar">Ayarlar ve yedek</a> bölümünden geri yükle.', 'warn');
+    else if (ext === 'json') { readBrokerFile(file).then(function (o) { if (o) { setStatus(''); openBrokerImportDialog(o, name); } else setStatus('Yedek dosyası mı? Onu <a href="#ayarlar">Ayarlar ve yedek</a> bölümünden geri yükle.', 'warn'); }); return; }
     else return setStatus('Bu dosya türü desteklenmiyor: .' + esc(ext), 'warn');
     job.catch(function (e) { console.warn('İçe aktarma hatası:', e); setStatus('Okunamadı: ' + esc(e.message) + '<div class="hint">Fişi düz bir yüzeye koyup yakından, gölgesiz ve net çekmeyi dene. İstersen <a href="#islemler">elle</a> de girebilirsin.</div>', 'danger'); });
   }
@@ -1173,6 +1177,50 @@
     rootEl.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
     rootEl.addEventListener('click', function (e) { if (e.target === rootEl) close(); });
     rootEl.querySelector('form').onsubmit = function (e) { e.preventDefault(); if (!ok.checked) return; close(); doWipeHoldings(); };
+  }
+  /* v8.6.1: aracı kurum geçmiş dosyası (ör. Midas) — önizleme penceresi, otomatik kopya + yedek indirme, sonra mutate (Geri al). */
+  function openBrokerImportDialog(obj, fname) {
+    if (!state || !PF || !PF.brokerImportPlan) return;
+    var plan = PF.brokerImportPlan(state, obj);
+    if (plan.errors.length) { toast('Dosya uygulanamadı, hiçbir şey değişmedi: ' + plan.errors.slice(0, 3).join(' · ')); return; }
+    if (document.getElementById('broker-import')) return;
+    var rootEl = document.createElement('div');
+    rootEl.className = 'modal-bg'; rootEl.id = 'broker-import';
+    rootEl.setAttribute('role', 'dialog'); rootEl.setAttribute('aria-modal', 'true'); rootEl.setAttribute('aria-label', 'Aracı kurum geçmişini uygula');
+    function qtyTxt(r) { return r.open ? esc(PF.fmtQty(r.qty)) + ' adet' : '<span class="muted">kapandı</span>'; }
+    var rows = plan.rows.slice().sort(function (a, b) { return (b.open - a.open) || (a.symbol < b.symbol ? -1 : 1); }).map(function (r) {
+      return '<tr><td><b>' + esc(r.symbol) + '</b> <span class="hint">' + esc(r.currency) + '</span></td><td>' + (r.action === 'new' ? '<span class="pill ok">Yeni</span>' : '<span class="pill warn">Değişecek</span>') +
+        '</td><td class="r">' + (r.action === 'new' ? '—' : r.oldTrades) + '</td><td class="r">' + r.newTrades + '</td><td class="r">' + qtyTxt(r) + '</td></tr>';
+    }).join('');
+    var kept = plan.kept.length ? plan.kept.map(function (k) { return '<li>' + esc(k.name) + (k.trades ? ' <span class="hint">(' + k.trades + ' alım-satım)</span>' : '') + '</li>'; }).join('') : '<li class="muted">Başka varlık yok</li>';
+    var syncNote = (SUI && SUI.syncEnabled()) ? '<div class="notice warn">Eşitleme açık — değişiklik diğer cihazlarına da yansır.</div>' : '';
+    rootEl.innerHTML = '<form class="modal card wipe-dialog broker-dialog" autocomplete="off"><h2>' + esc(plan.broker) + ' geçmişini uygula</h2>' +
+      '<p><b>' + plan.trades + ' alım-satım</b>, ' + plan.rows.length + ' varlık. Dosyadaki her varlığın alım-satımları dosyadakilerle <b>değiştirilir</b>' + (plan.added ? ', olmayan ' + plan.added + ' varlık türü, fiyat kaynağı ve helal etiketiyle açılır' : '') + '. ' +
+      (plan.removedTrades ? 'Bu varlıklardaki mevcut <b>' + plan.removedTrades + ' alım-satım</b> kaldırılır. ' : '') + '<b>Diğer varlıkların ve bütçe verilerin durur.</b> Uygulamadan önce otomatik kopya alınır ve yedek dosyası indirilir; hemen ardından <b>Geri al</b> ile dönebilirsin.</p>' + syncNote +
+      '<div class="tablewrap"><table><thead><tr><th>Varlık</th><th>Durum</th><th class="r">Mevcut işlem</th><th class="r">Dosyadaki</th><th class="r">Sonuç</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<section style="margin-top:10px"><h3>Dokunulmayacak</h3><ul>' + kept + '<li>Bütçe: işlemler, hesaplar, transferler, taksitler, düzenli ödemeler, hedefler</li></ul></section>' +
+      '<p class="hint">Dosya: ' + esc(fname || '') + (obj.source ? ' · Kaynak: ' + esc(String(obj.source).slice(0, 120)) : '') + '</p>' +
+      '<div class="row" style="margin-top:14px"><button class="btn" type="button" data-brk="cancel">Vazgeç</button><button class="btn primary" type="submit" id="brk-go">Uygula</button></div></form>';
+    document.body.appendChild(rootEl);
+    function close() { rootEl.remove(); }
+    rootEl.querySelector('[data-brk=cancel]').onclick = function () { close(); };
+    rootEl.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+    rootEl.addEventListener('click', function (e) { if (e.target === rootEl) close(); });
+    rootEl.querySelector('form').onsubmit = function (e) { e.preventDefault(); close(); doBrokerImport(obj, plan); };
+    var go = rootEl.querySelector('#brk-go'); if (go) go.focus();
+  }
+  function doBrokerImport(obj, plan) {
+    var copy = JSON.parse(JSON.stringify(state)); copy.exportedAt = new Date().toISOString(); copy.app = 'Finans Pusulası';
+    var json = JSON.stringify(copy, null, 2);
+    var run = function () {
+      Store.download('finans-yedek-araci-kurum-oncesi-' + todayYmd() + '.json', json);
+      var okm = mutate(function (s) { PF.applyBrokerImport(s, obj, S.uid); }, plan.broker + ' geçmişi uygulandı: ' + plan.trades + ' alım-satım, ' + plan.rows.filter(function (r) { return r.open; }).length + ' açık pozisyon. Diğer varlıklar ve bütçe duruyor. (Yedek indirildi.)');
+      if (okm) location.hash = '#portfoy';
+    };
+    if (SUI && SUI.snapshot) SUI.snapshot(plan.broker + ' geçmişi uygulanmadan önce').then(run, run); else run();
+  }
+  function readBrokerFile(file) {
+    return file.text().then(function (txt) { var o; try { o = JSON.parse(txt); } catch (e) { return null; } return PF.isBrokerFile && PF.isBrokerFile(o) ? o : null; });
   }
   function doWipeHoldings() {
     var plan = PF.holdingsWipePlan(state);
@@ -2018,10 +2066,13 @@
   }
   function importBackup(file) {
     if (!file) return;
+    var brk = false;
     file.text().then(function (txt) {
       var obj; try { obj = JSON.parse(txt); } catch (e) { throw new Error('Dosya JSON değil'); }
+      if (PF.isBrokerFile && PF.isBrokerFile(obj)) { brk = true; openBrokerImportDialog(obj, file.name); return null; } // v8.6.1: yanlış düğmeyle seçilse de güvenli yola gider
       return CB && CB.isEnvelope(obj) ? SUI.decryptBackup(obj) : obj;
     }).then(function (obj) {
+      if (brk || !obj) return;
       delete obj.exportedAt; delete obj.app;
       S.validateState(obj);
       var msg = 'Yedek dosyası geçerli' + (obj.migratedFrom ? ' (eski v' + obj.migratedFrom + ' yedeği; yeni sürüme dönüştürüldü, hiçbir veri silinmedi)' : '') + ': ' + obj.incomes.length + ' gelir, ' + obj.expenses.length + ' gider, ' + obj.assets.length + ' varlık, ' + obj.transactions.length + ' işlem, ' +
