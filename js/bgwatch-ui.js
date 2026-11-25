@@ -97,6 +97,8 @@
     }
     function applyEdit(edit) {
       if (!edit || typeof edit.id !== 'string' || IB.done(inbox.applied, edit.id)) return null;
+      var MG = window.Migrate; if (MG && MG.locked(edit.id)) return null; // v8.7.2: yerleşik tek seferlik düzenleme şu an aynı numarayı uyguluyor
+      if (MG && MG.isDone(edit.id)) return Promise.resolve(recordExternal({ id: edit.id, at: new Date().toISOString(), ok: true, lines: ['Bu cihazda yerleşik tek seferlik düzenlemeyle zaten uygulanmıştı'] }));
       var title = String(edit.title || 'Uzaktan düzenleme').slice(0, 120), at = new Date().toISOString();
       function done(rec) { rec.ver = IB.APP_VERSION; inbox.applied = IB.record(inbox.applied, rec); return saveInbox().then(function () { return upload('auto'); }).catch(function () { return false; }).then(function () { X.render(); return rec; }); }
       var errs = IB.errors(edit);
@@ -109,6 +111,7 @@
         return done(ok ? { id: edit.id, at: at, ok: true, lines: lines || pv.lines } : { id: edit.id, at: at, ok: false, error: String(err && err.message || 'doğrulama hatası').slice(0, 300) });
       });
     }
+    function recordExternal(rec) { rec.ver = rec.ver || (IB && IB.APP_VERSION); inbox.applied = IB.record(inbox.applied, rec); return saveInbox().then(function () { return upload('auto'); }).catch(function () { return false; }).then(function () { X.render(); return rec; }); }
     function inboxCard() {
       var l = IB ? IB.ackList(inbox.applied).slice(-5).reverse() : []; if (!l.length) return '';
       return '<section class="card bgw-inbox"><h2>Uzaktan düzenlemeler</h2><p class="hint">Senin isteğinle hazırlanan düzenlemeler şifreli olarak gelir; uygulanmadan önce otomatik kopya alınır (Ayarlar → Yedek → Anlık görüntüler), değişiklik geçmişinden geri alınabilir.</p><ul>' +
@@ -306,7 +309,7 @@
     document.addEventListener('change', function (e) { var el = e.target; if (el && el.dataset && el.dataset.bg === 'pm' && cfg) setPush(el.value); });
     document.addEventListener('input', function (e) { if (e.target && e.target.id === 'bgw-tok') ui.tokenDraft = e.target.value; });
     function start() { loadCfg().then(function () { if (cfg && cfg.on) { setTimers(); } }); }
-    var api = { render: render, start: start, homeLine: homeLine, status: status, _ui: ui, _cfg: function () { return cfg; }, _pull: pull, _upload: upload, _tick: tick, _inbox: pullInbox, _applyEdit: applyEdit, _inboxState: function () { return inbox; } };
+    var api = { render: render, start: start, homeLine: homeLine, status: status, _ui: ui, _cfg: function () { return cfg; }, _pull: pull, _upload: upload, _tick: tick, _inbox: pullInbox, _applyEdit: applyEdit, recordExternal: function (rec) { return window.Store.getSecret('bgwatch-inbox').catch(function () { return null; }).then(function (r) { (r && Array.isArray(r.applied) ? r.applied : []).forEach(function (a) { if (a && !IB.seen(inbox.applied, a.id)) inbox.applied = IB.record(inbox.applied, a); }); return recordExternal(rec); }); }, _inboxState: function () { return inbox; } };
     window.BgUI.instance = api; // yalnız uçtan uca testler için
     return api;
   };

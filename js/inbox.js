@@ -13,7 +13,7 @@
   var ID_RE = /^[A-Za-z0-9._:-]{4,80}$/, MAX_OPS = 50, KEEP_ACK = 20;
   var RISKS = { safe: 1, medium: 1, risky: 1 };
   var OPS = { 'holdings-wipe': 1, 'broker-replace': 1, 'asset-set': 1 }; // v8.7.1: holdings-wipe (Tüm varlıkları temizle ile aynı: bütçe durur)
-  var APP_VERSION = '8.7.1';
+  var APP_VERSION = '8.7.2';
 
   function str(x, n) { return typeof x === 'string' && x.length <= n; }
   function findAsset(state, sym) { var f = PF.fold(sym); return (state.assets || []).filter(function (a) { return a && a.symbol && PF.fold(a.symbol) === f; })[0] || null; }

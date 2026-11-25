@@ -2219,6 +2219,8 @@
       maybeNotify();
       if (HUI) HUI.start();
       SUI.start();
+      // v8.7.2: tek seferlik yerleşik düzenleme (her cihazda; önce otomatik kopya, Geri al)
+      if (window.Migrate) { try { window.Migrate.start({ state: function () { return state; }, mutate: mutate, toast: toast, uid: S.uid, snapshot: function (r) { return SUI && SUI.snapshot ? SUI.snapshot(r) : Promise.resolve(); } }); } catch (e) { console.error(e); } }
       // v8.3: sitedeki şifreli kişisel veri paketi varsa ve bu cihazda yalnızca örnek/boş veri varsa şifre sor (dosya yüklemek gerekmez)
       if (APui) APui.start();
       if (PD && PDui) PDui.check().then(function () { if (state && PDui.available()) renderBanner(); }).catch(function (e) { console.error(e); });
