@@ -4,6 +4,9 @@
  * v8.7.3: sifirdan-midas-2026-11-25 — kullanıcının açık isteğiyle TAM SIFIRLAMA: bütçe dahil tüm finansal veri, değişiklik geçmişi, anlık görüntüler ve eski yedek
  *   kayıtları silinir; yalnız Midas geçmişi yüklenir. Uygulama ayarları (görünüm, bildirim ayarları), kilit ve arka plan izleme yapılandırması durur.
  *   Görünmez tek güvenlik kopyası (şifreli sır deposunda) 24 saat sonra kendiliğinden silinir. v8.7.2'yi uygulamış cihazlarda da çalışır.
+ * v8.7.4: sifirdan-midas-v2-2026-11-25 — aynı tam sıfırlama, düzeltilmiş Midas tarihleriyle (zarar durdur/limit satışlarının ve fon alımlarının gerçekleşme
+ *   günü, DRVN yılı). v8.7.3'ü uygulamış cihazlarda da çalışır. Gizli güvenlik kopyası zaten varsa (ilk sıfırlamadan, 24 saat dolmadıysa) üzerine yazılmaz:
+ *   asıl sıfırlama öncesi hâl korunur.
  * Gizlilik notu: düzenleme dosyası şifreli (AES-256-GCM) ama anahtar bu dosyada — kodu okuyan biri açabilir; amaç parola sormadan her cihazda çalışmak.
  * İçerik yalnız sembol, adet, fiyat, tarih. Dosya market-data dalında (tek commit'lik, geçmişi tutulmayan dal); iş bitince silinir. */
 (function (root, factory) {
@@ -11,8 +14,8 @@
   else root.Migrate = factory(root.Inbox);
 })(typeof self !== 'undefined' ? self : this, function (IB) {
   'use strict';
-  var KEY1 = 'bnJ-OnUNWcPxDoilOH-ofeObFK-pARYtdJTVZ9Fqm0s';
-  var ITEMS = [{ id: 'sifirdan-midas-2026-11-25', path: 'bg/tek-seferlik-1.enc.json', key: KEY1, editId: 'midas-only-2026-11-25', reset: true, supersedes: ['midas-only-2026-11-25'] }];
+  var KEY2 = 'eukDC4P-i9bPdsggjZ99cWf8wV7b9CeJX7IWgQOwjDw';
+  var ITEMS = [{ id: 'sifirdan-midas-v2-2026-11-25', path: 'bg/tek-seferlik-2.enc.json', key: KEY2, editId: 'midas-sifirdan-v2-2026-11-25', reset: true, supersedes: ['sifirdan-midas-2026-11-25', 'midas-only-2026-11-25'] }];
   var LS = 'finans-pusulasi:tek-seferlik:', RAW = 'https://raw.githubusercontent.com/zurnativi/finans-pusulasi/market-data/';
   var SAFETY = 'sifirlama-oncesi-kopya', SAFETY_MS = 24 * 3600000;
   var OLD_LS = /^finans-pusulasi:(v\d+-oncesi-yedek|okunamayan-kayit-\d+)$/;
@@ -81,7 +84,7 @@
             try { pv = prepare(X.state(), edit, S, ym(), tmp, item.reset); } catch (e) { X.toast(title + ' uygulanamadı: ' + e.message); return null; }
             locks[item.id] = true; (item.supersedes || []).forEach(function (s) { locks[s] = true; });
             var before = X.state(), at = new Date().toISOString();
-            var pre = item.reset ? (Store && Store.setSecret ? Store.setSecret(SAFETY, { at: at, reason: item.id, state: JSON.parse(JSON.stringify(before)) }).catch(function () { return null; }) : Promise.resolve())
+            var pre = item.reset ? (Store && Store.setSecret ? Store.getSecret(SAFETY).catch(function () { return null; }).then(function (old) { if (old && old.state && Date.now() - Date.parse(old.at || 0) < SAFETY_MS) return null; return Store.setSecret(SAFETY, { at: at, reason: item.id, state: JSON.parse(JSON.stringify(before)) }); }).catch(function () { return null; }) : Promise.resolve())
               : Promise.resolve(X.snapshot ? X.snapshot('Tek seferlik düzenleme öncesi: ' + title) : null).catch(function () { return null; });
             return pre.then(function () {
               var r = prepare(X.state(), edit, S, ym(), X.uid || S.uid, item.reset), ok;

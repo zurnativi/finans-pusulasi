@@ -801,6 +801,13 @@
                                     r873.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                                     console.log('\n' + p873 + '/' + r873.length + ' v8.7.3 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861 + p87 + p871 + p872 + p873) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length + r87.length + r871.length + r872.length + r873.length));
                                     if (p873 !== r873.length) process.exit(1);
+                                    console.log('\n— v8.7.4 (düzeltilmiş Midas tarihleriyle ikinci tam sıfırlama) —');
+                                    return require('./run-tests-v874.js').run().then(function (r874) {
+                                      var p874 = r874.filter(function (r) { return r.ok; }).length;
+                                      r874.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                                      console.log('\n' + p874 + '/' + r874.length + ' v8.7.4 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861 + p87 + p871 + p872 + p873 + p874) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length + r87.length + r871.length + r872.length + r873.length + r874.length));
+                                      if (p874 !== r874.length) process.exit(1);
+                                    });
                                   });
                                 });
                               });

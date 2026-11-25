@@ -49,7 +49,7 @@
     eq(v.transactions.length, 0); eq(v.accounts.length, 0); eq(v.assets.length, 1); eq(v.trades.length, 1);
   });
   test('Tanım: yeni numara, eski numarayı kapsar; aynı şifreli dosya; Geri al yok, tam değiştirme; güvenlik kopyası tek ve 24 saat', function () {
-    var it = MG.ITEMS[0]; eq(it.id, 'sifirdan-midas-2026-11-25'); ok(it.reset); eq(it.supersedes, ['midas-only-2026-11-25']); eq(it.path, 'bg/tek-seferlik-1.enc.json');
+    var it = MG.ITEMS[0]; ok(/^sifirdan-midas/.test(it.id)); ok(it.reset); ok(it.supersedes.indexOf('midas-only-2026-11-25') >= 0); ok(/^bg\/tek-seferlik-\d\.enc\.json$/.test(it.path));
     eq(MG.SAFETY_MS, 24 * 3600000);
     var mg = fs.readFileSync(path.join(ROOT, 'js', 'migrate.js'), 'utf8'), app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
     ok(/X\.resetAll\(r\.state, '✓ Sıfırdan yüklendi/.test(mg)); ok(/Store\.setSecret\(SAFETY, \{ at: at/.test(mg) && /Store\.setSecret\(SAFETY, null\)/.test(mg));
@@ -59,9 +59,9 @@
     ok(/function resetAll\(obj, msg\)[\s\S]*?mutate\([\s\S]*?, null\);[\s\S]*?undoStack = null; try \{ localStorage\.removeItem\(HLOG_KEY\)/.test(app), 'Geri al ve geçmiş kalmaz');
     ok(/locks\[s\] = true/.test(mg) && /lsSet\(LS \+ s,/.test(mg), 'eski numara kilitlenir ve tamam sayılır (kutu/eski kayıt tekrar uygulanmaz)');
   });
-  test('Sürüm 8.7.3: sayfa, kabuk ve uygulama sürümü', function () {
+  test('Sürüm 8.7.4: sayfa, kabuk ve uygulama sürümü', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    eq(IB.APP_VERSION, '8.7.3'); ok(/VERSION = '8\.7\.3'/.test(sw)); ok(idx.indexOf('js/migrate.js?v=8.7.3') > 0 && idx.indexOf('?v=8.7.2') < 0);
+    eq(IB.APP_VERSION, '8.7.4'); ok(/VERSION = '8\.7\.4'/.test(sw)); ok(idx.indexOf('js/migrate.js?v=8.7.4') > 0 && idx.indexOf('?v=8.7.3') < 0);
   });
   function run() {
     return tests.reduce(function (p, t) { return p.then(function (rs) { return Promise.resolve().then(t.fn).then(function () { rs.push({ name: t.name, ok: true }); return rs; }, function (e) { rs.push({ name: t.name, ok: false, err: e && e.message || String(e) }); return rs; }); }); }, Promise.resolve([]));
