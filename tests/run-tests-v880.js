@@ -182,11 +182,11 @@ module.exports.run = function () {
     var html = H.html(e); ok(/En iyi seçim/.test(html) && /En kötü seçim/.test(html) && /Riskler/.test(html) && html.indexOf('<script') < 0);
   });
   /* ---- dokunulmayanlar ve sürüm ---- */
-  test('Dokunulmayanlar: sıfırlama numarası/dosyası aynı; arka plan izleme yeni alanı göndermez; sürüm 8.8.2 her yerde', function () {
+  test('Dokunulmayanlar: sıfırlama numarası/dosyası aynı; arka plan izleme yeni alanı göndermez; sürüm 8.8.3 her yerde', function () {
     eq(MG.ITEMS.length, 1); eq(MG.ITEMS[0].id, 'sifirdan-midas-v2-2026-11-25'); eq(MG.ITEMS[0].path, 'bg/tek-seferlik-2.enc.json');
     ok(rd('js/bgwatch.js').indexOf('labPortfolios') < 0, 'bgwatch kayıtlı portföyleri yüklemez');
-    var sw = rd('sw.js'), idx = rd('index.html'); eq(IB.APP_VERSION, '8.8.2'); ok(/VERSION = '8\.8\.2'/.test(sw)); ok(idx.indexOf('?v=8.8.0') < 0 && idx.indexOf('css/style.css?v=8.8.2') > 0);
-    ['lab', 'lab-ui', 'help'].forEach(function (f) { ok(idx.indexOf('js/' + f + '.js?v=8.8.2') > 0, f + ' sayfada'); ok(sw.indexOf("'" + f + "'") > 0, f + ' kabukta'); });
+    var sw = rd('sw.js'), idx = rd('index.html'); eq(IB.APP_VERSION, '8.8.3'); ok(/VERSION = '8\.8\.3'/.test(sw)); ok(idx.indexOf('?v=8.8.0') < 0 && idx.indexOf('css/style.css?v=8.8.3') > 0);
+    ['lab', 'lab-ui', 'help'].forEach(function (f) { ok(idx.indexOf('js/' + f + '.js?v=8.8.3') > 0, f + ' sayfada'); ok(sw.indexOf("'" + f + "'") > 0, f + ' kabukta'); });
     ok(idx.indexOf('js/analysis.js') < idx.indexOf('js/lab.js') && idx.indexOf('js/lab-ui.js') < idx.indexOf('js/analysis-ui.js') && idx.indexOf('js/help.js') < idx.indexOf('js/app.js'));
     var au = rd('js/analysis-ui.js'); ok(/\['portfoylerim', 'Kayıtlı portföylerim'\]/.test(au) && /olustur: builderPage, portfoylerim: labPage/.test(au));
     ok(/AUI\.onChange\(el\)/.test(rd('js/app.js')) && /window\.Help\.inject\(vw, tab, sub\)/.test(rd('js/app.js')));

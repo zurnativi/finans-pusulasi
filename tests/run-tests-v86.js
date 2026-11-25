@@ -167,9 +167,9 @@
     ok(/Tüm varlıklar temizlendi\. Bütçe verilerin duruyor/.test(app), 'toast + Geri al mesajı');
   });
 
-  test('Sürüm: index.html ve sw.js 8.8.2; wipeHoldings dışa açık; çevrimdışı kabuk sürümü eşleşir', function () {
+  test('Sürüm: index.html ve sw.js 8.8.3; wipeHoldings dışa açık; çevrimdışı kabuk sürümü eşleşir', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/VERSION = '8\.8\.2'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.8.2') > 0); ok(idx.indexOf('8.6.0') < 0);
+    ok(/VERSION = '8\.8\.3'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.8.3') > 0); ok(idx.indexOf('8.6.0') < 0);
     ok(typeof PF.wipeHoldings === 'function' && typeof PF.holdingsWipePlan === 'function');
     var pf = fs.readFileSync(path.join(ROOT, 'js', 'portfolio.js'), 'utf8');
     ok(/holdingsWipePlan: holdingsWipePlan, wipeHoldings: wipeHoldings/.test(pf));

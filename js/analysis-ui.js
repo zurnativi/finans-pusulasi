@@ -165,9 +165,9 @@
       if (act.length) applyPrices((function () { var o = {}; o[key] = q; return o; })(), 'analiz');
     }
     function quickPrice(a) {
-      var k = a.key.split(':')[0], s = a.key.slice(k.length + 1), TV = function (sym) { return MD.tvLive(sym).then(function (x) { return { price: x.c, at: x.at, source: MD.SOURCES.tv }; }); };
+      var k = a.key.split(':')[0], s = a.key.slice(k.length + 1), TV = function (sym) { return MD.tvLive(sym).then(function (x) { return { price: x.c, at: x.at, source: x.source || MD.SOURCES.tv }; }); };
       if (k === 'bist' || k === 'idx') return TV('BIST:' + s);
-      if (k === 'us' || k === 'td') return MD.TV_US[s] ? TV(MD.TV_US[s]) : Promise.reject(new Error('kaynak yok'));
+      if (k === 'us' || k === 'td') { var um = MD.usInfoMap && MD.usInfoMap(), tvs = MD.TV_US[s] || (um && um[s] && um[s].tv) || (a.series && a.series.tvSymbol); return tvs ? TV(tvs) : Promise.reject(new Error('kaynak yok')); } // v8.8.2: ABD hissesi de canlı yenilenir
       if (k === 'macro') return TV(MD.TV_MACRO[s]);
       if (k === 'fx') return TV(MD.TV_MACRO[s + 'TRY']);
       if (k === 'metal') return Promise.all([MD.tvLive(MD.TV_MACRO[s === 'XAU' ? 'XAUUSD' : 'XAGUSD']), MD.tvLive(MD.TV_MACRO.USDTRY)]).then(function (r) { return { price: r[0].c * r[1].c / 31.1034768, at: r[0].at, source: 'TradingView (ons × USD/TL ÷ 31,1035, türetilmiş)' }; });
@@ -634,6 +634,7 @@
       h += '</section>';
       h += '<section class="card"><h2>Veri kaynakları</h2><ul class="ev">' +
         '<li><b>BIST hisseleri, BIST 100/30, altın/gümüş ons, USD/EUR-TL, helal ABD ETF\'leri</b>: her iş günü 18:40 ve 10:30 TSİ\'de GitHub Actions ile Yahoo Finance\'tan derlenir (3 yıl günlük), BIST kapanışları İş Yatırım ile karşılaştırılır. Gün içi son fiyat TradingView\'den (BIST 15 dk gecikmeli).</li>' +
+        '<li><b>ABD hisseleri (S&amp;P 500 + Nasdaq-100, ~518 şirket)</b>: aynı iş akışında listesi TradingView\'den, günlük mumları Yahoo Finance\'tan alınır; analizde son fiyat TradingView\'den eklenir. Şer\'i etiket: SP Funds Şer\'i ETF\'lerinin (SPUS, SPTE, SPRE) güncel portföyünde olan → <b>Uygun</b>; banka, sigorta, alkol, kumar, tütün iş kolundaki → <b>Uygun değil</b>; kaynağı olmayan → <b>Belirsiz</b> (helal filtresinden geçmez). Fiyatlar USD; portföyde TL karşılığı anlık USD/TL ile.</li>' +
         '<li><b>Temel oranlar, sektör medyanları ve Katılım endeksi üyeleri</b> (Katılım Tüm/100/50/30): TradingView tarayıcı.</li>' +
         '<li><b>TEFAS fonları</b>: fon.yourapiservice.com (TEFAS verisi: fiyat geçmişi, getiriler, risk, dağılım, portföy, İslami etiket).</li>' +
         '<li><b>Kripto</b>: Binance (USDT mumları, vadeli fonlama oranı), alternative.me (Korku & Açgözlülük), CoinGecko (arama).</li>' +

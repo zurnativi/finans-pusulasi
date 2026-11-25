@@ -13,6 +13,9 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 - **Temettü, bedelsiz, bedelli (v5):** yeni işlem türleri kâr/zarara, maliyete ve getiri hesabına (XIRR/TWR) doğru girer.
 - **Otomatik TEFAS ve BIST fiyatı (v5):** TEFAS fonları ücretsiz bir TEFAS veri servisinden, BIST hisseleri TradingView'in herkese açık tarayıcısından (15 dk gecikmeli) çekilir; olmazsa liste yapıştır / ekran görüntüsünden oku / ✎ ile tek dokunuşla düzelt.
 
+### v8.8.3 — ABD hissesi canlı fiyat etiketi ve yenilemesi
+ABD/Londra varlıklarında son fiyat kaynağı artık "ABD/Londra borsası son işlem" diye yazılır (önceden BIST'in "15 dk gecikmeli" etiketi görünüyordu); ABD hisseleri de analiz sayfasında 60 sn'de bir canlı yenilenir; Yöntem sayfasına ABD hisselerinin kaynağı ve Şer'i etiket kuralı eklendi.
+
 ### v8.8.2 — Anında arama, ABD hisseleri ve yabancı (helal) ETF'ler, hız
 - **Anında arama:** Varlık analizi ve Portföy oluşturucudaki arama kutusu yazdıkça (150 ms) açılır liste gösterir: önce sembol öneki (sa → SAHOL, SASA, SARKY…), sonra isim. Türkçe harfler katlanır (İ/I/ı/i, ş, ç, ğ, ö, ü). ↑ ↓ / Enter / Esc, dokunmatik seçim. Liste yerel dizinden gelir (BIST'in tamamı, ABD hisseleri, yabancı ETF'ler, altın/döviz, büyük kriptolar); TEFAS fon adı ve diğer kriptolar yazmayı bırakınca ağdan eklenir.
 - **ABD hisseleri:** market-data iş akışı (MODE=us) S&P 500 + Nasdaq-100 bileşenlerini TradingView'den alır, günlük mumları Yahoo'dan çeker. Şer'i etiket: SP Funds (SPUS/SPTE/SPRE) güncel portföyündeyse "Uygun"; banka/sigorta/alkol/kumar/tütün iş kolundaysa "Uygun değil"; kaynak yoksa "Belirsiz" (helal filtresinden geçmez). Analizde USD likidite eşikleri, %30 oynaklık tabanı, S&P 500 (SPY) kıyası, aynı sektördeki ABD şirketleriyle değerleme; BIST %10 tavan kuralı uygulanmaz.

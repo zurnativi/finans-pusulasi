@@ -38,6 +38,7 @@
   var SOURCES = {
     md: 'Yahoo Finance (GitHub Actions ile günlük derlenir, depo: market-data dalı)',
     tv: 'TradingView tarayıcı (resmi olmayan; BIST 15 dk gecikmeli)',
+    tvIntl: 'TradingView tarayıcı (resmi olmayan; ABD/Londra borsası son işlem fiyatı)',
     binance: 'Binance spot (USDT paritesi)',
     tefas: 'TEFAS verisi — fon.yourapiservice.com (günde bir)',
     twelve: 'Twelve Data (ücretsiz anahtar)',
@@ -313,7 +314,7 @@
   function tvLive(tvSym) {
     return fetchJson(URL.tvSymbol(tvSym, TV_FIELDS), { timeout: 15000 }).then(function (j) {
       if (!j || !num(j.close)) throw new Error('TradingView fiyat vermedi');
-      return { d: tvBarDate(j.time), o: j.open, h: j.high, l: j.low, c: j.close, v: j.volume, raw: j, at: new Date().toISOString(), source: SOURCES.tv };
+      return { d: tvBarDate(j.time), o: j.open, h: j.high, l: j.low, c: j.close, v: j.volume, raw: j, at: new Date().toISOString(), source: /^BIST:/.test(tvSym) ? SOURCES.tv : SOURCES.tvIntl };
     });
   }
   function loadMd(kind, sym) { return cached('md:' + kind + ':' + sym, 10 * 60000, function () { return fetchJson(URL.md(kind, sym), { timeout: 25000 }).then(parseMd); }); }
