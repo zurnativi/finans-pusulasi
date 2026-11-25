@@ -9,6 +9,8 @@
     var REPO = 'zurnativi/finans-pusulasi', GH = 'https://github.com/' + REPO;
     var URLS = { secretNew: GH + '/settings/secrets/actions/new', secrets: GH + '/settings/secrets/actions', run: GH + '/actions/workflows/market-portfolio.yml', ntfyApp: 'https://docs.ntfy.sh/subscribe/phone/', token: 'https://github.com/settings/tokens/new?scopes=gist&description=Finans%20Pusulasi%20arka%20plan', gists: 'https://gist.github.com/' };
     var RESULT_URL = 'https://raw.githubusercontent.com/' + REPO + '/market-data/' + BG.RESULT_PATH;
+    var IB = window.Inbox, INBOX_URL = 'https://raw.githubusercontent.com/' + REPO + '/market-data/' + (IB ? IB.PATH : 'bg/inbox.enc.json'); // v8.7.0: uzaktan düzenleme kutusu
+    var inbox = { applied: [] }, inboxBusy = false;
     var STANCE = { strong: 'Güçlü', positive: 'Olumlu', neutral: 'Nötr', weak: 'Zayıf', veryweak: 'Çok zayıf', nosignal: 'Sinyal yok', raise: 'Güçlü', trim: 'Yorulma' };
     var HOLD = { trim: 'azaltmayı gözden geçir', raise: 'hedefi yükselt', hold: 'tut' };
     var SEVL = { critical: 'Kritik', high: 'Yüksek', medium: 'Orta', info: 'Bilgi', low: 'Düşük' }, SEVC = { critical: 'sev-critical', high: 'sev-high', medium: 'sev-medium', info: 'sev-info', low: 'sev-info' };
@@ -26,7 +28,7 @@
     function sha(txt) { return crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)).then(function (b) { return BG.b64u(new Uint8Array(b)); }); }
     function loadCfg() {
       if (cfg || loading) return Promise.resolve(cfg); loading = true;
-      return Promise.all([window.Store.getSecret('bgwatch'), window.Store.getSecret('bgwatch-res')]).then(function (r) { cfg = r[0] || { on: false }; if (!resCache && r[1] && r[1].res) { resCache = r[1]; ui.res = r[1].res; ui.resAt = r[1].fetchedAt || 0; } cfgErr = null; }, function (e) { cfgErr = e.code === 'LOCKED' ? 'Uygulama kilitli; kilidi aç.' : 'Ayarlar okunamadı: ' + e.message; cfg = null; }).then(function () { loading = false; X.render(); return cfg; });
+      return Promise.all([window.Store.getSecret('bgwatch'), window.Store.getSecret('bgwatch-res'), window.Store.getSecret('bgwatch-inbox').catch(function () { return null; })]).then(function (r) { cfg = r[0] || { on: false }; if (r[2] && Array.isArray(r[2].applied)) inbox = r[2]; if (!resCache && r[1] && r[1].res) { resCache = r[1]; ui.res = r[1].res; ui.resAt = r[1].fetchedAt || 0; } cfgErr = null; }, function (e) { cfgErr = e.code === 'LOCKED' ? 'Uygulama kilitli; kilidi aç.' : 'Ayarlar okunamadı: ' + e.message; cfg = null; }).then(function () { loading = false; X.render(); return cfg; });
     }
     function saveCfg() { return window.Store.setSecret('bgwatch', cfg); }
     function syncToken() { return window.Store.getSecret('sync').then(function (c) { return c && c.token ? c.token : null; }, function () { return null; }); }
@@ -50,8 +52,9 @@
       };
     }
     function deviceName() { var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || 'tarayıcı'; return String(p).slice(0, 30); }
-    function payloadNow(testPush) { return BG.slice(st(), Date.now(), deviceName(), { pushMode: cfg.pushMode, testPush: testPush }); }
-    function sealPayload(key, kid, testPush) { var p = payloadNow(testPush), sig = JSON.stringify(p.state); return sha(sig).then(function (h) { return BG.seal(key, p, kid).then(function (env) { return { text: JSON.stringify(env), sig: h + '|' + p.pushMode + '|' + (testPush ? testPush.id : '') }; }); }); }
+    function payloadNow(testPush) { return BG.slice(st(), Date.now(), deviceName(), { pushMode: cfg.pushMode, testPush: testPush, inboxAck: IB ? IB.ackList(inbox.applied) : [] }); }
+    function sigText(p) { return JSON.stringify(p.state) + (p.inboxAck ? '|ack:' + p.inboxAck.map(function (a) { return a.id; }).join(',') : ''); }
+    function sealPayload(key, kid, testPush) { var p = payloadNow(testPush), sig = sigText(p); return sha(sig).then(function (h) { return BG.seal(key, p, kid).then(function (env) { return { text: JSON.stringify(env), sig: h + '|' + p.pushMode + '|' + (testPush ? testPush.id : '') }; }); }); }
     function keyOf() { return BG.unb64u(cfg.key); }
 
     /* ---------- Yükleme (cihaz → gizli Gist, şifreli) ---------- */
@@ -63,7 +66,7 @@
     }
     function tick() {
       if (!cfg || !cfg.on || !st() || document.hidden || uploading) return;
-      var p = payloadNow(), sig = JSON.stringify(p.state);
+      var p = payloadNow(), sig = sigText(p);
       sha(sig).then(function (h) { var full = h + '|' + p.pushMode + '|' + ((cfg.sig || '').split('|')[2] || ''); if (cfg.sig !== full || Date.now() - (cfg.uploadedAt || 0) > 12 * 3600000) upload('auto'); });
     }
 
@@ -77,7 +80,39 @@
           if (env.kid !== cfg.kid) { ui.resErr = { code: 'kid', kid: env.kid }; ui.res = null; return null; }
           return BG.open(keyOf(), env).then(function (res) { ui.res = res; ui.resErr = null; ui.resAt = Date.now(); resCache = { res: res, fetchedAt: ui.resAt }; window.Store.setSecret('bgwatch-res', resCache); mergeAlerts(res); return res; });
         });
-      }).catch(function (e) { ui.resErr = { code: e.code === 'BAD_KEY' ? 'badkey' : 'net', text: e.message }; return null; }).then(function (r) { X.render(); return r; });
+      }).catch(function (e) { ui.resErr = { code: e.code === 'BAD_KEY' ? 'badkey' : 'net', text: e.message }; return null; }).then(function (r) { X.render(); pullInbox(); return r; });
+    }
+
+    /* ---------- v8.7.0: Uzaktan düzenleme kutusu (iş akışı → cihaz, şifreli; cihaz anahtarıyla açılır) ----------
+     * Yeni bir düzenleme (daha önce uygulanmamış numara) gelince: önce otomatik kopya (Ayarlar → Yedek → Anlık görüntüler), sonra uygulama,
+     * "Geri al"lı bildirim; sonuç (numara, saat, kısa özet) cihazın şifreli yüküne girer ki kutu tarafı doğrulayabilsin. */
+    function saveInbox() { return window.Store.setSecret('bgwatch-inbox', inbox); }
+    function pullInbox() {
+      if (!IB || !cfg || !cfg.on || !cfg.kid || inboxBusy || !st() || !X.mutate) return Promise.resolve(null);
+      inboxBusy = true;
+      return fetch(INBOX_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) {
+        if (!r.ok) return null; // 404: bekleyen düzenleme yok
+        return r.json().then(function (env) { if (!env || env.kid !== cfg.kid) return null; return BG.open(keyOf(), env).then(applyEdit); });
+      }).catch(function (e) { console.error('uzaktan düzenleme:', e && e.message); return null; }).then(function (x) { inboxBusy = false; return x; });
+    }
+    function applyEdit(edit) {
+      if (!edit || typeof edit.id !== 'string' || IB.seen(inbox.applied, edit.id)) return null;
+      var title = String(edit.title || 'Uzaktan düzenleme').slice(0, 120), at = new Date().toISOString();
+      function done(rec) { inbox.applied = IB.record(inbox.applied, rec); return saveInbox().then(function () { return upload('auto'); }).catch(function () { return false; }).then(function () { X.render(); return rec; }); }
+      var errs = IB.errors(edit);
+      if (errs.length) { X.toast('Uzaktan düzenleme uygulanmadı: ' + errs[0]); return done({ id: edit.id, at: at, ok: false, error: errs.slice(0, 3).join(' · ') }); }
+      var pv = IB.preview(st(), edit, X.uid);
+      if (!pv.ok) { X.toast('Uzaktan düzenleme uygulanmadı: ' + pv.error); return done({ id: edit.id, at: at, ok: false, error: pv.error }); }
+      return Promise.resolve(X.snapshot ? X.snapshot('Uzaktan düzenleme öncesi: ' + title) : null).catch(function () { return null; }).then(function () {
+        var err = null, lines = null;
+        var ok = X.mutate(function (s) { try { lines = IB.apply(s, edit, X.uid); } catch (x) { err = x; throw x; } }, '✓ ' + title + ' uygulandı — ' + pv.lines.join(' · ') + '. Önce otomatik kopya alındı.');
+        return done(ok ? { id: edit.id, at: at, ok: true, lines: lines || pv.lines } : { id: edit.id, at: at, ok: false, error: String(err && err.message || 'doğrulama hatası').slice(0, 300) });
+      });
+    }
+    function inboxCard() {
+      var l = IB ? IB.ackList(inbox.applied).slice(-5).reverse() : []; if (!l.length) return '';
+      return '<section class="card bgw-inbox"><h2>Uzaktan düzenlemeler</h2><p class="hint">Senin isteğinle hazırlanan düzenlemeler şifreli olarak gelir; uygulanmadan önce otomatik kopya alınır (Ayarlar → Yedek → Anlık görüntüler), değişiklik geçmişinden geri alınabilir.</p><ul>' +
+        l.map(function (a) { var t = Date.parse(a.at); return '<li class="' + (a.ok ? 'ok' : 'bad') + '"><b>' + (a.ok ? '✓ Uygulandı' : '✗ Uygulanmadı') + '</b> · ' + esc(isFinite(t) ? tsi(t) : a.at) + '<br>' + esc(a.ok ? a.lines.join(' · ') : (a.error || '')) + '</li>'; }).join('') + '</ul></section>';
     }
     function mergeAlerts(res) { // arka planda tetiklenen seviye alarmını uygulamadaki alarma da işle (yalnız henüz tetiklenmemişse)
       var s = st(), list = (res.alertsState || []).filter(function (a) { return a.triggeredAt; }); if (!s || !s.analysis || !s.analysis.alerts || !list.length) return;
@@ -243,7 +278,7 @@
       if (cfg.on && !started) setTimers();
       var h = banner() + intro();
       if (!cfg.on) return h + offDone() + wizardOff();
-      return h + wizardOn() + resultsCard() + settingsCard();
+      return h + wizardOn() + inboxCard() + resultsCard() + settingsCard();
     }
     function homeLine() { // Ana sayfa/Bildirimler için tek satır
       if (!cfg || !cfg.on) return ''; var r = ui.res; if (!r) return '<p class="hint bgw-line">Arka plan portföy izleme: henüz sonuç yok · <a href="#haberler/arka">kurulumu tamamla</a></p>';
@@ -271,7 +306,7 @@
     document.addEventListener('change', function (e) { var el = e.target; if (el && el.dataset && el.dataset.bg === 'pm' && cfg) setPush(el.value); });
     document.addEventListener('input', function (e) { if (e.target && e.target.id === 'bgw-tok') ui.tokenDraft = e.target.value; });
     function start() { loadCfg().then(function () { if (cfg && cfg.on) { setTimers(); } }); }
-    var api = { render: render, start: start, homeLine: homeLine, status: status, _ui: ui, _cfg: function () { return cfg; }, _pull: pull, _upload: upload, _tick: tick };
+    var api = { render: render, start: start, homeLine: homeLine, status: status, _ui: ui, _cfg: function () { return cfg; }, _pull: pull, _upload: upload, _tick: tick, _inbox: pullInbox, _applyEdit: applyEdit, _inboxState: function () { return inbox; } };
     window.BgUI.instance = api; // yalnız uçtan uca testler için
     return api;
   };

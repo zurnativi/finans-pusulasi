@@ -116,9 +116,9 @@
     ok(/readBrokerFile\(file\)\.then/.test(app));
   });
 
-  test('Sürüm: index.html ve sw.js 8.6.1; aracı kurum işlevleri dışa açık', function () {
+  test('Sürüm: index.html ve sw.js 8.7.0; aracı kurum işlevleri dışa açık', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/VERSION = '8\.6\.1'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.6.1') > 0); ok(idx.indexOf('8.6.0') < 0);
+    ok(/VERSION = '8\.7\.0'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.7.0') > 0); ok(idx.indexOf('8.6.0') < 0);
     ['isBrokerFile', 'brokerFileErrors', 'brokerImportPlan', 'applyBrokerImport'].forEach(function (k) { ok(typeof PF[k] === 'function', k); });
   });
 

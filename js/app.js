@@ -2131,7 +2131,8 @@
         HUI = window.HubUI({
           state: function () { return state; }, render: function () { if (state) render(); }, toast: toast, esc: esc, tl: tl, tip: tip, today: today,
           sub: function () { return sub; }, tab: function () { return tab; }, calc: function () { return PUI.calc(); }, aui: function () { return AUI; },
-          quiet: function (fn) { if (!state) return; fn(state); persist(); }
+          quiet: function (fn) { if (!state) return; fn(state); persist(); },
+          mutate: mutate, uid: S.uid, snapshot: function (r) { return SUI && SUI.snapshot ? SUI.snapshot(r) : Promise.resolve(); } // v8.7.0: uzaktan düzenleme kutusu
         });
         if (AUI) AUI.setHub(HUI);
       } catch (e) { console.error(e); HUI = null; }

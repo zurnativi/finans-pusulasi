@@ -40,6 +40,7 @@ jobs:
         continue-on-error: true
         env:
           PORTFOLIO_KEY: ${{ secrets.PORTFOLIO_KEY }}
+          FINANS_INBOX_KEY: ${{ secrets.FINANS_INBOX_KEY }}   # v8.7.0: uzaktan düzenleme kutusu (isteğe bağlı; yoksa atlanır). Asla yazdırılmaz.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node tools/portfolio_job.js /tmp/md /tmp/bg-out
       - name: market-data dalına yaz (yalnızca bg/ — şifreli)

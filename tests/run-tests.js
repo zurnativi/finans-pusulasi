@@ -777,6 +777,13 @@
                             r861.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                             console.log('\n' + p861 + '/' + r861.length + ' v8.6.1 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length));
                             if (p861 !== r861.length) process.exit(1);
+                            console.log('\n— v8.7.0 (uzaktan düzenleme kutusu: şifreli aktarım, otomatik kopya + Geri al, onay) —');
+                            return require('./run-tests-v87.js').run().then(function (r87) {
+                              var p87 = r87.filter(function (r) { return r.ok; }).length;
+                              r87.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                              console.log('\n' + p87 + '/' + r87.length + ' v8.7.0 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861 + p87) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length + r87.length));
+                              if (p87 !== r87.length) process.exit(1);
+                            });
                           });
                         });
                       });

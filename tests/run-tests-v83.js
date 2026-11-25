@@ -125,9 +125,9 @@
     var out = cp.spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }); if (out.status !== 0) return;
     var bad = out.stdout.split('\n').filter(function (f) { return /gercek-veri|finans-yedek|finans-pusulasi-.*\.json$/.test(f) || (/^data\//.test(f) && !/kisisel-veri\.enc\.json$/.test(f)); }); eq(bad, []);
   });
-  test('Sürüm: index.html ve sw.js 8.6.1; personal.js hem sayfada hem çevrimdışı kabukta; paket dosyası önbelleğe alınmaz', function () {
+  test('Sürüm: index.html ve sw.js 8.7.0; personal.js hem sayfada hem çevrimdışı kabukta; paket dosyası önbelleğe alınmaz', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/js\/personal\.js\?v=8\.6\.1/.test(idx)); ok(idx.indexOf('8.2.1') < 0 && /VERSION = '8\.6\.1'/.test(sw)); ok(/'personal'/.test(sw));
+    ok(/js\/personal\.js\?v=8\.7\.0/.test(idx)); ok(idx.indexOf('8.2.1') < 0 && /VERSION = '8\.7\.0'/.test(sw)); ok(/'personal'/.test(sw));
     ok(idx.indexOf('personal.js') < idx.indexOf('js/app.js'), 'app.js\'ten önce yüklenmeli');
     ok(!/kisisel-veri/.test(sw), 'SW paketi önbelleğe almamalı (sürümsüz URL, ?v= yok)'); ok(/cache: 'no-store'/.test(fs.readFileSync(path.join(ROOT, 'js', 'personal.js'), 'utf8')));
   });

@@ -12,27 +12,62 @@ var MDDIR = process.argv[2] || 'market-data-out', OUT = process.argv[3] || 'bg-o
 var NONET = process.env.BG_NO_NET === '1', NOW = process.env.BG_NOW ? Date.parse(process.env.BG_NOW) : Date.now();
 var REALFETCH = globalThis.fetch;
 require('./nodefetch.js').install(MDDIR, { noNet: NONET });
-var RP = require('../js/report.js'), SS = require('../js/sessions.js'), BG = require('../js/bgwatch.js'), MD = require('../js/mdata.js'), AN = require('../js/analysis.js'), SN = require('../js/snapshot.js');
+var IB = require('../js/inbox.js'), RP = require('../js/report.js'), SS = require('../js/sessions.js'), BG = require('../js/bgwatch.js'), MD = require('../js/mdata.js'), AN = require('../js/analysis.js'), SN = require('../js/snapshot.js');
 var NTFY_URL = process.env.NTFY_URL || 'https://ntfy.sh/', APP = 'https://zurnativi.github.io/finans-pusulasi/';
 
 function mask(v) { if (process.env.GITHUB_ACTIONS && v) console.log('::add-mask::' + String(v).replace(/\r?\n/g, '')); }
 function readJson(rel) { try { return JSON.parse(fs.readFileSync(path.join(MDDIR, rel), 'utf8')); } catch (e) { return null; } }
 function writeOut(rel, text) { var p = path.join(OUT, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); }
 function log(m) { console.log('[portföy-izleme] ' + m); }
+function addDelete(rel) { fs.mkdirSync(OUT, { recursive: true }); fs.appendFileSync(path.join(OUT, '.delete'), rel + '\n'); }
 
-function fetchGist(id) {
-  if (process.env.BG_GIST_FILE) { try { return Promise.resolve({ content: fs.readFileSync(process.env.BG_GIST_FILE, 'utf8') }); } catch (e) { return Promise.resolve({ missing: true }); } }
+function fetchGist(id) { // { content, inbox } — inbox: v8.7.0 kutu tarafının şifreli düzenleme dosyası (yoksa null)
+  if (process.env.BG_GIST_FILE) {
+    var inb = null; if (process.env.BG_GIST_INBOX_FILE) { try { inb = fs.readFileSync(process.env.BG_GIST_INBOX_FILE, 'utf8'); } catch (e) { inb = null; } }
+    try { return Promise.resolve({ content: fs.readFileSync(process.env.BG_GIST_FILE, 'utf8'), inbox: inb }); } catch (e) { return Promise.resolve({ missing: true }); }
+  }
   var base = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'finans-pusulasi-bg' }, tok = process.env.GITHUB_TOKEN;
   function get(auth) { return fetch('https://api.github.com/gists/' + id, { headers: auth && tok ? Object.assign({ Authorization: 'Bearer ' + tok }, base) : base }); }
+  function fileText(f) {
+    if (!f) return Promise.resolve(null);
+    if (!f.truncated && typeof f.content === 'string') return Promise.resolve(f.content);
+    return fetch(f.raw_url).then(function (rr) { if (!rr.ok) throw new Error('Gist dosyası indirilemedi: HTTP ' + rr.status); return rr.text(); });
+  }
   return get(true).then(function (r) { return (r.status === 401 || r.status === 403) && tok ? get(false) : r; }).then(function (r) { // Actions belirteci Gist'e yetkili değilse kimliksiz dene (gizli Gist numarasıyla okunur)
     if (r.status === 404) return { missing: true };
     if (!r.ok) throw new Error('Gist okunamadı: HTTP ' + r.status);
     return r.json().then(function (g) {
       var f = g.files && g.files[BG.GIST_FILE]; if (!f) return { missing: true };
-      if (!f.truncated && typeof f.content === 'string') return { content: f.content };
-      return fetch(f.raw_url).then(function (rr) { if (!rr.ok) throw new Error('Gist dosyası indirilemedi: HTTP ' + rr.status); return rr.text(); }).then(function (t) { return { content: t }; });
+      return Promise.all([fileText(f), fileText(g.files[IB.GIST_FILE]).catch(function () { return null; })]).then(function (t) { return { content: t[0], inbox: t[1] }; });
     });
   });
+}
+/* v8.7.0: uzaktan düzenleme kutusu aktarımı. Kutu tarafı düzenlemeyi FINANS_INBOX_KEY ile şifreleyip Gist'e koyar; burada çözülür, biçimi denetlenir,
+ * cihaz anahtarıyla (PORTFOLIO_KEY) yeniden şifrelenip bg/inbox.enc.json'a yazılır. Cihazın yükündeki "uygulandı" listesi FINANS_INBOX_KEY ile şifrelenip
+ * bg/inbox-ack.enc.json'a yazılır (kutu tarafı doğrular). Cihaz bir düzenlemeyi uygulayınca bg/inbox.enc.json silinir. Günlüğe yalnız durum yazılır (numara/içerik yazılmaz). */
+function inboxRelay(S, kid, g, payload) {
+  var raw = (process.env.FINANS_INBOX_KEY || '').trim(); if (!raw) return Promise.resolve(null);
+  mask(raw);
+  var K = null; try { K = BG.unb64u(raw); } catch (e) { K = null; }
+  if (!K || K.length !== 32) { log('uzaktan düzenleme: FINANS_INBOX_KEY geçersiz (32 bayt base64url olmalı)'); return Promise.resolve({ status: 'bad_inbox_key' }); }
+  var acks = IB.ackList(payload && payload.inboxAck), info = { status: 'none', acks: acks.length, editId: null, editErrors: null };
+  return BG.kidOf(K).then(function (kin) {
+    var step = Promise.resolve();
+    if (!g.inbox) addDelete(IB.PATH);
+    else step = Promise.resolve().then(function () { return JSON.parse(g.inbox); }).then(function (env) { return BG.open(K, env); }).then(function (edit) {
+      info.editId = edit && typeof edit.id === 'string' ? edit.id.slice(0, 80) : null;
+      var errs = IB.errors(edit);
+      if (errs.length) { info.status = 'invalid'; info.editErrors = errs.slice(0, 5); addDelete(IB.PATH); return; }
+      if (IB.seen(acks, edit.id)) { info.status = 'acked'; addDelete(IB.PATH); return; }
+      info.status = 'relayed';
+      return BG.seal(S.key, edit, kid).then(function (e) { writeOut(IB.PATH, JSON.stringify(e)); });
+    }).catch(function (e) { info.status = e && e.code === 'BAD_KEY' ? 'bad_box_envelope' : 'unreadable'; addDelete(IB.PATH); });
+    return step.then(function () {
+      var ack = { v: 1, kind: 'finans-inbox-ack', generatedAt: BG.iso(NOW), run: process.env.GITHUB_RUN_ID ? String(process.env.GITHUB_RUN_ID) : null, payloadAt: payload && payload.at || null,
+        relay: { status: info.status, editId: info.editId, errors: info.editErrors }, applied: acks };
+      return BG.seal(K, ack, kin).then(function (e) { writeOut(IB.ACK_PATH, JSON.stringify(e)); log('uzaktan düzenleme: durum=' + info.status + ' uygulandı_kaydı=' + acks.length); return info; });
+    });
+  }).catch(function (e) { log('uzaktan düzenleme hatası: ' + String(e && e.message || e).slice(0, 120)); return { status: 'error' }; });
 }
 function sendNtfy(topic, msg, click) {
   var body = { topic: topic, title: msg.title, message: msg.message, priority: msg.priority || 4, tags: ['briefcase'], click: click || APP + '#haberler' };
@@ -72,7 +107,7 @@ function main() {
       log('Anahtar uyuşmuyor (uygulamadaki ve Actions sırrındaki PORTFOLIO_KEY farklı).');
       return writeRes(Object.assign({}, base, { ok: false, status: 'key_mismatch', payloadKid: env.kid, errors: ['Actions sırrındaki PORTFOLIO_KEY, uygulamadaki anahtarla aynı değil.'] })).then(function () { return 0; });
     }
-    return BG.open(S.key, env).then(function (payload) {
+    return BG.open(S.key, env).then(function (payload) { return inboxRelay(S, kid, g, payload).then(function () { return payload; }); }).then(function (payload) {
       var data = { feed: readJson('news/feed.json'), calendar: readJson('hub/calendar.json'), probs: readJson('hub/probs.json'), macro: readJson('hub/macro.json'), analogs: readJson('hub/analogs.json'), recovery: readJson('hub/recovery.json'), status: readJson('hub/status.json'), alerts: readJson('hub/alerts.json') };
       var opts = { now: NOW, MD: NONET ? { kap: function () { return Promise.resolve({ items: [] }); } } : MD, prev: prev, refresh: !NONET, snapOf: snapOf, quoteOf: function (key, sym) { return NONET ? Promise.reject(new Error('ağ kapalı')) : BG.quote(MD, key, sym); },
         stopQuoteOf: function (a, key, st) { return MD.load(key, {}).then(function (series) { var q = RP.stopQuote({ ok: true, bars: (series.bars || []).filter(function (b) { return b && typeof b.c === 'number'; }), live: series.live || null, hist: series.histSource || null }, SS.marketOfKey(key), NOW, st); if (!q) throw new Error('fiyat yok'); return q; }); } };

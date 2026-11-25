@@ -79,6 +79,7 @@
     var out = { v: VERSION, at: iso(nowMs), device: String(device || '').slice(0, 40), isExample: !!state.isExample, pushMode: opts.pushMode === 'generic' ? 'generic' : 'detail', state: s };
     out.reminders = remindersOf(state, tsiYmd(nowMs));
     if (opts.testPush) out.testPush = { id: String(opts.testPush.id).slice(0, 40), at: opts.testPush.at };
+    if (Array.isArray(opts.inboxAck) && opts.inboxAck.length) out.inboxAck = opts.inboxAck.slice(-20); // v8.7.0: uzaktan düzenleme kutusu — uygulandı bilgisi (numara, saat, kısa özet)
     return out;
   }
 
