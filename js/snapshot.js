@@ -8,7 +8,8 @@
 })(typeof self !== 'undefined' ? self : this, function (AN) {
   'use strict';
   var VERSION = 1;
-  var US_HALAL = { SPUS: 1, HLAL: 1, SPSK: 1, SPRE: 1, SPTE: 1, SPWO: 1, UMMA: 1 };
+  var US_HALAL = { SPUS: 1, HLAL: 1, SPSK: 1, SPRE: 1, SPTE: 1, SPWO: 1, UMMA: 1, ISDW: 1, ISDU: 1, ISDE: 1, HIWO: 1 }; // v8.8.2: + Londra (USD) MSCI/HSBC İslami endeks ETF'leri
+  var US_CONV = { SPY: 1, QQQ: 1 }; // Şer'i tarama yapmayan endeks ETF'leri (kıyas için listede)
   function num(x) { return typeof x === 'number' && isFinite(x); }
   function r(x, d) { if (!num(x)) return null; var m = Math.pow(10, d == null ? 4 : d); return Math.round(x * m) / m; }
   /* Helal durumu: kullanıcı etiketi yoksa varlığın türüne göre kural (analysis-ui bunu da kullanır → tek kaynak) */
@@ -16,7 +17,14 @@
     var k = key.split(':')[0], s = key.slice(k.length + 1);
     if (k === 'bist') { var m = (series && series.katilim) || []; return m.indexOf('XKTUM') >= 0 ? { status: 'uygun', label: 'Uygun', reason: 'Borsa İstanbul Katılım Tüm endeksinde' + (m.indexOf('XK050') >= 0 ? ' (Katılım 50 dahil)' : '') } : { status: 'bilinmiyor', label: 'Katılım endeksinde değil', reason: 'Katılım endekslerinde yer almıyor — helal filtresinden geçmez' }; }
     if (k === 'tefas') { var f = series && series.fund; if (f && f.tags && f.tags.islamic) return { status: 'uygun', label: 'Uygun', reason: 'Katılım (İslami) fon — TEFAS etiketi' }; if (f && /borçlanma|para piyasası|eurobond|repo/i.test(f.type || '')) return { status: 'uygun_degil', label: 'Uygun değil', reason: 'Faizli araçlara yatırım yapan fon türü (' + f.type + ')' }; return { status: 'bilinmiyor', label: 'Bilinmiyor', reason: 'Katılım fonu etiketi yok' }; }
-    if (k === 'us' || k === 'td') return US_HALAL[s] ? { status: 'uygun', label: 'Uygun', reason: 'Şer\'i endeks izleyen ETF' } : { status: 'bilinmiyor', label: 'Bilinmiyor', reason: 'Şer\'i tarama bilgisi yok' };
+    if (k === 'us' || k === 'td') {
+      if (US_HALAL[s]) return { status: 'uygun', label: 'Uygun', reason: 'Şer\'i endeks izleyen ETF' };
+      if (US_CONV[s]) return { status: 'uygun_degil', label: 'Uygun değil', reason: 'Şer\'i tarama yok: endeks fonu banka/sigorta gibi faizli şirketleri de içerir' };
+      var ui = k === 'us' && series && series.usInfo; // v8.8.2: ABD hissesi — kaynaklı etiket (iş akışı: SP Funds Şer'i ETF portföyleri + iş kolu kuralı); kaynak yoksa belirsiz
+      if (ui && ui.h === 'uygun') return { status: 'uygun', label: 'Uygun', reason: ui.hr || ('SP Funds Şer\'i ETF portföyünde (' + (ui.hs || []).join(', ') + ')') };
+      if (ui && ui.h === 'uygun_degil') return { status: 'uygun_degil', label: 'Uygun değil', reason: ui.hr || ('Faaliyet alanı Şer\'i taramadan geçmez' + (ui.ind ? ': ' + ui.ind : '')) };
+      return { status: 'bilinmiyor', label: 'Belirsiz', reason: (ui && ui.hr) || 'Şer\'i tarama bilgisi yok — helal filtresinden geçmez' };
+    }
     if (k === 'cg') return { status: 'supheli', label: 'Şüpheli', reason: 'Kripto paralar hakkında âlimler arasında görüş ayrılığı var' };
     if (k === 'metal' || k === 'macro') return { status: 'uygun', label: 'Uygun', reason: 'Fiziki/peşin altın-gümüş için (vadeli kontrat değil; ons grafiği yalnızca fiyat okumak için)' };
     if (k === 'fx') return { status: 'uygun', label: 'Uygun', reason: 'Peşin (spot) döviz' };
@@ -33,6 +41,10 @@
       var isK = (series.katilim || []).indexOf('XKTUM') >= 0, xu = function () { return MD.loadMd('index', 'XU100').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'BIST 100'; }, function () { }); };
       jobs.push(isK ? MD.loadMd('index', 'XKTUM').then(function (b) { if (b.bars.length < 130) return xu(); ctx.benchBars = b.bars; ctx.benchName = 'Katılım Tüm (XKTUM)'; }, xu) : xu());
       jobs.push(MD.tvLive('BIST:XKTUM').then(function (x) { ctx.benchTv = x.raw; }, function () { }));
+    }
+    if (series.kind === 'stock' && k === 'us') { // v8.8.2: ABD hissesi — TradingView temel verileri (ABD sektör medyanı) + göreli güç: S&P 500 (SPY)
+      if (series.tvSymbol) jobs.push(MD.fundamentals(key.slice(3), series.tvSymbol).then(function (f) { ctx.fundamentals = f; }, function (e) { ctx.fundErr = e.message; }));
+      jobs.push(MD.loadMd('us', 'SPY').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'S&P 500 (SPY)'; }, function () { }));
     }
     if (series.kind === 'fund' && series.fund && series.fund.type) jobs.push(MD.fundPeers(series.fund.type).then(function (p) { ctx.fundPeers = p; }, function () { }));
     if (series.kind === 'crypto' && k === 'cg' && key !== 'cg:bitcoin') jobs.push(MD.load('cg:bitcoin').then(function (b) { ctx.benchBars = b.bars; ctx.benchName = 'Bitcoin'; }, function () { }));

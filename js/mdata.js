@@ -6,6 +6,7 @@
  *  - Canlı/son fiyat + TradingView'in kendi gösterge değerleri (çapraz doğrulama) + BIST temel oranları: scanner.tradingview.com (resmi olmayan, BIST 15 dk gecikmeli)
  *  - Kripto mumları: Binance (data-api.binance.vision), fonlama oranı: fapi.binance.com, Korku-Açgözlülük: alternative.me, arama: CoinGecko
  *  - TEFAS fonları: fon.yourapiservice.com (TEFAS verisi, günde bir; fiyat geçmişi, getiriler, risk, varlık dağılımı, KAP portföyü, İslami etiket)
+ *  - ABD hisseleri (v8.8.2: S&P 500 + Nasdaq-100, ≈520 hisse) ve yabancı helal ETF'ler (ABD + Londra/USD): market-data dalı (Yahoo, günlük); canlı fiyat TradingView
  *  - ABD hisse/ETF (listede olmayanlar): Twelve Data (kullanıcının ücretsiz anahtarı ile)
  *  - Diğer her şey: kullanıcının yüklediği CSV/Excel/yapıştırılan OHLCV */
 (function (root, factory) {
@@ -43,7 +44,11 @@
     imp: 'Kullanıcının yüklediği dosya'
   };
   /* TradingView sembolleri (çapraz doğrulama ve canlı fiyat) */
-  var TV_US = { SPUS: 'AMEX:SPUS', HLAL: 'NASDAQ:HLAL', SPSK: 'AMEX:SPSK', SPRE: 'AMEX:SPRE', SPTE: 'AMEX:SPTE', SPWO: 'AMEX:SPWO', UMMA: 'NASDAQ:UMMA' };
+  var TV_US = { SPUS: 'AMEX:SPUS', HLAL: 'NASDAQ:HLAL', SPSK: 'AMEX:SPSK', SPRE: 'AMEX:SPRE', SPTE: 'AMEX:SPTE', SPWO: 'AMEX:SPWO', UMMA: 'NASDAQ:UMMA',
+    ISDW: 'LSE:ISDW', ISDU: 'LSE:ISDU', ISDE: 'LSE:ISDE', HIWO: 'LSE:HIWO', SPY: 'AMEX:SPY', QQQ: 'NASDAQ:QQQ' };
+  /* v8.8.2: market-data'daki yabancı ETF'ler (geri kalan 'us:' anahtarları ABD hissesidir). Liste lab.js'teki US_ETF ile aynı olmalı (test). */
+  var US_ETF = { SPUS: 1, HLAL: 1, SPSK: 1, SPRE: 1, SPTE: 1, SPWO: 1, UMMA: 1, ISDW: 1, ISDU: 1, ISDE: 1, HIWO: 1, SPY: 1, QQQ: 1 };
+  var US_ETF_SUB = { ISDW: 'Londra (LSE) · USD', ISDU: 'Londra (LSE) · USD', ISDE: 'Londra (LSE) · USD', HIWO: 'Londra (LSE) · USD' };
   var TV_MACRO = { XAUUSD: 'COMEX:GC1!', XAGUSD: 'COMEX:SI1!', USDTRY: 'FX_IDC:USDTRY', EURTRY: 'FX_IDC:EURTRY' };
   var TV_FIELDS = ['close', 'open', 'high', 'low', 'volume', 'time', 'RSI', 'ATR', 'ADX', 'MACD.macd', 'MACD.signal', 'SMA20', 'SMA50', 'SMA200', 'EMA20', 'EMA50', 'BB.upper', 'BB.lower', 'Ichimoku.BLine', 'Perf.1M', 'Perf.3M', 'Perf.6M', 'Perf.Y', 'currency'];
   var FUND_FIELDS = ['description', 'sector', 'industry', 'market_cap_basic', 'price_earnings_ttm', 'price_book_fq', 'enterprise_value_ebitda_ttm', 'price_sales_current', 'return_on_equity', 'net_margin', 'operating_margin',
@@ -77,7 +82,7 @@
   function parseMd(j) {
     if (!j || !Array.isArray(j.bars)) throw new Error('Veri dosyası biçimi tanınmadı');
     var bars = j.bars.map(function (b) { return { d: b[0], o: b[1], h: b[2], l: b[3], c: b[4], v: num(b[5]) && b[5] > 0 ? b[5] : null }; });
-    return { bars: bars, currency: j.currency || null, fetchedAt: j.fetchedAt || null, source: j.source || SOURCES.md, check: j.check || null, splits: j.splits || [], dividends: j.dividends || [], stale: !!j.stale, lastError: j.lastError || null, name: j.name || null, sector: j.sector || null, katilim: j.katilim || [], droppedRows: j.droppedRows || 0 };
+    return { bars: bars, currency: j.currency || null, fetchedAt: j.fetchedAt || null, source: j.source || SOURCES.md, check: j.check || null, splits: j.splits || [], dividends: j.dividends || [], stale: !!j.stale, lastError: j.lastError || null, name: j.name || null, sector: j.sector || null, katilim: j.katilim || [], droppedRows: j.droppedRows || 0, tv: j.tv || null, industry: j.industry || null, exchange: j.exchange || null };
   }
   function parseBinanceKlines(arr, nowMs) {
     if (!Array.isArray(arr)) throw new Error('Binance yanıtı tanınmadı');
@@ -205,30 +210,93 @@
 
   /* ---------- Varlık çözümleme (kullanıcının yazdığı isim/kod) ---------- */
   var mdIndexP = null;
-  function mdIndex() { if (!mdIndexP) { mdIndexP = fetchJson(URL.mdIndex, { timeout: 20000 }); mdIndexP.catch(function () { mdIndexP = null; }); } return mdIndexP; }
+  var ixNow = null, searchEntries = null;
+  function mdIndex() { if (!mdIndexP) { mdIndexP = fetchJson(URL.mdIndex, { timeout: 20000 }).then(function (ix) { ixNow = ix; searchEntries = null; return ix; }); mdIndexP.catch(function () { mdIndexP = null; }); } return mdIndexP; }
+  function usInfoMap(ix) { ix = ix || ixNow; if (!ix) return null; if (ix._usMap) return ix._usMap; var m = {}; (ix.usInfo || []).forEach(function (x) { if (x && x.s) m[x.s] = x; }); (ix.us || []).forEach(function (s) { if (!m[s]) m[s] = { s: s, t: US_ETF[s] ? 'etf' : 'stock' }; }); try { Object.defineProperty(ix, '_usMap', { value: m, enumerable: false }); } catch (e) { /* donmuş nesne */ } return m; }
+  /* Senkron: dizin yüklendiyse sembol market-data'da var mı (td: → us: yönlendirmesi için) */
+  function usKnown(sym) { var m = usInfoMap(); return !!(m && m[String(sym || '').toUpperCase()]); }
   var ALIASES = { altin: 'metal:XAU', 'altın': 'metal:XAU', 'gram altin': 'metal:XAU', 'gram altın': 'metal:XAU', gumus: 'metal:XAG', 'gümüş': 'metal:XAG', 'ons altin': 'macro:XAUUSD', 'ons altın': 'macro:XAUUSD', xauusd: 'macro:XAUUSD', xagusd: 'macro:XAGUSD',
     dolar: 'fx:USD', usd: 'fx:USD', usdtry: 'fx:USD', euro: 'fx:EUR', eur: 'fx:EUR', eurtry: 'fx:EUR', 'bist100': 'idx:XU100', xu100: 'idx:XU100', 'bist 100': 'idx:XU100', xu030: 'idx:XU030', 'bist30': 'idx:XU030',
     'katılım': 'idx:XKTUM', katilim: 'idx:XKTUM', 'katılım tüm': 'idx:XKTUM', xktum: 'idx:XKTUM', 'katılım 50': 'idx:XK050', 'katilim 50': 'idx:XK050', xk050: 'idx:XK050', katlm: 'idx:XK050', 'katılım 100': 'idx:XK100', xk100: 'idx:XK100', 'katılım 30': 'idx:XK030', xk030: 'idx:XK030',
     bitcoin: 'cg:bitcoin', btc: 'cg:bitcoin', ethereum: 'cg:ethereum', eth: 'cg:ethereum' };
   function norm(q) { return String(q || '').trim().toLocaleLowerCase('tr-TR'); }
+  /* ---------- v8.8.2: Anında arama (yazarken). Saf sıralama (searchRank) testli; ağ yalnız ek kaynaklar için (TEFAS kodu/adı, CoinGecko). ----------
+   * Türkçe harf katlama: İ/I/ı/i → i, ç→c, ğ→g, ö→o, ş→s, ü→u (cihazın dil ayarından bağımsız; "sa", "SA", "şa" aynı sonucu verir). */
+  var FOLD_MAP = { 'ç': 'c', 'ğ': 'g', 'ö': 'o', 'ş': 's', 'ü': 'u', 'â': 'a', 'î': 'i', 'û': 'u', 'é': 'e', 'è': 'e', 'á': 'a', 'à': 'a', 'ä': 'a', 'ë': 'e', 'ï': 'i', 'ó': 'o', 'ò': 'o', 'ú': 'u', 'ñ': 'n' };
+  function foldTr(q) { return String(q == null ? '' : q).replace(/[İIı]/g, 'i').toLowerCase().replace(/[çğöşüâîûéèáàäëïóòúñ]/g, function (c) { return FOLD_MAP[c]; }).replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function foldSym(sym) { return foldTr(sym).replace(/ /g, ''); }
+  var CRYPTO_TOP = [['bitcoin', 'BTC', 'Bitcoin'], ['ethereum', 'ETH', 'Ethereum'], ['solana', 'SOL', 'Solana'], ['binancecoin', 'BNB', 'BNB'], ['ripple', 'XRP', 'XRP'], ['cardano', 'ADA', 'Cardano'],
+    ['dogecoin', 'DOGE', 'Dogecoin'], ['chainlink', 'LINK', 'Chainlink'], ['avalanche-2', 'AVAX', 'Avalanche'], ['tron', 'TRX', 'TRON'], ['polkadot', 'DOT', 'Polkadot']];
+  var FIXED = [['metal:XAU', 'XAU', 'Gram altın (TL)', 'Altın · TL'], ['metal:XAG', 'XAG', 'Gram gümüş (TL)', 'Gümüş · TL'], ['macro:XAUUSD', 'XAUUSD', 'Altın ons (USD)', 'Emtia · USD'], ['macro:XAGUSD', 'XAGUSD', 'Gümüş ons (USD)', 'Emtia · USD'],
+    ['fx:USD', 'USDTRY', 'ABD doları / TL', 'Döviz'], ['fx:EUR', 'EURTRY', 'Euro / TL', 'Döviz']];
+  function usSub(x) {
+    if (x.t === 'etf') return 'Yabancı ETF · ' + (US_ETF_SUB[x.s] || 'ABD · USD') + (x.h === 'uygun' ? ' · Şer\'i (İslami) endeks' : x.h === 'uygun_degil' ? ' · Şer\'i tarama yok' : '');
+    return 'ABD hissesi · USD' + (x.h === 'uygun' ? ' · Helal: Şer\'i listede (' + (x.hs || []).join(', ') + ')' : x.h === 'uygun_degil' ? ' · Helal değil (faaliyet alanı)' : ' · Helal: belirsiz');
+  }
+  function buildEntries(ix) {
+    var E = [], pop = 0, aliasOf = {};
+    Object.keys(ALIASES).forEach(function (a) { var k = ALIASES[a]; (aliasOf[k] = aliasOf[k] || []).push(foldTr(a)); });
+    function add(key, sym, name, kind, sub, grp, extra) {
+      var e = { key: key, sym: sym || '', name: name || '', label: sym && name && foldSym(sym) !== foldSym(name) ? sym + ' — ' + name : (name || sym), kind: kind, sub: sub || '', grp: grp, pop: pop++, fs: foldSym(sym), fn: foldTr(name), al: aliasOf[key] || null };
+      if (extra) Object.keys(extra).forEach(function (k) { e[k] = extra[k]; }); E.push(e);
+    }
+    FIXED.forEach(function (f) { var d = describe(f[0]); add(f[0], f[1], f[2], d.kind, f[3], 0); });
+    ((ix && ix.index) || []).forEach(function (s) { var d = describe('idx:' + s); add('idx:' + s, s, d.label !== s ? d.label : s + ' endeksi', 'index', 'Endeks', 0); });
+    ((ix && ix.bist) || []).forEach(function (b) { if (b && b.s) add('bist:' + b.s, b.s, b.n, 'stock', 'BIST hissesi' + (b.k ? ' · Katılım endeksinde' : ''), 1, { katilim: !!b.k }); });
+    var um = ix ? usInfoMap(ix) : null, us = um ? Object.keys(um).map(function (k) { return um[k]; }) : [];
+    var order = {}; ((ix && ix.usInfo) || []).forEach(function (x, i) { order[x.s] = i; });
+    us.sort(function (a, b) { var ea = a.t === 'etf' ? (a.h === 'uygun' ? 0 : 1) : 2, eb = b.t === 'etf' ? (b.h === 'uygun' ? 0 : 1) : 2; return ea - eb || (order[a.s] == null ? 1e6 : order[a.s]) - (order[b.s] == null ? 1e6 : order[b.s]); });
+    us.forEach(function (x) { add('us:' + x.s, x.s, x.n || x.s, x.t === 'etf' ? 'etf' : 'stock', usSub(x), x.t === 'etf' ? 2 : 3, { halalTag: x.h || null }); });
+    CRYPTO_TOP.forEach(function (c) { add('cg:' + c[0], c[1], c[2], 'crypto', 'Kripto', 4, { symbol: c[1].toLowerCase() }); });
+    return E;
+  }
+  /* 0: sembol tam · alias tam, 1: sembol öneki, 2: alias öneki, 3: isimde kelime başı, 4: isimde geçiyor (≥3 harf). Eşitlikte: grup (sabit/BIST → yabancı ETF → ABD hissesi → kripto), sonra büyüklük sırası. */
+  function rankEntry(e, qs, qn) {
+    if (qs && e.fs === qs) return 0;
+    if (e.al && e.al.indexOf(qn) >= 0) return 0;
+    if (qs && e.fs.indexOf(qs) === 0) return 1;
+    if (e.al && qn.length >= 2 && e.al.some(function (a) { return a.indexOf(qn) === 0; })) return 2;
+    if (qn.length >= 2 && (' ' + e.fn).indexOf(' ' + qn) >= 0) return 3;
+    if (qn.length >= 3 && e.fn.indexOf(qn) >= 0) return 4;
+    return -1;
+  }
+  function searchRank(entries, q, limit) {
+    var qn = foldTr(q), qs = qn.replace(/ /g, ''); if (!qs) return [];
+    var hits = [];
+    for (var i = 0; i < entries.length; i++) { var r = rankEntry(entries[i], qs, qn); if (r >= 0) hits.push({ e: entries[i], r: r }); }
+    hits.sort(function (a, b) { return a.r - b.r || a.e.grp - b.e.grp || a.e.pop - b.e.pop; });
+    return hits.slice(0, limit || 12).map(function (h) { var e = h.e, o = { key: e.key, kind: e.kind, label: e.label, sub: e.sub, exact: h.r === 0, rank: h.r }; if (e.symbol) o.symbol = e.symbol; if (e.katilim) o.katilim = true; if (e.halalTag !== undefined) o.halal = e.halalTag; return o; });
+  }
+  function entriesNow() { if (!searchEntries) searchEntries = buildEntries(ixNow); return searchEntries; }
+  /* Senkron öneri: dizin henüz gelmediyse yalnız sabit varlıklar (altın, döviz, kripto) aranır; ready=false döner */
+  function suggest(q, limit) { return { items: searchRank(entriesNow(), q, limit), ready: !!ixNow }; }
+  function searchReady() { return mdIndex().then(function () { return true; }, function () { return false; }); }
+  /* Ek kaynaklar (ağ): TEFAS fon kodu (3 harf) / adı, kripto (CoinGecko). Yerel sonuçlarla çakışanlar atılır. */
+  var remoteCache = {};
+  function remoteSearch(query, local) {
+    var q = String(query || '').trim(), n = norm(q), up = q.toLocaleUpperCase('tr-TR').replace(/[^A-Z0-9İŞĞÜÖÇ.\-]/g, ''), have = {}, out = [];
+    (local || []).forEach(function (x) { have[x.key] = 1; });
+    var exactLocal = (local || []).some(function (x) { return x.exact; }), nLocal = (local || []).length;
+    function add(x) { if (!have[x.key]) { have[x.key] = 1; out.push(x); } }
+    var ck = n + '|' + exactLocal + '|' + Math.min(nLocal, 6);
+    if (remoteCache[ck] && Date.now() - remoteCache[ck].t < 10 * 60000) return remoteCache[ck].p.then(function (L) { return L.filter(function (x) { return !(local || []).some(function (y) { return y.key === x.key; }); }); });
+    var jobs = [];
+    if (/^[A-Z0-9]{3}$/.test(up)) jobs.push(fetchJson(URL.tefas(up, 0), { timeout: 12000 }).then(function (j) { if (j && j.code) add({ key: 'tefas:' + j.code, kind: 'fund', label: j.code + ' — ' + j.name, sub: 'TEFAS fonu · ' + (j.type || '') + (j.tags && j.tags.islamic ? ' · Katılım (İslami)' : ''), exact: true }); }, function () { }));
+    if (n.length >= 2 && !exactLocal && nLocal < 3) jobs.push(fetchJson(URL.cgSearch(q), { timeout: 12000 }).then(function (j) { (j.coins || []).slice(0, 4).forEach(function (c) { add({ key: 'cg:' + c.id, kind: 'crypto', label: c.symbol + ' — ' + c.name, sub: 'Kripto' + (c.market_cap_rank ? ' · piyasa değeri sırası ' + c.market_cap_rank : ''), symbol: c.symbol }); }); }, function () { }));
+    if (n.length >= 4 && !/^[A-Z0-9]{3}$/.test(up) && !exactLocal && nLocal < 6) jobs.push(fetchJson(URL.tefasList('kind=yat&limit=5&q=' + encodeURIComponent(q)), { timeout: 12000 }).then(function (j) { (j.items || []).forEach(function (f) { add({ key: 'tefas:' + f.code, kind: 'fund', label: f.code + ' — ' + f.name, sub: 'TEFAS fonu · ' + f.type + (f.tags && f.tags.islamic ? ' · Katılım (İslami)' : '') }); }); }, function () { }));
+    var p = Promise.all(jobs).then(function () { if (!out.length && !nLocal && /^[A-Z]{1,5}$/.test(up)) add({ key: 'td:' + up, kind: 'etf', label: up, sub: 'Listede yok — ABD hisse/ETF, Twelve Data anahtarı gerekir' }); return out; });
+    remoteCache[ck] = { t: Date.now(), p: p }; p.catch(function () { delete remoteCache[ck]; });
+    return p;
+  }
+  /* Tam arama (Enter / "Analiz et"): yerel sıralı sonuçlar + ek kaynaklar. Geriye uyumlu: [{key, kind, label, sub, symbol?, exact?}] */
   function resolve(query) {
-    var q = String(query || '').trim(), n = norm(q), up = q.toLocaleUpperCase('tr-TR').replace(/[^A-Z0-9İŞĞÜÖÇ.\-]/g, '');
+    var q = String(query || '').trim();
     if (!q) return Promise.resolve([]);
-    var out = [], seen = {};
-    function add(x) { if (!seen[x.key]) { seen[x.key] = 1; out.push(x); } }
-    if (ALIASES[n]) add(describe(ALIASES[n]));
-    if (/^(bist|tefas|cg|us|td|macro|metal|fx|idx|imp):/.test(q)) add(describe(q));
-    return mdIndex().then(function (ix) {
-      (ix.bist || []).forEach(function (b) { if (b.s === up || (n.length >= 3 && norm(b.n).indexOf(n) >= 0)) add({ key: 'bist:' + b.s, kind: 'stock', label: b.s + ' — ' + b.n, sub: 'BIST hissesi' + (b.k ? ' · Katılım endeksinde' : ''), katilim: !!b.k }); });
-      (ix.us || []).forEach(function (s) { if (s === up) add({ key: 'us:' + s, kind: 'etf', label: s, sub: 'ABD ETF (USD)' }); });
-      (ix.index || []).forEach(function (s) { if (s === up) add(describe('idx:' + s)); });
-      return out;
-    }, function () { return out; }).then(function () {
-      var jobs = [];
-      if (/^[A-Z0-9]{3}$/.test(up)) jobs.push(fetchJson(URL.tefas(up, 0), { timeout: 12000 }).then(function (j) { if (j && j.code) add({ key: 'tefas:' + j.code, kind: 'fund', label: j.code + ' — ' + j.name, sub: 'TEFAS fonu · ' + (j.type || '') + (j.tags && j.tags.islamic ? ' · Katılım (İslami)' : '') }); }, function () { }));
-      if (n.length >= 2 && out.length < 3) jobs.push(fetchJson(URL.cgSearch(q), { timeout: 12000 }).then(function (j) { (j.coins || []).slice(0, 4).forEach(function (c) { add({ key: 'cg:' + c.id, kind: 'crypto', label: c.symbol + ' — ' + c.name, sub: 'Kripto' + (c.market_cap_rank ? ' · piyasa değeri sırası ' + c.market_cap_rank : ''), symbol: c.symbol }); }); }, function () { }));
-      if (n.length >= 4 && !/^[A-Z0-9]{3}$/.test(up)) jobs.push(fetchJson(URL.tefasList('kind=yat&limit=5&q=' + encodeURIComponent(q)), { timeout: 12000 }).then(function (j) { (j.items || []).forEach(function (f) { add({ key: 'tefas:' + f.code, kind: 'fund', label: f.code + ' — ' + f.name, sub: 'TEFAS fonu · ' + f.type + (f.tags && f.tags.islamic ? ' · Katılım (İslami)' : '') }); }); }, function () { }));
-      return Promise.all(jobs).then(function () { if (!out.length && /^[A-Z]{1,5}$/.test(up)) add({ key: 'td:' + up, kind: 'etf', label: up, sub: 'ABD hisse/ETF — Twelve Data anahtarı gerekir' }); return out; });
+    var pre = [];
+    if (/^(bist|tefas|cg|us|td|macro|metal|fx|idx|imp):/.test(q)) { var d0 = describe(q); d0.exact = true; pre.push(d0); }
+    return mdIndex().then(function () { }, function () { }).then(function () {
+      var local = pre.concat(searchRank(entriesNow(), q, 15).filter(function (x) { return !pre.some(function (y) { return y.key === x.key; }); }));
+      return remoteSearch(q, local).then(function (more) { return local.concat(more); });
     });
   }
   function describe(key) {
@@ -237,7 +305,7 @@
       'macro:XAUUSD': ['Altın ons (USD)', 'metal'], 'macro:XAGUSD': ['Gümüş ons (USD)', 'metal'],
       'idx:XKTUM': ['Katılım Tüm endeksi', 'index'], 'idx:XK100': ['Katılım 100 endeksi', 'index'], 'idx:XK050': ['Katılım 50 endeksi', 'index'], 'idx:XK030': ['Katılım 30 endeksi', 'index'] }[key];
     if (L) return { key: key, kind: L[1], label: L[0], sub: '' };
-    var kind = { bist: 'stock', tefas: 'fund', cg: 'crypto', us: 'etf', td: 'etf', imp: 'import', idx: 'index', fx: 'fx', metal: 'metal', macro: 'metal' }[k] || 'other';
+    var kind = { bist: 'stock', tefas: 'fund', cg: 'crypto', us: US_ETF[s] ? 'etf' : 'stock', td: 'etf', imp: 'import', idx: 'index', fx: 'fx', metal: 'metal', macro: 'metal' }[k] || 'other';
     return { key: key, kind: kind, label: s, sub: '' };
   }
 
@@ -265,13 +333,17 @@
     if (k === 'bist' || k === 'idx' || k === 'us' || k === 'macro' || k === 'fx' || (k === 'td' && TV_US[s])) {
       var mk = k === 'bist' ? 'bist' : k === 'idx' ? 'index' : (k === 'us' || k === 'td') ? 'us' : 'macro', ms = k === 'fx' ? s + 'TRY' : s;
       var tvSym = k === 'bist' || k === 'idx' ? 'BIST:' + s : (k === 'us' || k === 'td') ? TV_US[s] : TV_MACRO[ms];
-      return Promise.all([loadMd(mk, ms), tvSym ? tvLive(tvSym).catch(function (e) { return { error: e.message }; }) : Promise.resolve(null)]).then(function (r) {
+      var usStock = k === 'us' && !US_ETF[s], mdP = loadMd(mk, ms);
+      // ABD hissesi: TradingView sembolü (borsa öneki) günlük dosyada yazılı → dosya gelince canlı fiyat istenir
+      var lvP = tvSym ? tvLive(tvSym).catch(function (e) { return { error: e.message }; }) : usStock ? mdP.then(function (md) { if (!md.tv) return null; tvSym = md.tv; return tvLive(md.tv).catch(function (e) { return { error: e.message }; }); }, function () { return null; }) : Promise.resolve(null);
+      return Promise.all([mdP, lvP, k === 'us' ? mdIndex().catch(function () { return null; }) : null]).then(function (r) {
         var md = r[0], lv = r[1], res = Object.assign(base, { bars: md.bars, currency: md.currency || (k === 'bist' ? 'TRY' : 'USD'), splits: md.splits, dividends: md.dividends, crossCheck: md.check, stale: md.stale, lastError: md.lastError,
-          sector: md.sector, katilim: md.katilim, tvSymbol: tvSym, name: md.name ? (k === 'bist' ? s + ' — ' + md.name : md.name) : d.label, histSource: { label: md.source, at: md.fetchedAt, lastBar: md.bars.length ? md.bars[md.bars.length - 1].d : null } });
+          sector: md.sector, katilim: md.katilim, tvSymbol: tvSym, name: md.name ? (k === 'bist' || usStock ? s + ' — ' + md.name : md.name) : d.label, histSource: { label: md.source, at: md.fetchedAt, lastBar: md.bars.length ? md.bars[md.bars.length - 1].d : null } });
+        if (k === 'us') { var um = usInfoMap(r[2]), ui = um && um[s]; res.usInfo = ui ? { t: ui.t, h: ui.h === undefined ? null : ui.h, hr: ui.hr || null, hs: ui.hs || null, ex: ui.ex || md.exchange || null, sec: ui.sec || md.sector || null, ind: ui.ind || md.industry || null, idx: ui.idx || null } : { t: US_ETF[s] ? 'etf' : 'stock', h: null, hr: null, sec: md.sector, ind: md.industry, ex: md.exchange }; if (res.currency !== 'USD' && md.currency) res.currency = md.currency; }
         if (k === 'fx') res.currency = 'TRY';
         if (lv && !lv.error) { var mg = mergeLive(res.bars, lv); res.bars = mg.bars; res.liveMerge = mg; res.live = { price: lv.c, at: lv.at, barDate: lv.d, source: lv.source, raw: lv.raw }; res.tv = lv.raw; }
         else res.liveError = lv && lv.error;
-        return finish(res, d.kind === 'index' ? 'index' : d.kind === 'fx' ? 'fx' : d.kind === 'metal' ? 'metal' : k === 'bist' ? 'stock' : 'etf', opts);
+        return finish(res, d.kind === 'index' ? 'index' : d.kind === 'fx' ? 'fx' : d.kind === 'metal' ? 'metal' : k === 'bist' ? 'stock' : 'etf', opts); // ABD hissesi: veri kontrolü 'etf' (BIST %10 tavan/taban kuralı uygulanmaz)
       });
     }
     if (k === 'metal') { // gram TL = ons USD × USD/TL ÷ 31,1035 (aynı tarihli kapanışlar; türetilmiş, yalnızca kapanış)
@@ -323,13 +395,18 @@
   }
 
   /* ---------- Temel veriler (BIST, TradingView) + sektör medyanı ---------- */
-  function fundamentals(sym) {
-    return cached('fund:' + sym, 30 * 60000, function () {
-      return fetchJson(URL.tvSymbol('BIST:' + sym, FUND_FIELDS), { timeout: 15000 }).then(function (f) {
-        if (!f || !f.sector) return { self: f, peers: null, at: new Date().toISOString(), source: SOURCES.tv };
+  // tvSym verilirse (v8.8.2, ABD hissesi ör. NASDAQ:AAPL): sektör medyanı ABD'de piyasa değeri 2 milyar $ üstü hisselerden (en büyük 400)
+  function fundamentals(sym, tvSym) {
+    var us = !!tvSym && !/^BIST:/.test(tvSym), tv = tvSym || 'BIST:' + sym;
+    return cached('fund:' + tv, 30 * 60000, function () {
+      return fetchJson(URL.tvSymbol(tv, FUND_FIELDS), { timeout: 15000 }).then(function (f) {
+        if (!f || !f.sector) return { self: f, peers: null, at: new Date().toISOString(), source: SOURCES.tv, market: us ? 'ABD' : 'BIST' };
         var cols = ['name', 'price_earnings_ttm', 'price_book_fq', 'enterprise_value_ebitda_ttm', 'return_on_equity', 'net_margin', 'total_revenue_yoy_growth_ttm', 'debt_to_equity', 'market_cap_basic'];
-        return fetchJson(URL.tvScan('turkey'), { timeout: 15000, body: { filter: [{ left: 'sector', operation: 'equal', right: f.sector }, { left: 'exchange', operation: 'equal', right: 'BIST' }, { left: 'type', operation: 'equal', right: 'stock' }], columns: cols, range: [0, 400] } })
-          .then(function (j) { return { self: f, peers: peerStats(j, cols), at: new Date().toISOString(), source: SOURCES.tv }; }, function () { return { self: f, peers: null, at: new Date().toISOString(), source: SOURCES.tv }; });
+        var filt = us ? [{ left: 'sector', operation: 'equal', right: f.sector }, { left: 'exchange', operation: 'in_range', right: ['NYSE', 'NASDAQ', 'AMEX'] }, { left: 'type', operation: 'equal', right: 'stock' }, { left: 'market_cap_basic', operation: 'greater', right: 2e9 }]
+          : [{ left: 'sector', operation: 'equal', right: f.sector }, { left: 'exchange', operation: 'equal', right: 'BIST' }, { left: 'type', operation: 'equal', right: 'stock' }];
+        var body = { filter: filt, columns: cols, range: [0, 400] }; if (us) body.sort = { sortBy: 'market_cap_basic', sortOrder: 'desc' };
+        return cached('peers:' + (us ? 'us:' : 'tr:') + f.sector, 30 * 60000, function () { return fetchJson(URL.tvScan(us ? 'america' : 'turkey'), { timeout: 15000, body: body }); })
+          .then(function (j) { var P = peerStats(j, cols); P.market = us ? 'ABD (piyasa değeri > 2 milyar $)' : 'BIST'; return { self: f, peers: P, at: new Date().toISOString(), source: SOURCES.tv, market: us ? 'ABD' : 'BIST' }; }, function () { return { self: f, peers: null, at: new Date().toISOString(), source: SOURCES.tv, market: us ? 'ABD' : 'BIST' }; });
       });
     });
   }
@@ -351,6 +428,17 @@
     return cached('katscreen', 30 * 60000, function () {
       return fetchJson(URL.tvScan('turkey'), { timeout: 20000, body: { columns: cols, symbols: { symbolset: ['SYML:BIST;XKTUM'] }, range: [0, 400] } }).then(function (j) {
         return { at: new Date().toISOString(), source: SOURCES.tv, rows: (j.data || []).map(function (r) { var o = {}; cols.forEach(function (c, i) { o[c] = r.d[i]; }); return o; }) };
+      });
+    });
+  }
+  // v8.8.2: ABD hisseleri için aynı tarama (verilen TradingView sembolleri, ör. NASDAQ:AAPL) — portföy oluşturucu aday listesi
+  function usScreen(tvSyms) {
+    var list = (tvSyms || []).filter(function (x) { return /^[A-Z]+:[A-Z0-9.]{1,10}$/.test(x); }).slice(0, 600);
+    if (!list.length) return Promise.resolve({ rows: [] });
+    var cols = ['name', 'description', 'close', 'market_cap_basic', 'average_volume_30d_calc', 'Perf.3M', 'Perf.6M', 'Perf.Y', 'RSI', 'SMA50', 'SMA200', 'price_earnings_ttm', 'price_book_fq', 'return_on_equity', 'debt_to_equity', 'Volatility.M', 'sector'];
+    return cached('usscreen:' + list.length + ':' + list[0] + ':' + list[list.length - 1], 30 * 60000, function () {
+      return fetchJson(URL.tvScan('america'), { timeout: 20000, body: { columns: cols, symbols: { tickers: list }, range: [0, 600] } }).then(function (j) {
+        return { at: new Date().toISOString(), source: SOURCES.tv, rows: (j.data || []).map(function (r) { var o = { tv: r.s }; cols.forEach(function (c, i) { o[c] = r.d[i]; }); return o; }) };
       });
     });
   }
@@ -477,9 +565,9 @@
   }
   function news(q) { return fetchJson(URL.gdelt(q), { timeout: 15000 }).then(function (j) { return { at: new Date().toISOString(), source: 'GDELT DOC 2.0', items: (j.articles || []).map(function (a) { return { title: a.title, url: a.url, domain: a.domain, lang: a.language, d: a.seendate ? a.seendate.slice(0, 4) + '-' + a.seendate.slice(4, 6) + '-' + a.seendate.slice(6, 8) : null }; }) }; }); }
 
-  return { URL: URL, SOURCES: SOURCES, TV_US: TV_US, TV_MACRO: TV_MACRO, fetchJson: fetchJson, ymdOfMs: ymdOfMs, dayNum: dayNum, dow: dow, businessDaysBetween: businessDaysBetween,
+  return { URL: URL, SOURCES: SOURCES, TV_US: TV_US, US_ETF: US_ETF, TV_MACRO: TV_MACRO, foldTr: foldTr, foldSym: foldSym, buildEntries: buildEntries, searchRank: searchRank, suggest: suggest, searchReady: searchReady, remoteSearch: remoteSearch, usKnown: usKnown, usInfoMap: usInfoMap, fetchJson: fetchJson, ymdOfMs: ymdOfMs, dayNum: dayNum, dow: dow, businessDaysBetween: businessDaysBetween,
     parseMd: parseMd, parseBinanceKlines: parseBinanceKlines, parseTefasHistory: parseTefasHistory, parseTwelve: parseTwelve, tvBarDate: tvBarDate, mergeLive: mergeLive, parseOhlcText: parseOhlcText,
     parseNumLoose: parseNumLoose, parseDateLoose: parseDateLoose, checkBars: checkBars, worstLevel: worstLevel, resolve: resolve, describe: describe, load: load, mdIndex: mdIndex, fundamentals: fundamentals,
     peerStats: peerStats, median: median, parseH1: parseH1, parseBinanceIntraday: parseBinanceIntraday, aggregate: aggregate, checkIntraday: checkIntraday, loadH1: loadH1, loadIntraday: loadIntraday, labelOfMs: labelOfMs, TF_MS: TF_MS,
-    kap: kap, newsCached: newsCached, newsTopicOf: newsTopicOf, fundPeers: fundPeers, katilimFunds: katilimFunds, katilimScreen: katilimScreen, bistScreen: bistScreen, news: news, cryptoPair: cryptoPair, tvLive: tvLive, loadMd: loadMd };
+    kap: kap, newsCached: newsCached, newsTopicOf: newsTopicOf, fundPeers: fundPeers, katilimFunds: katilimFunds, katilimScreen: katilimScreen, bistScreen: bistScreen, usScreen: usScreen, news: news, cryptoPair: cryptoPair, tvLive: tvLive, loadMd: loadMd };
 });

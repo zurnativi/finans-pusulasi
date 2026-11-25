@@ -58,6 +58,12 @@
       ]).then(function (r) {
         var ix = r[0], mdi = r[1], funds = (r[2].items || []), scr = r[3].rows || [], sec = {}, kat = {};
         (mdi.bist || []).forEach(function (b) { sec[b.s] = b.sec || null; kat[b.s] = !!b.k; });
+        // v8.8.2: ABD hisseleri — helal açıkken yalnız Şer'i listedekiler (SP Funds portföyleri), kapalıyken "uygun değil" olmayanlar; TradingView taramasıyla en iyi 5 aday canlı analiz edilir
+        var usPool = allow.usstock ? (mdi.usInfo || []).filter(function (x) { return x.t === 'stock' && x.tv && x.h !== 'uygun_degil' && (!f.halal || x.h === 'uygun'); }) : [];
+        usPool.forEach(function (x) { sec['us:' + x.s] = x.sec || null; });
+        return (usPool.length && MD.usScreen ? MD.usScreen(usPool.map(function (x) { return x.tv; })).catch(function () { return { rows: [] }; }) : Promise.resolve({ rows: [] })).then(function (us) { return { ix: ix, mdi: mdi, funds: funds, scr: scr, sec: sec, kat: kat, usRows: us.rows || [], usPool: usPool.length }; });
+      }).then(function (G0) {
+        var ix = G0.ix, funds = G0.funds, scr = G0.scr, sec = G0.sec, kat = G0.kat;
         var srvItems = (ix.items || []).filter(function (it) { var c = L.classOfKey(it.key); return c && allow[c] && c !== 'fund'; });
         var genAt = ix.generatedAt;
         step('Sunucu anlık görüntüleri okunuyor (' + srvItems.length + ' varlık)…');
@@ -73,14 +79,15 @@
         }
         var extraStocks = [];
         if (scr.length) extraStocks = scr.map(function (row) { return { row: row, sc: AN.stockPickScore(row) }; }).filter(function (x) { return x.sc.s >= 40 && !kat[x.row.name]; }).sort(function (a, b) { return b.sc.s - a.sc.s; }).slice(0, 5).map(function (x) { return x.row.name; });
+        var usPick = G0.usRows.map(function (row) { return { row: row, sc: AN.stockPickScore(row) }; }).filter(function (x) { return x.sc.s >= 40 && x.row.name; }).sort(function (a, b) { return b.sc.s - a.sc.s; }).slice(0, 5).map(function (x) { return 'us:' + x.row.name; });
         return pool(fetches, 8).then(function (snaps) {
           var cands = [];
           snaps.forEach(function (s, i) { if (!s || s.error) return; cands.push(candOf(srvItems[i].key, s, { sector: sec[srvItems[i].key.slice(5)], src: 'sunucu' })); });
-          var lives = fundPick.map(function (fd) { return { key: 'tefas:' + fd.code, fund: fd }; }).concat(extraStocks.map(function (s) { return { key: 'bist:' + s }; }));
+          var lives = fundPick.map(function (fd) { return { key: 'tefas:' + fd.code, fund: fd }; }).concat(extraStocks.map(function (s) { return { key: 'bist:' + s }; }), usPick.map(function (k) { return { key: k }; }));
           if (lives.length) step('Fonlar ve ek adaylar canlı analiz ediliyor (' + lives.length + ')…');
           return pool(lives.map(function (lv) { return function () { return liveSnap(lv.key); }; }), 4).then(function (rs) {
-            rs.forEach(function (x, i) { if (!x || x.error || !x.snap) return; var lv = lives[i]; cands = cands.filter(function (c) { return c.key !== lv.key; }); cands.push(candOf(lv.key, x.snap, { sector: sec[lv.key.slice(5)] || null, fund: lv.fund, src: 'canlı', series: x.series })); });
-            return { cands: cands, dataNote: 'Sunucu analizleri ' + (genAt ? when(genAt) : '—') + ' (' + srvItems.length + ' varlık)' + (funds.length ? ' · TEFAS katılım fon listesi (' + funds.length + ' fon)' : '') + (extraStocks.length ? ' · BIST 100 taraması (TradingView)' : '') };
+            rs.forEach(function (x, i) { if (!x || x.error || !x.snap) return; var lv = lives[i]; cands = cands.filter(function (c) { return c.key !== lv.key; }); cands.push(candOf(lv.key, x.snap, { sector: (lv.key.indexOf('us:') === 0 ? sec[lv.key] : sec[lv.key.slice(5)]) || null, fund: lv.fund, src: 'canlı', series: x.series })); });
+            return { cands: cands, dataNote: 'Sunucu analizleri ' + (genAt ? when(genAt) : '—') + ' (' + srvItems.length + ' varlık)' + (funds.length ? ' · TEFAS katılım fon listesi (' + funds.length + ' fon)' : '') + (extraStocks.length ? ' · BIST 100 taraması (TradingView)' : '') + (G0.usPool ? ' · ABD hisse taraması (' + G0.usPool + ' hisse' + (f.halal ? ', Şer\'i listedekiler' : '') + '; TradingView) → ' + usPick.length + ' aday' : '') };
           });
         });
       });
@@ -215,7 +222,7 @@
         '<p class="hint">' + (f.halal ? 'Yalnız Katılım endeksindeki hisseler, TEFAS\'ta İslami (katılım) etiketli fonlar, gram altın, peşin döviz ve Şer\'i endeks ETF\'leri.' : 'Şüpheli/bilinmeyen varlıklar da girebilir (kripto, katılım endeksi dışı hisse). Faizli araçlar yine girmez.') + '</p></div>';
       h += '<div class="grid two lab-g"><div><div class="label">Vade</div>' + seg('Vade', 'horizon', [['short', 'Kısa (< 2 yıl)'], ['medium', 'Orta (2-5 yıl)'], ['long', 'Uzun (5+ yıl)']], f.horizon) + '</div>' +
         '<div><div class="label">Risk seviyesi</div>' + seg('Risk', 'risk', [['low', 'Düşük'], ['medium', 'Orta'], ['high', 'Yüksek']], f.risk) + '</div></div>';
-      h += '<div class="grid two lab-g"><fieldset class="lab-fs"><legend>Varlık sınıfları</legend>' + chk('cls.bist', 'BIST hisse', f.classes.bist) + chk('cls.fund', 'Fon (TEFAS)', f.classes.fund) + chk('cls.gold', 'Altın / gümüş (gram, TL)', f.classes.gold) + chk('cls.crypto', 'Kripto', f.classes.crypto, f.halal ? '(helal filtresi açıkken eklenmez)' : '') + '</fieldset>' +
+      h += '<div class="grid two lab-g"><fieldset class="lab-fs"><legend>Varlık sınıfları</legend>' + chk('cls.bist', 'BIST hisse', f.classes.bist) + chk('cls.fund', 'Fon (TEFAS)', f.classes.fund) + chk('cls.gold', 'Altın / gümüş (gram, TL)', f.classes.gold) + chk('cls.crypto', 'Kripto', f.classes.crypto, f.halal ? '(helal filtresi açıkken eklenmez)' : '') + chk('cls.us', 'ABD hisseleri (USD)', f.classes.us, f.halal ? '(yalnız Şer\'i listedekiler)' : '(helal olmayanlar yine girmez)') + '</fieldset>' +
         '<fieldset class="lab-fs" id="lab-doviz"><legend>Döviz</legend>' + chk('fx', 'Döviz (dolar / euro)', f.fx) + chk('usdEtf', 'Dolar bazlı helal ETF dahil', f.usdEtf) + chk('tlOnly', 'Yalnız TL araçlar', f.tlOnly) +
         '<p class="hint">Üçü birbirinden bağımsız seçilir. "Yalnız TL araçlar" + "Dolar bazlı helal ETF dahil" = TL araçlar + istisna olarak helal ETF (dövize bağlı pay en fazla %' + (L.FX_CAP_BP / 100) + ').</p></fieldset></div>';
       h += '<div class="lab-sels">' + sel('count', 'Varlık sayısı', [3, 4, 5, 6, 8, 10, 12, 15].map(function (n) { return [n, n + ' varlık']; }), f.count) +

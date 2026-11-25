@@ -30,7 +30,7 @@
     fxSeries: function (from, to) { return 'https://api.frankfurter.dev/v1/' + from + '..' + to + '?base=USD&symbols=TRY'; },
     tefas: function (code, hist) { return 'https://fon.yourapiservice.com/api/v1/funds/' + encodeURIComponent(code) + '?history=' + (hist || 1); },
     tvScan: 'https://scanner.tradingview.com/turkey/scan',
-    tvUs: 'https://scanner.tradingview.com/america/scan',
+    tvUs: 'https://scanner.tradingview.com/global/scan', // v8.8.2: global tarayıcı — ABD + Londra (LSE) aynı istekte
     mdUs: function (sym) { return 'https://raw.githubusercontent.com/zurnativi/finans-pusulasi/market-data/us/' + encodeURIComponent(sym) + '.json'; },
     fawaz: function (d) { return 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@' + d + '/v1/currencies/xau.min.json'; },
     cgChart: function (id) { return 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(id) + '/market_chart?vs_currency=try&days=365&interval=daily'; }
@@ -92,7 +92,8 @@
     });
     return out;
   }
-  var TV_US = { SPUS: 'AMEX:SPUS', HLAL: 'NASDAQ:HLAL', SPSK: 'AMEX:SPSK', SPRE: 'AMEX:SPRE', SPTE: 'AMEX:SPTE', SPWO: 'AMEX:SPWO', UMMA: 'NASDAQ:UMMA' };
+  var TV_US = { SPUS: 'AMEX:SPUS', HLAL: 'NASDAQ:HLAL', SPSK: 'AMEX:SPSK', SPRE: 'AMEX:SPRE', SPTE: 'AMEX:SPTE', SPWO: 'AMEX:SPWO', UMMA: 'NASDAQ:UMMA',
+    ISDW: 'LSE:ISDW', ISDU: 'LSE:ISDU', ISDE: 'LSE:ISDE', HIWO: 'LSE:HIWO', SPY: 'AMEX:SPY', QQQ: 'NASDAQ:QQQ' }; // v8.8.2: Londra (LSE, USD hattı) ETF'leri ve kıyas ETF'leri
   function ymdNewYork(iso) { // ABD işlem günü: New York takvim günü
     var t = Date.parse(iso); if (!isFinite(t)) return null;
     try { var f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t)); if (/^\d{4}-\d{2}-\d{2}$/.test(f)) return f; } catch (e) { /* aşağıdaki yedek */ }
@@ -105,7 +106,7 @@
     if (!j || !Array.isArray(j.data)) throw new Error('TradingView (ABD) yanıtı beklenen biçimde değil');
     var out = {};
     j.data.forEach(function (row) {
-      var tv = String(row.s || ''), sym = syms.filter(function (x) { return TV_US[x] ? TV_US[x] === tv : tv.replace(/^(AMEX|NASDAQ|NYSE|CBOE):/, '') === x; })[0], d = row.d || []; if (!sym || out[sym]) return;
+      var tv = String(row.s || ''), sym = syms.filter(function (x) { return TV_US[x] ? TV_US[x] === tv : tv.replace(/^(AMEX|NASDAQ|NYSE|CBOE|LSE):/, '') === x; })[0], d = row.d || []; if (!sym || out[sym]) return;
       var p = p6(d[0]); if (!p) return; var at = d[2] > 0 ? new Date(d[2] * 1000).toISOString() : null;
       out[sym] = { p: p, currency: d[1] || null, at: at, date: at ? ymdNewYork(at) : null };
     });

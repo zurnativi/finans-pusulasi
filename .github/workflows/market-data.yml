@@ -21,7 +21,7 @@ concurrency: { group: market-data-daily, cancel-in-progress: false }
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
@@ -36,6 +36,17 @@ jobs:
           PREV_DIR: /tmp/prev
           WORKERS: '5'
           MODE: ${{ inputs.mode || 'full' }}
+        run: python3 tools/fetch_market_data.py /tmp/out
+      - name: ABD hisseleri (S&P 500 + Nasdaq-100) ve Şer'i uygunluk etiketi
+        # v8.8.2: ayrı adım — hata ana piyasa verisini durdurmaz; alınamayan hisselerde önceki dosya ve etiket korunur.
+        # Hisse dosyası 10 saatten yeniyse tekrar çekilmez (sabah işi ABD kapanışını alır; akşam işinde canlı fiyat TradingView'den birleşir).
+        if: ${{ (inputs.mode || 'full') == 'full' }}
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          PREV_DIR: /tmp/prev
+          MODE: us
+          US_WORKERS: '6'
         run: python3 tools/fetch_market_data.py /tmp/out
       - name: Haber merkezi verisi (takvim, olasılıklar, benzer olaylar, uyarılar)
         # Hata bu adımı durdurmaz: ana piyasa verisi zaten yazıldı; alınamayan bölüm önceki sürümle (stale) kalır.

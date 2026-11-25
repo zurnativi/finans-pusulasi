@@ -37,7 +37,7 @@
   test('Tanım: tek kayıt midas-only-2026-11-25, anahtar 32 bayt, dosya market-data bg/ altında; kutu kaydıyla eşleşir', function () {
     eq(MG.ITEMS.length, 1); ok(/^sifirdan-midas/.test(MG.ITEMS[0].id)); ok(/^midas-/.test(MG.ITEMS[0].editId)); ok(MG.ITEMS[0].supersedes.indexOf('midas-only-2026-11-25') >= 0); eq(BG.unb64u(MG.ITEMS[0].key).length, 32);
     ok(/^bg\/[a-z0-9.-]+\.enc\.json$/.test(MG.ITEMS[0].path) && MG.RAW.indexOf('/market-data/') > 0); ok(MG.ITEMS[0].path.indexOf('midas') < 0, 'yol adında içerik ipucu yok');
-    eq(IB.APP_VERSION, '8.8.1');
+    eq(IB.APP_VERSION, '8.8.2');
   });
   test('Arayüz: app.js yerleşik düzenlemeyi başlatır (kopya + mutate); kutu aynı numarayı tekrar uygulamaz; sayfa ve kabukta migrate.js', function () {
     var app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), ui = fs.readFileSync(path.join(ROOT, 'js', 'bgwatch-ui.js'), 'utf8'), mg = fs.readFileSync(path.join(ROOT, 'js', 'migrate.js'), 'utf8');
@@ -46,7 +46,7 @@
     ok(/inboxDone\(item\.id\)/.test(mg) && /lsSet\(LS \+ item\.id/.test(mg), 'kutu uyguladıysa atla; numarayı kaydet');
     ok(/MG\.locked\(edit\.id\)\) return null/.test(ui) && /MG\.isDone\(edit\.id\)\) return Promise\.resolve\(recordExternal/.test(ui));
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(idx.indexOf('js/migrate.js?v=8.8.1') > idx.indexOf('js/inbox.js?v=8.8.1') && idx.indexOf('js/migrate.js') < idx.indexOf('js/app.js')); ok(/'migrate'/.test(sw) && /VERSION = '8\.8\.1'/.test(sw) && /skipWaiting/.test(sw));
+    ok(idx.indexOf('js/migrate.js?v=8.8.2') > idx.indexOf('js/inbox.js?v=8.8.2') && idx.indexOf('js/migrate.js') < idx.indexOf('js/app.js')); ok(/'migrate'/.test(sw) && /VERSION = '8\.8\.2'/.test(sw) && /skipWaiting/.test(sw));
   });
   function run() {
     return tests.reduce(function (p, t) { return p.then(function (rs) { return Promise.resolve().then(t.fn).then(function () { rs.push({ name: t.name, ok: true }); return rs; }, function (e) { rs.push({ name: t.name, ok: false, err: e && e.message || String(e) }); return rs; }); }); }, Promise.resolve([]));

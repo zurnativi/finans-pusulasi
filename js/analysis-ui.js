@@ -12,7 +12,8 @@
         var cacheI = {}, kapBy = {}, newsG = {}, mdIx = null, mdIxP = null, alertLast = {}, alertBusy = false, alertTimer = null, alertMsg = null;
     var AL = window.Alerts, NOTIFY_KEY = 'finans-pusulasi:uyari-bildirim';
     var TFS = [['1d', 'Günlük'], ['4h', '4 saat'], ['1h', '1 saat']], TF_LABEL = { '1d': 'günlük', '4h': '4 saatlik', '1h': 'saatlik' };
-    var KIND_LABEL = { stock: 'BIST hissesi', fund: 'TEFAS fonu', crypto: 'Kripto', etf: 'ABD ETF/hisse', metal: 'Emtia', fx: 'Döviz', index: 'Endeks', import: 'İçe aktarılan' };
+    var KIND_LABEL = { stock: 'BIST hissesi', fund: 'TEFAS fonu', crypto: 'Kripto', etf: 'Yabancı ETF (USD)', metal: 'Emtia', fx: 'Döviz', index: 'Endeks', import: 'İçe aktarılan' };
+    function kindLabel(A) { return A && A.kind === 'stock' && /^us:/.test(A.key || '') ? 'ABD hissesi (USD)' : KIND_LABEL[A && A.kind] || (A && A.kind) || ''; }
     var US_HALAL = window.Snap.US_HALAL;
     function st() { return X.state(); }
     function an() { var s = st(); return s.analysis && typeof s.analysis === 'object' ? s.analysis : { watchlist: [], profile: {} }; }
@@ -76,10 +77,10 @@
     function keyOfAsset(a) {
       if (!a) return null; var pk = a.priceKey || '', sym = String(a.symbol || '').toUpperCase();
       if (/^(bist|tefas|cg|metal|fx|idx):/.test(pk)) return pk;
-      if (/^td:/.test(pk)) return US_HALAL[pk.slice(3)] ? 'us:' + pk.slice(3) : pk;
+      if (/^td:/.test(pk)) return US_HALAL[pk.slice(3)] || (MD.usKnown && MD.usKnown(pk.slice(3))) ? 'us:' + pk.slice(3) : pk; // v8.8.2: market-data'daki ABD hissesi/ETF → günlük veri (anahtar gerekmez)
       if (a.cls === 'katilim_stock' && /^[A-Z0-9]{3,6}$/.test(sym)) return 'bist:' + sym;
       if ((a.cls === 'katilim_fund' || a.cls === 'sukuk') && /^[A-Z0-9]{3}$/.test(sym)) return 'tefas:' + sym;
-      if (a.cls === 'halal_etf' && /^[A-Z]{2,5}$/.test(sym)) return US_HALAL[sym] ? 'us:' + sym : 'td:' + sym;
+      if (a.cls === 'halal_etf' && /^[A-Z]{2,5}$/.test(sym)) return US_HALAL[sym] || (MD.usKnown && MD.usKnown(sym)) ? 'us:' + sym : 'td:' + sym;
       if (a.cls === 'gold') return 'metal:XAU';
       return null;
     }
@@ -263,12 +264,85 @@
       catch (e) { console.error(e); h += '<div class="notice danger">Bu bölüm gösterilemedi: ' + esc(e.message) + '</div>'; }
       return h + '<p class="hint disc-a">Analizler hesaplama ve eğitim amaçlıdır, yatırım tavsiyesi değildir. Her sayı kaynağı ve saatiyle gösterilir; veri yetersizse sinyal verilmez.</p>';
     }
+    /* ---------- v8.8.2: Anında arama (yazarken açılır liste). Sıralama mdata.js searchRank'te (testli); ağ yalnız TEFAS/kripto ekleri için. ---------- */
+    var sugg = { q: '', items: [], active: -1, timer: null, rtimer: null, seq: 0, focused: false, waitIdx: false, remote: false };
+    function hlLabel(label, q) { // sembol öneki vurgulanır (sa → <mark>SA</mark>SA)
+      var L = String(label || ''), f = MD.foldTr ? MD.foldTr(q).replace(/ /g, '') : '', sym = L.split(' — ')[0];
+      if (f && sym.length >= f.length && /^[A-Za-z0-9]+$/.test(sym.slice(0, f.length)) && MD.foldSym(sym).indexOf(f) === 0) return '<mark>' + esc(L.slice(0, f.length)) + '</mark>' + esc(L.slice(f.length));
+      return esc(L);
+    }
+    function suggHtml() {
+      var q = sugg.q;
+      var rows = sugg.items.map(function (x, i) { return '<li id="a-sg-' + i + '" role="option" class="sg' + (i === sugg.active ? ' on' : '') + '" aria-selected="' + (i === sugg.active) + '" data-i="' + i + '"><b>' + hlLabel(x.label, q) + '</b><span class="muted">' + esc(x.sub || KIND_LABEL[x.kind] || '') + '</span></li>'; }).join('');
+      if (sugg.waitIdx) rows += '<li class="sg-note" role="presentation">Hisse listesi yükleniyor…</li>';
+      else if (sugg.remote) rows += '<li class="sg-note" role="presentation">Fon ve kripto da aranıyor…</li>';
+      else if (!sugg.items.length) rows += '<li class="sg-note" role="presentation">Eşleşme yok. Enter ile tam arama yap ya da başka bir kod dene.</li>';
+      return rows;
+    }
+    function renderSugg() {
+      var ul = document.getElementById('a-sugg'), inp = document.getElementById('a-q'); if (!ul || !inp) return;
+      var show = sugg.focused && !!sugg.q;
+      var html = show ? suggHtml() : ''; ul.hidden = !show; if (ul.innerHTML !== html) ul.innerHTML = html; inp.setAttribute('aria-expanded', show ? 'true' : 'false');
+      if (show && sugg.active >= 0) { inp.setAttribute('aria-activedescendant', 'a-sg-' + sugg.active); var on = document.getElementById('a-sg-' + sugg.active); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' }); }
+      else inp.removeAttribute('aria-activedescendant');
+    }
+    function runSuggest() {
+      var my = ++sugg.seq, q = sugg.q.trim(); clearTimeout(sugg.rtimer); sugg.remote = false;
+      if (!q) { sugg.items = []; sugg.active = -1; renderSugg(); return; }
+      var r = MD.suggest(q, 10); sugg.items = r.items; sugg.active = -1; sugg.waitIdx = !r.ready; renderSugg();
+      if (!r.ready) MD.searchReady().then(function () { if (my === sugg.seq) { sugg.waitIdx = false; runSuggest(); } });
+      else if (q.length >= 2) { // ek kaynaklar (ağ): yazmayı bırakınca, yalnız son sorgu için
+        sugg.remote = true; renderSugg();
+        sugg.rtimer = setTimeout(function () {
+          MD.remoteSearch(q, sugg.items).then(function (more) { if (my !== sugg.seq) return; sugg.remote = false; if (more.length) sugg.items = sugg.items.concat(more).slice(0, 14); renderSugg(); }, function () { if (my === sugg.seq) { sugg.remote = false; renderSugg(); } });
+        }, 350);
+      }
+    }
+    function pickSugg(i) {
+      var x = sugg.items[i]; if (!x) return;
+      sugg.focused = false; sugg.items = []; sugg.active = -1; ++sugg.seq; clearTimeout(sugg.timer); clearTimeout(sugg.rtimer);
+      var inp = document.getElementById('a-q'); search.q = x.label.split(' — ')[0]; if (inp) { inp.value = search.q; inp.blur(); }
+      search.results = null; renderSugg(); open(x.key, { symbol: x.symbol });
+    }
+    document.addEventListener('input', function (e) {
+      if (!e.target || e.target.id !== 'a-q') return;
+      search.q = e.target.value; sugg.q = e.target.value; sugg.focused = true; clearTimeout(sugg.timer);
+      if (!sugg.q.trim()) { runSuggest(); return; }
+      sugg.timer = setTimeout(runSuggest, 150);
+    });
+    document.addEventListener('focusin', function (e) {
+      if (!e.target || e.target.id !== 'a-q') return;
+      sugg.focused = true; MD.searchReady(); // dizini önceden getir (ilk harfte bekleme olmasın)
+      if (e.target.value.trim() && !sugg.items.length) { sugg.q = e.target.value; runSuggest(); } else renderSugg();
+    });
+    document.addEventListener('focusout', function (e) {
+      var t = e.target; if (!t || t.id !== 'a-q') return;
+      setTimeout(function () { if (!document.body.contains(t)) return; /* sayfa yeniden çizildi: afterRender odağı geri verir */ if (document.activeElement === t) return; sugg.focused = false; renderSugg(); }, 220);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (!e.target || e.target.id !== 'a-q') return;
+      var n = sugg.items.length, open1 = sugg.focused && sugg.q.trim();
+      if (e.key === 'ArrowDown' && open1 && n) { e.preventDefault(); sugg.active = (sugg.active + 1) % n; renderSugg(); }
+      else if (e.key === 'ArrowUp' && open1 && n) { e.preventDefault(); sugg.active = sugg.active <= 0 ? n - 1 : sugg.active - 1; renderSugg(); }
+      else if (e.key === 'Enter' && open1 && sugg.active >= 0) { e.preventDefault(); pickSugg(sugg.active); }
+      else if (e.key === 'Escape' && open1) { e.preventDefault(); sugg.focused = false; renderSugg(); }
+    });
+    document.addEventListener('mousedown', function (e) { var li = e.target && e.target.closest && e.target.closest('#a-sugg li[data-i]'); if (li) e.preventDefault(); }); // odak kutuda kalsın
+    // Dokunmatik: parmak basılıyken liste yenilenirse (ek kaynak sonuçları) tıklama listenin kendisine düşer → basılan satır hatırlanır
+    document.addEventListener('pointerdown', function (e) { var li = e.target && e.target.closest && e.target.closest('#a-sugg li[data-i]'); sugg.down = li ? { i: +li.dataset.i, key: (sugg.items[+li.dataset.i] || {}).key, at: Date.now() } : null; }, true);
+    document.addEventListener('click', function (e) {
+      var li = e.target && e.target.closest && e.target.closest('#a-sugg li[data-i]'), ul = !li && e.target && e.target.closest && e.target.closest('#a-sugg');
+      if (li) { e.preventDefault(); e.stopPropagation(); pickSugg(+li.dataset.i); }
+      else if (ul && sugg.down && Date.now() - sugg.down.at < 1500) { var i = sugg.items.map(function (x) { return x.key; }).indexOf(sugg.down.key); e.preventDefault(); e.stopPropagation(); if (i >= 0) pickSugg(i); }
+    }, true);
     function searchBox() {
       var r = search.results;
-      return '<form class="asearch" id="a-search" role="search"><label for="a-q" class="sr">Varlık ara</label><input id="a-q" type="search" placeholder="Kod veya isim: ASELS, KTV, BTC, altın, SPUS, dolar…" value="' + esc(search.q) + '" autocomplete="off">' +
+      return '<form class="asearch" id="a-search" role="search"><label for="a-q" class="sr">Varlık ara</label><div class="acombo"><input id="a-q" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="a-sugg" placeholder="Kod veya isim yaz: sa → SASA, AAPL, SPUS, KTV, altın…" value="' + esc(search.q) + '" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">' +
+        '<ul id="a-sugg" class="asugg" role="listbox" aria-label="Arama önerileri" hidden></ul></div>' +
         '<button class="btn primary" type="submit"' + (search.loading ? ' disabled' : '') + '>' + (search.loading ? 'Aranıyor…' : 'Analiz et') + '</button></form>' +
+        '<p class="hint asearch-hint">Yazdıkça sonuçlar listelenir (BIST\'in tüm hisseleri, ABD hisseleri, yabancı ETF\'ler, TEFAS fonları, altın, döviz, kripto). ↑ ↓ ile seç, Enter ile aç.</p>' +
         (r ? (r.length ? '<div class="sresults">' + r.map(function (x) { return '<button type="button" class="sres" data-act="a-open" data-key="' + esc(x.key) + '"' + (x.symbol ? ' data-sym="' + esc(x.symbol) + '"' : '') + '><b>' + esc(x.label) + '</b><span class="muted">' + esc(x.sub || KIND_LABEL[x.kind] || '') + '</span></button>'; }).join('') + '</div>'
-          : '<p class="hint">Sonuç yok. BIST kodu (ASELS), TEFAS kodu (KTV), kripto (BTC, SOL), altın/gümüş/dolar veya ABD ETF (SPUS) dene. Başka bir varlık için Varlık analizi sekmesinden OHLCV verisi yükleyebilirsin.</p>') : '');
+          : '<p class="hint">Sonuç yok. BIST kodu (ASELS), TEFAS kodu (KTV), kripto (BTC, SOL), altın/gümüş/dolar, ABD hissesi (AAPL) veya yabancı ETF (SPUS) dene. Başka bir varlık için Varlık analizi sekmesinden OHLCV verisi yükleyebilirsin.</p>') : '');
     }
 
     /* ----- Genel bakış ----- */
@@ -327,7 +401,7 @@
     function assetView(A) {
       var S = A.series, h = '', inWl = (an().watchlist || []).some(function (w) { return w.key === A.key; }), ccy = A.currency;
       var prev = A.col.c.length > 1 ? A.col.c[A.col.c.length - 2] : null, chg = prev ? (A.price / prev - 1) * 100 : null, hs = A.ctx.halal.status;
-      h += '<section class="card a-head"><div class="ah-l"><div class="ah-k">' + esc(KIND_LABEL[A.kind] || A.kind) + ' · ' + pill(hs === 'uygun' ? 'ok' : hs === 'uygun_degil' ? 'danger' : 'warn', 'Helal: ' + A.ctx.halal.label) + ' <span class="hint">' + esc(A.ctx.halal.reason) + '</span></div><h2 class="ah-n">' + esc(A.name) + '</h2>' +
+      h += '<section class="card a-head"><div class="ah-l"><div class="ah-k">' + esc(kindLabel(A)) + ' · ' + pill(hs === 'uygun' ? 'ok' : hs === 'uygun_degil' ? 'danger' : 'warn', 'Helal: ' + A.ctx.halal.label) + ' <span class="hint">' + esc(A.ctx.halal.reason) + '</span></div><h2 class="ah-n">' + esc(A.name) + '</h2>' +
         '<div class="ah-p"><span class="num big">' + money(A.price, ccy) + '</span> ' + (chg != null ? '<span class="chg ' + (chg >= 0 ? 'pos' : 'neg') + '">' + (chg >= 0 ? '▲ +' : '▼ ') + chg.toFixed(2).replace('.', ',') + '%</span>' : '') + '</div>' +
         '<div class="hint">' + (S.live ? '<span class="live-dot" aria-hidden="true"></span>Son fiyat: ' + esc(S.live.source) + ' · ' + when(S.live.at) : 'Son kapanış ' + esc(A.lastDate)) + ' · Geçmiş: ' + esc(S.histSource ? S.histSource.label : '') + (S.histSource && S.histSource.at ? ' (' + when(S.histSource.at) + ')' : '') + '</div></div>' +
         '<div class="ah-r"><button class="btn small" type="button" data-act="a-refresh">↻ Yenile</button> <button class="btn small" type="button" data-act="a-watch" aria-pressed="' + inWl + '">' + (inWl ? '★ İzlemede' : '☆ İzlemeye al') + '</button> <button class="btn small" type="button" data-act="a-ask">Asistana sor</button></div></section>';
@@ -535,7 +609,7 @@
       };
       if (X.snapshot) X.snapshot('Portföy oluşturucu uygulanmadan önce').then(go, go); else go();
     }
-    function builderPage() { return LUI ? LUI.builderPage() : '<div class="notice danger">Portföy oluşturucu yüklenemedi.</div>'; }
+    function builderPage() { return LUI ? searchBox() + LUI.builderPage() : '<div class="notice danger">Portföy oluşturucu yüklenemedi.</div>'; } // v8.8.2: tek bir varlığa hızlı bakmak için aynı anında arama
     function labPage() { var id = decodeURIComponent(location.hash.split('/')[2] || ''); return LUI ? (id ? LUI.detailPage(id) : LUI.listPage()) : ''; }
 
     /* ----- Yöntem ve doğrulama ----- */
@@ -655,7 +729,8 @@
       if (e.target.id === 'a-search') {
         e.preventDefault(); var q = document.getElementById('a-q').value.trim(); search.q = q; if (!q) return true;
         search.loading = true; search.results = null; X.render();
-        MD.resolve(q).then(function (r) { search.loading = false; if (r.length === 1) { search.results = null; open(r[0].key, { symbol: r[0].symbol }); } else { search.results = r; X.render(); } }, function (err) { search.loading = false; search.results = []; X.toast('Arama yapılamadı: ' + err.message); X.render(); });
+        sugg.focused = false; ++sugg.seq; clearTimeout(sugg.timer); clearTimeout(sugg.rtimer);
+        MD.resolve(q).then(function (r) { search.loading = false; var ex = r.filter(function (x) { return x.exact; }); if (r.length === 1 || ex.length === 1) { var pick = r.length === 1 ? r[0] : ex[0]; search.results = null; open(pick.key, { symbol: pick.symbol }); } else { search.results = r; X.render(); } }, function (err) { search.loading = false; search.results = []; X.toast('Arama yapılamadı: ' + err.message); X.render(); });
         return true;
       }
       if (e.target.id === 'a-al-form') {
@@ -679,6 +754,7 @@
       return false;
     }
     function afterRender() {
+      if (sugg.focused) { var qi = document.getElementById('a-q'); if (qi && document.activeElement !== qi) { try { qi.focus({ preventScroll: true }); var L0 = qi.value.length; qi.setSelectionRange(L0, L0); } catch (e) { /* */ } } if (qi) renderSugg(); else sugg.focused = false; }
       // Canlı yenileme: varlık sayfası açıkken 60 sn'de bir son fiyat (TradingView/Binance) yenilenir; sekme gizliyse beklenir
       clearTimeout(liveTimer);
       if (X.tab() !== 'analiz' || X.sub() !== 'varlik' || !cur.key || cur.loading) return;
@@ -687,7 +763,7 @@
         if (cacheA[cur.key] !== A || X.tab() !== 'analiz') return;
         if (document.hidden) return afterRender();
         if (cur.view.tf !== '1d' && A.kind === 'crypto') { delete cacheI[cur.key + '|' + cur.view.tf]; }
-        runAnalysis(cur.key).then(function () { if (X.tab() === 'analiz' && X.sub() === 'varlik' && !document.querySelector('.a-chart :focus')) X.render(); }, function () { afterRender(); });
+        runAnalysis(cur.key).then(function () { if (X.tab() === 'analiz' && X.sub() === 'varlik' && !document.querySelector('.a-chart :focus') && !sugg.focused) X.render(); }, function () { afterRender(); });
       }, 60000);
     }
     var hubUI = null;

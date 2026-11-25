@@ -24,15 +24,19 @@
     gold: { label: 'Altın / gümüş', cur: 'TRY', step: 0.01, tier: 'medium', baseVol: 0.20 },
     fx: { label: 'Döviz (dolar / euro)', cur: 'FX', step: 0.01, tier: 'medium', baseVol: 0.12 },
     etf: { label: 'Dolar bazlı helal ETF', cur: 'USD', step: 0.0001, tier: 'risky', baseVol: 0.20 },
+    usstock: { label: 'ABD hissesi (USD)', cur: 'USD', step: 0.0001, tier: 'risky', baseVol: 0.30 }, // v8.8.2 (kesirli adet: Midas vb. ABD hisselerinde kesirli alım sunar)
     crypto: { label: 'Kripto', cur: 'USD', step: 0.000001, tier: 'risky', baseVol: 0.70 },
     cash: { label: 'Nakit (katılım hesabı)', cur: 'TRY', step: 0.01, tier: 'safe', baseVol: 0 }
   };
   var TIER_LABEL = { safe: 'Güvenli', medium: 'Orta', risky: 'Riskli' };
+  /* v8.8.2: market-data'daki yabancı ETF'ler — mdata.js US_ETF ile aynı (test). Diğer 'us:' anahtarları ABD hissesidir. */
+  var US_ETF = { SPUS: 1, HLAL: 1, SPSK: 1, SPRE: 1, SPTE: 1, SPWO: 1, UMMA: 1, ISDW: 1, ISDU: 1, ISDE: 1, HIWO: 1, SPY: 1, QQQ: 1 };
   function classOfKey(key) {
-    var k = String(key || '').split(':')[0];
-    return { bist: 'bist', tefas: 'fund', metal: 'gold', fx: 'fx', us: 'etf', td: 'etf', cg: 'crypto', cash: 'cash' }[k] || null;
+    var k = String(key || '').split(':')[0], s = String(key || '').slice(k.length + 1);
+    if (k === 'us') return US_ETF[s] ? 'etf' : 'usstock';
+    return { bist: 'bist', tefas: 'fund', metal: 'gold', fx: 'fx', td: 'etf', cg: 'crypto', cash: 'cash' }[k] || null;
   }
-  function isForeign(cls) { return cls === 'fx' || cls === 'etf' || cls === 'crypto'; }
+  function isForeign(cls) { return cls === 'fx' || cls === 'etf' || cls === 'crypto' || cls === 'usstock'; }
   // Fon grubu: TEFAS türü/adı (gerçek liste alanları) → güvenli/orta/riskli
   function trl(s) { return String(s || '').toLocaleLowerCase('tr-TR'); } // Türkçe büyük harf (İ, I) doğru küçültülsün: "PARA PİYASASI" → "para piyasası"
   function isGoldName(s) { return /(^|[^a-zçğıöşü])(altın|gümüş)([^a-zçğıöşü]|$)|kıymetli|değerli maden/.test(trl(s)); } // "ALTINCI" (altıncı) altın değildir
@@ -57,9 +61,9 @@
     'Industrial Services': 'Sanayi hizmetleri', 'Commercial Services': 'Ticari hizmetler', 'Distribution Services': 'Dağıtım', 'Consumer Services': 'Tüketici hizmetleri', 'Miscellaneous': 'Diğer' };
   function sectorTr(s) { return s ? (SECTORS_TR[s] || s) : 'Bilinmiyor'; }
   var PROFILES = {
-    muhafazakar: { label: 'Muhafazakâr', horizon: 'medium', risk: 'low', classes: { bist: true, fund: true, gold: true, crypto: false }, fx: true, usdEtf: false, tlOnly: false, count: 6, maxSingleBp: 3000, minScore: 50, liquidity: 'high', preferZone: true, minNowBp: 6000 },
-    dengeli: { label: 'Dengeli (standart)', horizon: 'medium', risk: 'medium', classes: { bist: true, fund: true, gold: true, crypto: false }, fx: false, usdEtf: true, tlOnly: false, count: 8, maxSingleBp: 2500, minScore: 45, liquidity: 'mid', preferZone: true, minNowBp: 5000 },
-    agresif: { label: 'Agresif (büyüme)', horizon: 'long', risk: 'high', classes: { bist: true, fund: true, gold: true, crypto: false }, fx: false, usdEtf: true, tlOnly: false, count: 10, maxSingleBp: 2000, minScore: 45, liquidity: 'mid', preferZone: true, minNowBp: 4000 }
+    muhafazakar: { label: 'Muhafazakâr', horizon: 'medium', risk: 'low', classes: { bist: true, fund: true, gold: true, crypto: false, us: false }, fx: true, usdEtf: false, tlOnly: false, count: 6, maxSingleBp: 3000, minScore: 50, liquidity: 'high', preferZone: true, minNowBp: 6000 },
+    dengeli: { label: 'Dengeli (standart)', horizon: 'medium', risk: 'medium', classes: { bist: true, fund: true, gold: true, crypto: false, us: true }, fx: false, usdEtf: true, tlOnly: false, count: 8, maxSingleBp: 2500, minScore: 45, liquidity: 'mid', preferZone: true, minNowBp: 5000 },
+    agresif: { label: 'Agresif (büyüme)', horizon: 'long', risk: 'high', classes: { bist: true, fund: true, gold: true, crypto: false, us: true }, fx: false, usdEtf: true, tlOnly: false, count: 10, maxSingleBp: 2000, minScore: 45, liquidity: 'mid', preferZone: true, minNowBp: 4000 }
   };
   var PROFILE_KEYS = ['horizon', 'risk', 'classes', 'fx', 'usdEtf', 'tlOnly', 'count', 'maxSingleBp', 'minScore', 'liquidity', 'preferZone', 'minNowBp'];
   function clone(v) { return v == null ? v : JSON.parse(JSON.stringify(v)); }
@@ -76,6 +80,10 @@
     o.horizon = ['short', 'medium', 'long'].indexOf(f.horizon) >= 0 ? f.horizon : d.horizon;
     o.risk = ['low', 'medium', 'high'].indexOf(f.risk) >= 0 ? f.risk : d.risk;
     o.classes = {}; ['bist', 'fund', 'gold', 'crypto'].forEach(function (k) { o.classes[k] = f.classes && typeof f.classes[k] === 'boolean' ? f.classes[k] : d.classes[k]; });
+    // v8.8.2 'ABD hisseleri' sınıfı: eski kayıtta yoksa — sınıfları profilin aynısıysa profil varsayılanı, elle değiştirilmişse kapalı (yeni sınıf sessizce eklenmez)
+    if (f.classes && typeof f.classes.us === 'boolean') o.classes.us = f.classes.us;
+    else if (!f.classes) o.classes.us = d.classes.us;
+    else { var pc = PROFILES[f.profile] && PROFILES[f.profile].classes; o.classes.us = !!(pc && ['bist', 'fund', 'gold', 'crypto'].every(function (k) { return pc[k] === o.classes[k]; }) && pc.us); }
     ['fx', 'usdEtf', 'tlOnly', 'preferZone'].forEach(function (k) { o[k] = typeof f[k] === 'boolean' ? f[k] : d[k]; });
     o.count = Number.isInteger(f.count) && f.count >= 3 && f.count <= 15 ? f.count : d.count;
     o.maxSingleBp = Number.isInteger(f.maxSingleBp) && f.maxSingleBp >= 1000 && f.maxSingleBp <= 5000 ? f.maxSingleBp : d.maxSingleBp;
@@ -89,9 +97,10 @@
   var FX_CAP_BP = 3000; // "Yalnız TL araçlar" + döviz/ETF istisnası: dövize bağlı toplam pay en fazla %30 (TL ağırlıklı kalır)
   /* Filtreleri anlamlandır: hangi sınıflara izin var + açık uyarılar (çelişkiler sessizce yok sayılmaz). */
   function resolveFilters(fIn) {
-    var f = cleanFilters(fIn), allow = { bist: f.classes.bist, fund: f.classes.fund, gold: f.classes.gold, crypto: f.classes.crypto, fx: f.fx, etf: f.usdEtf, cash: true }, warnings = [], info = [], fxCapBp = null;
+    var f = cleanFilters(fIn), allow = { bist: f.classes.bist, fund: f.classes.fund, gold: f.classes.gold, crypto: f.classes.crypto, usstock: f.classes.us, fx: f.fx, etf: f.usdEtf, cash: true }, warnings = [], info = [], fxCapBp = null;
     if (f.halal && f.classes.crypto) { allow.crypto = false; warnings.push({ level: 'warn', code: 'halal-crypto', text: 'Helal filtresi açıkken kripto eklenmez: kripto paralar hakkında âlimler arasında görüş ayrılığı var (durum: şüpheli). Kripto istiyorsan helal filtresini kapat.' }); }
     if (f.tlOnly) {
+      if (allow.usstock) { allow.usstock = false; warnings.push({ level: 'warn', code: 'tl-us', text: '"Yalnız TL araçlar" seçiliyken ABD hisseleri (dolar bazlı) eklenmez. ABD hissesi istiyorsan "Yalnız TL araçlar"ı kaldır (dolar bazlı helal ETF istisnası ayrıca seçilebilir).' }); }
       if (allow.crypto) { allow.crypto = false; warnings.push({ level: 'warn', code: 'tl-crypto', text: '"Yalnız TL araçlar" seçiliyken kripto (dolar bazlı) eklenmez. Kripto istiyorsan "Yalnız TL araçlar"ı kaldır.' }); }
       var ex = []; if (f.usdEtf) ex.push('dolar bazlı helal ETF'); if (f.fx) ex.push('döviz (dolar/euro)');
       if (ex.length) { fxCapBp = FX_CAP_BP; info.push({ level: 'info', code: 'tl-plus', text: 'TL araçlar + ' + ex.join(' + ') + ': portföyün ana gövdesi TL araçlardır (BIST, TEFAS fonu, gram altın); ' + ex.join(' ve ') + ' istisna olarak eklenir ve dövize bağlı toplam pay en fazla %' + (FX_CAP_BP / 100) + ' olur.' }); }
@@ -99,7 +108,7 @@
       if (f.fx && f.usdEtf) info.push({ level: 'info', code: 'tl-all', text: 'Üçü birlikte seçili: "Yalnız TL araçlar" burada yalnızca kriptoyu dışarıda bırakır ve dövize bağlı payı %' + (FX_CAP_BP / 100) + ' ile sınırlar.' });
     }
     if (!f.halal) warnings.push({ level: 'warn', code: 'halal-off', text: 'Helal filtresi KAPALI: şüpheli veya katılım endeksinde olmayan varlıklar da önerilebilir. Her varlığın helal durumu raporda ayrıca yazılır; faizli (uygun değil) araçlar yine önerilmez.' });
-    var anyClass = ['bist', 'fund', 'gold', 'crypto', 'fx', 'etf'].some(function (k) { return allow[k]; });
+    var anyClass = ['bist', 'fund', 'gold', 'crypto', 'usstock', 'fx', 'etf'].some(function (k) { return allow[k]; });
     if (!anyClass) warnings.push({ level: 'danger', code: 'no-class', text: 'Hiç varlık sınıfı seçili değil: portföy yalnızca nakitten oluşur. En az bir sınıf seç.' });
     if (f.risk === 'high' && f.horizon === 'short') warnings.push({ level: 'warn', code: 'short-high', text: 'Kısa vade + yüksek risk: 2 yıldan kısa sürede hisse/kripto ağırlıklı portföy büyük düşüşten toparlanamayabilir.' });
     if (f.risk === 'low' && !allow.fund && !allow.gold && !allow.fx) warnings.push({ level: 'warn', code: 'low-nosafe', text: 'Düşük risk seçili ama fon, altın ve döviz kapalı: güvenli ve orta paylar nakitte bekler.' });
@@ -109,7 +118,7 @@
   }
 
   /* ---------- Varlık skoru ve alım durumu ---------- */
-  var KIND_OF_CLASS = { bist: 'stock', fund: 'fund', gold: 'metal', fx: 'fx', etf: 'etf', crypto: 'crypto' };
+  var KIND_OF_CLASS = { bist: 'stock', fund: 'fund', gold: 'metal', fx: 'fx', etf: 'etf', crypto: 'crypto', usstock: 'stock' };
   // snap: snapshot.js compact() çıktısı (sunucu veya tarayıcı aynı kodla)
   function assetScore(snap) {
     if (!snap) return { score: null, reason: 'Analiz verisi alınamadı', parts: [] };
@@ -227,9 +236,10 @@
       var got = [], sec = {}, cnt = {};
       byTier[t].forEach(function (c) {
         if (got.length >= slots[t]) return;
-        var sk = c.cls === 'bist' ? 'sec:' + (c.sector || '?') : c.cls === 'fund' ? 'fund:' + (c.fundType || '?') : null;
+        var sk = c.cls === 'bist' ? 'sec:' + (c.sector || '?') : c.cls === 'usstock' ? 'usec:' + (c.sector || '?') : c.cls === 'fund' ? 'fund:' + (c.fundType || '?') : null;
         if (sk && (sec[sk] || 0) >= (c.cls === 'fund' ? 1 : 2)) return;
         if ((c.cls === 'etf' || c.cls === 'crypto' || c.cls === 'fx') && (cnt[c.cls] || 0) >= 2) return;
+        if (c.cls === 'usstock' && (cnt.usstock || 0) >= 3) return; // tek ülke/kur riskini sınırla
         var gl = isGoldLike(c); if (gl && (cnt.goldLike || 0) >= (slots[t] <= 3 ? 1 : 2)) return; // aynı altın riskini birkaç fonla tekrarlama
         if (sk) sec[sk] = (sec[sk] || 0) + 1; cnt[c.cls] = (cnt[c.cls] || 0) + 1; if (gl) cnt.goldLike = (cnt.goldLike || 0) + 1; got.push(c);
       });
@@ -496,7 +506,7 @@
     });
   }
   return { VERSION: VERSION, CLASS: CLASS, TIER_LABEL: TIER_LABEL, PROFILES: PROFILES, SECTORS_TR: SECTORS_TR, PSCORE_W: PSCORE_W, PSCORE_LABEL: PSCORE_LABEL, FX_CAP_BP: FX_CAP_BP, MAX_PORTFOLIOS: MAX_PORTFOLIOS,
-    classOfKey: classOfKey, isForeign: isForeign, fundTier: fundTier, fundTierByVol: fundTierByVol, isGoldName: isGoldName, isGoldLike: isGoldLike, sectorTr: sectorTr, defaultFilters: defaultFilters, applyProfile: applyProfile, profileMatches: profileMatches, cleanFilters: cleanFilters, resolveFilters: resolveFilters,
+    US_ETF: US_ETF, classOfKey: classOfKey, isForeign: isForeign, fundTier: fundTier, fundTierByVol: fundTierByVol, isGoldName: isGoldName, isGoldLike: isGoldLike, sectorTr: sectorTr, defaultFilters: defaultFilters, applyProfile: applyProfile, profileMatches: profileMatches, cleanFilters: cleanFilters, resolveFilters: resolveFilters,
     assetScore: assetScore, entryStatus: entryStatus, liqOk: liqOk, filterCandidates: filterCandidates, build: build, allocate: allocate, floorStep: floorStep, valuate: valuate, scanFill: scanFill, applyFill: applyFill, scanEvents: scanEvents,
     portfolioScore: portfolioScore, riskStats: riskStats, assetStats: assetStats, rebalance: rebalance, alertsOf: alertsOf, cleanList: cleanList, cleanOne: cleanOne, makeRecord: makeRecord, addHistory: addHistory, compare: compare, newId: newId, largestRemainder: largestRemainder };
 });

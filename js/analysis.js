@@ -32,7 +32,7 @@
     import: { trend: 35, momentum: 25, risk: 25, rel: 15 }
   };
   var SUB_LABEL = { trend: 'Trend', momentum: 'Momentum', risk: 'Risk / oynaklık', value: 'Temel / değerleme', rel: 'Göreli güç', liquidity: 'Likidite', halal: 'Helal durumu' };
-  var VOL_BASE = { stock: 0.40, etf: 0.20, crypto: 0.70, fund: 0.15, metal: 0.20, fx: 0.12, index: 0.25, import: 0.35 }; // sınıfın tipik yıllık oynaklığı (karşılaştırma tabanı)
+  var VOL_BASE = { stock: 0.40, stock_usd: 0.30, etf: 0.20, crypto: 0.70, fund: 0.15, metal: 0.20, fx: 0.12, index: 0.25, import: 0.35 }; // sınıfın tipik yıllık oynaklığı (karşılaştırma tabanı)
   var CONF = [[75, 'Yüksek'], [55, 'Orta'], [35, 'Düşük'], [0, 'Yetersiz']];
   function confLabel(c) { for (var i = 0; i < CONF.length; i++) if (c >= CONF[i][0]) return CONF[i][1]; return 'Yetersiz'; }
 
@@ -117,7 +117,7 @@
     return { score: Math.round(clamp(50 + s / 1.9, 0, 100)), ev: e };
   }
   function riskScore(col, I, kind, ctx) {
-    var e = [], c = col.c, n = c.length, vol = TA.annVol(c.slice(-61), ctx && ctx.ppy ? ctx.ppy : kind === 'crypto' ? 365 : 252), base = VOL_BASE[kind] || 0.35;
+    var e = [], c = col.c, n = c.length, vol = TA.annVol(c.slice(-61), ctx && ctx.ppy ? ctx.ppy : kind === 'crypto' ? 365 : 252), base = kind === 'stock' && ctx && ctx.currency === 'USD' ? VOL_BASE.stock_usd : VOL_BASE[kind] || 0.35;
     if (ctx && ctx.fundRisk) base = [0, 0.02, 0.05, 0.10, 0.15, 0.22, 0.30, 0.40][ctx.fundRisk] || base;
     var sc = num(vol) ? interp(vol / base, [[0.6, 90], [1, 60], [1.5, 35], [2.2, 15]]) : 50;
     ev(e, num(vol) ? 'Yıllık oynaklık (son 60 ' + UN() + ') %' + r1(vol * 100) + ' — sınıf tabanı %' + Math.round(base * 100) : 'Oynaklık hesaplanamadı', 0);
@@ -139,7 +139,7 @@
     if (fin) ev(e, 'Finans şirketi: borç/özsermaye oranı değerlendirmeye alınmadı', 0);
     if (num(f.free_cash_flow_ttm)) s += ev(e, 'Serbest nakit akışı ' + (f.free_cash_flow_ttm > 0 ? 'pozitif' : 'negatif'), f.free_cash_flow_ttm > 0 ? 5 : -5);
     if (!e.length) return null;
-    return { score: Math.round(clamp(50 + s, 0, 100)), ev: e, note: 'Kaynak: TradingView temel verileri (son 12 ay / son çeyrek); sektör medyanı ' + (P.n || 0) + ' BIST şirketinden.' };
+    return { score: Math.round(clamp(50 + s, 0, 100)), ev: e, note: 'Kaynak: TradingView temel verileri (son 12 ay / son çeyrek); sektör medyanı ' + (P.n || 0) + ' ' + (P.market && P.market !== 'BIST' ? P.market + ' şirketinden' : 'BIST şirketinden') + '.' };
   }
   function valueScoreFund(fund, peers, I, col) {
     if (!fund) return null; var e = [], s = 0, R = fund.returns || {}, items = (peers && peers.items) || [];
@@ -176,9 +176,11 @@
     if (kind === 'stock' || kind === 'etf' || kind === 'crypto') {
       var m = Math.min(30, n), tv = 0, cnt = 0; for (var i = n - m; i < n; i++) if (num(v[i])) { tv += v[i] * c[i]; cnt++; }
       if (!cnt) return null; var avg = tv / cnt;
-      if (kind === 'stock') sc = interp(Math.log10(avg), [[6, 15], [6.7, 40], [7.3, 60], [8, 80], [8.7, 95]]);
+      // v8.8.2: TL eşikleri yalnız TL işlem gören hisseye; ABD hissesi (USD) dolar eşikleriyle ölçülür (önceden TL eşiği USD hacme uygulanırdı → ~40 kat düşük likidite)
+      var tlStock = kind === 'stock' && !(ctx && ctx.currency && ctx.currency !== 'TRY');
+      if (tlStock) sc = interp(Math.log10(avg), [[6, 15], [6.7, 40], [7.3, 60], [8, 80], [8.7, 95]]);
       else sc = interp(Math.log10(avg), [[6, 20], [7, 50], [8, 80], [9, 95]]);
-      ev(e, 'Günlük ortalama işlem hacmi (30 gün) ≈ ' + fmtBig(avg) + (kind === 'stock' ? ' TL' : ' ' + (ctx && ctx.currency === 'TRY' ? 'TL' : 'USD')), 0);
+      ev(e, 'Günlük ortalama işlem hacmi (30 gün) ≈ ' + fmtBig(avg) + (tlStock ? ' TL' : ' ' + (ctx && ctx.currency === 'TRY' ? 'TL' : ctx && ctx.currency ? ctx.currency : 'USD')), 0);
       if (ctx && ctx.tv && num(ctx.tv.float_shares_percent_current)) ev(e, 'Halka açıklık %' + r1(ctx.tv.float_shares_percent_current), 0);
     } else if (kind === 'fund' && ctx && ctx.fund) {
       var sz = ctx.fund.size; if (!num(sz)) return null; sc = interp(Math.log10(sz), [[7.3, 25], [8, 50], [9, 75], [9.7, 90]]);
@@ -315,7 +317,7 @@
     var S = {};
     S.trend = trendScore(col, I, sw, A.trendlines);
     S.momentum = momentumScore(col, I, A.divergences);
-    S.risk = riskScore(col, I, kind, { fundRisk: series.fund && series.fund.risk && series.fund.risk.score, ppy: periodsPerYear(bars, kind) });
+    S.risk = riskScore(col, I, kind, { fundRisk: series.fund && series.fund.risk && series.fund.risk.score, ppy: periodsPerYear(bars, kind), currency: series.currency });
     // Çok düşük oynaklıklı fonlarda (kira sertifikası, katılım para piyasası gibi) fiyat neredeyse doğrusal artar: RSI/MACD anlamsızdır (RSI sürekli ~100).
     // Bu durumda momentum "uygulanamaz" sayılır; ağırlığı diğer alt skorlara dağıtılır ve güven düşürülmez.
     var vol60 = TA.annVol(col.c.slice(-121), 252);

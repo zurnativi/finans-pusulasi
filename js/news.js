@@ -61,19 +61,27 @@
   function jacc(a, b) { if (!a.length || !b.length) return 0; var sb = {}; b.forEach(function (x) { sb[x] = 1; }); var inter = 0; a.forEach(function (x) { if (sb[x]) inter++; }); return inter / (a.length + b.length - inter); }
   /* items: {t,u,s,a,r,o?}. Dönüş: birleştirilmiş liste; her öğede srcs[{s,u,a}] ve n. Temsilci: resmî > en erken. */
   function dedupe(items, thr) {
-    thr = thr == null ? (RULES.similar || 0.6) : thr; var out = [], byUrl = {};
+    thr = thr == null ? (RULES.similar || 0.6) : thr; var out = [], byUrl = {}, inv = Object.create(null), fmap = Object.create(null);
     items.slice().sort(function (x, y) { return (x.a || '') < (y.a || '') ? -1 : 1; }).forEach(function (it) {
       if (!it || !it.t) return;
       if (it.u && byUrl[it.u]) return;
-      var tk = tokens(it.t), hit = null;
-      for (var i = 0; i < out.length && !hit; i++) { var c = out[i]; if (jacc(tk, c._tk) >= thr || (tk.length >= 4 && c._tk.length >= 4 && fold(c.t) === fold(it.t))) hit = c; }
+      // v8.8.2 hız: kelime → öğe ters dizini; yalnız ortak kelimesi olan öğelerle Jaccard hesaplanır, katlanmış başlık bir kez hesaplanır.
+      // Sonuç eskisiyle birebir aynı (ilk eşleşen = en küçük sıra): önceden her çift için fold + küme kurulumu → varlık sayfasında ~1,3 sn donma.
+      var tk = tokens(it.t), ft = null, best = Infinity, counts = Object.create(null), cand = [];
+      tk.forEach(function (w) { var L = inv[w]; if (L) for (var j = 0; j < L.length; j++) { var ix = L[j]; if (counts[ix] === undefined) { counts[ix] = 0; cand.push(ix); } counts[ix]++; } });
+      cand.forEach(function (ix) { var inter = counts[ix], nb = out[ix]._tk.length; if (ix < best && tk.length && nb && inter / (tk.length + nb - inter) >= thr) best = ix; });
+      if (tk.length >= 4) { ft = fold(it.t); var FL = fmap[ft]; if (FL) FL.forEach(function (ix) { var c = out[ix]; if (ix < best && c._tk.length >= 4 && c._f === ft) best = ix; }); }
+      var hit = best < Infinity ? out[best] : null;
       if (hit) {
         if (!hit.srcs.some(function (x) { return x.s === it.s; })) hit.srcs.push({ s: it.s, u: it.u, a: it.a });
-        if (it.o && !hit.o) { hit.o = it.o; hit.t = it.t; hit.u = it.u; hit.s = it.s; hit.a = it.a || hit.a; }
-      } else { var c2 = Object.assign({}, it); c2._tk = tk; c2.srcs = [{ s: it.s, u: it.u, a: it.a }]; out.push(c2); }
+        if (it.o && !hit.o) { hit.o = it.o; hit.t = it.t; hit.u = it.u; hit.s = it.s; hit.a = it.a || hit.a; hit._f = ft !== null ? ft : fold(it.t); (fmap[hit._f] = fmap[hit._f] || []).push(best); }
+      } else {
+        var c2 = Object.assign({}, it), at = out.length; c2._tk = tk; c2._f = ft !== null ? ft : fold(it.t); c2.srcs = [{ s: it.s, u: it.u, a: it.a }]; out.push(c2);
+        tk.forEach(function (w) { (inv[w] = inv[w] || []).push(at); }); (fmap[c2._f] = fmap[c2._f] || []).push(at);
+      }
       if (it.u) byUrl[it.u] = 1;
     });
-    out.forEach(function (c) { c.n = c.srcs.length; delete c._tk; });
+    out.forEach(function (c) { c.n = c.srcs.length; delete c._tk; delete c._f; });
     return out.sort(function (x, y) { return (x.a || '') < (y.a || '') ? 1 : -1; });
   }
   /* ---------- Portföy eşleştirme ----------

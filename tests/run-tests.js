@@ -825,6 +825,13 @@
                                             r881.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                                             console.log('\n' + p881 + '/' + r881.length + ' v8.8.1 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861 + p87 + p871 + p872 + p873 + p874 + p875 + p880 + p881) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length + r87.length + r871.length + r872.length + r873.length + r874.length + r875.length + r880.length + r881.length));
                                             if (p881 !== r881.length) process.exit(1);
+                                            console.log('\n— v8.8.2 (anında arama, ABD hisseleri ve yabancı ETF\'ler, helal etiketi, hız) —');
+                                            return require('./run-tests-v882.js').run().then(function (r882) {
+                                              var p882 = r882.filter(function (r) { return r.ok; }).length;
+                                              r882.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                                              console.log('\n' + p882 + '/' + r882.length + ' v8.8.2 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861 + p87 + p871 + p872 + p873 + p874 + p875 + p880 + p881 + p882) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length + r87.length + r871.length + r872.length + r873.length + r874.length + r875.length + r880.length + r881.length + r882.length));
+                                              if (p882 !== r882.length) process.exit(1);
+                                            });
                                           });
                                         });
                                       });

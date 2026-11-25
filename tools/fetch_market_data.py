@@ -40,7 +40,20 @@ US = {  # helal ETF'ler (Şer'i endeks izleyen) — fiyat okumak için; uygunluk
     'SPTE': 'SP Funds S&P Global Technology ETF',
     'SPWO': 'SP Funds S&P World (ex-US) ETF',
     'UMMA': 'Wahed Dow Jones Islamic World ETF',
+    # v8.8.2: Londra (LSE) borsasında USD ile işlem gören İslami endeks ETF'leri (Yahoo .L, para birimi USD — Kasım 2026'da doğrulandı)
+    'ISDW': 'iShares MSCI World Islamic UCITS ETF (LSE, USD)',
+    'ISDU': 'iShares MSCI USA Islamic UCITS ETF (LSE, USD)',
+    'ISDE': 'iShares MSCI EM Islamic UCITS ETF (LSE, USD)',
+    'HIWO': 'HSBC MSCI World Islamic Screened UCITS ETF (LSE, USD)',
+    # Kıyas için (Şer'i tarama YOK): ABD hisselerinin göreli gücü S&P 500'e (SPY) göre ölçülür
+    'SPY': 'SPDR S&P 500 ETF Trust',
+    'QQQ': 'Invesco QQQ Trust (Nasdaq-100)',
 }
+US_YAHOO = {'ISDW': 'ISDW.L', 'ISDU': 'ISDU.L', 'ISDE': 'ISDE.L', 'HIWO': 'HIWO.L'}
+US_TV = {'SPUS': 'AMEX:SPUS', 'HLAL': 'NASDAQ:HLAL', 'SPSK': 'AMEX:SPSK', 'SPRE': 'AMEX:SPRE', 'SPTE': 'AMEX:SPTE', 'SPWO': 'AMEX:SPWO', 'UMMA': 'NASDAQ:UMMA',
+         'ISDW': 'LSE:ISDW', 'ISDU': 'LSE:ISDU', 'ISDE': 'LSE:ISDE', 'HIWO': 'LSE:HIWO', 'SPY': 'AMEX:SPY', 'QQQ': 'NASDAQ:QQQ'}
+US_HALAL_ETF = {'SPUS', 'HLAL', 'SPSK', 'SPRE', 'SPTE', 'SPWO', 'UMMA', 'ISDW', 'ISDU', 'ISDE', 'HIWO'}
+def us_yahoo(k): return US_YAHOO.get(k, k.replace('.', '-'))
 
 def http(url, data=None, headers=None, timeout=30, tries=4, raw=False):
     h = {'User-Agent': UA, 'Accept': 'application/json,text/plain,*/*'}
@@ -495,7 +508,7 @@ def run_side(rows, members):
     jobs = [('bist', s_, s_ + '.IS', {'name': names[s_]['name'] if s_ in names else s_}) for s_ in intr]
     jobs += [('index', k, v[0], {'name': v[1]}) for k, v in INDEX.items()]
     jobs += [('macro', k, v[0], {'name': v[1]}) for k, v in MACRO.items()]
-    jobs += [('us', k, k, {'name': v}) for k, v in US.items()]
+    jobs += [('us', k, us_yahoo(k), {'name': v}) for k, v in US.items()]
     res = []
     with cf.ThreadPoolExecutor(max_workers=int(os.environ.get('WORKERS', '6'))) as ex:
         for f in cf.as_completed([ex.submit(h1_job, *j) for j in jobs]): res.append(f.result())
@@ -515,6 +528,116 @@ def run_side(rows, members):
     except Exception as e: nst = {'error': str(e)[:160]}
     nst['seconds'] = round(time.time() - t3)
     return h1, kapst, nst
+
+
+# ---------- v8.8.2: ABD hisse evreni (S&P 500 + Nasdaq-100) ve Şer'i uygunluk etiketi ----------
+# Evren: TradingView endeks listeleri (SYML:SP;SPX, SYML:NASDAQ;NDX). Fiyat: Yahoo (aynı job()). Helal etiketi UYDURULMAZ:
+#  - 'uygun'       : SP Funds'ın günlük yayımladığı Şer'i ETF portföylerinde (SPUS = S&P 500 Shariah, SPTE, SPRE) yer alıyor
+#  - 'uygun_degil' : faaliyet alanı Şer'i taramanın temel (iş kolu) kuralına göre açıkça dışarıda (banka, sigorta, finansman, alkol, kumar, tütün)
+#  - None          : belirsiz (listede yok; finansal oran taraması yapılmadı) → helal filtresinden geçmez
+SPF_HOLD = 'https://www.sp-funds.com/wp-content/uploads/data/TidalFG_Holdings_%s.csv'
+HARAM_IND = {'Major Banks', 'Regional Banks', 'Savings Banks', 'Investment Banks/Brokers', 'Life/Health Insurance', 'Property/Casualty Insurance',
+             'Multi-Line Insurance', 'Specialty Insurance', 'Insurance Brokers/Services', 'Beverages: Alcoholic', 'Casinos/Gaming', 'Tobacco'}
+US_REFRESH_H = float(os.environ.get('US_REFRESH_H', '10'))   # hisse dosyası bundan yeniyse tekrar çekilmez (sabah işi ABD kapanışını alır; akşam işi canlı fiyatla birleşir)
+
+def tv_scan_us(body):
+    return http('https://scanner.tradingview.com/america/scan', data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
+
+def us_universe():
+    cols = ['name', 'description', 'exchange', 'sector', 'industry', 'type', 'market_cap_basic']
+    rows, seen = [], set()
+    for sset in ('SYML:SP;SPX', 'SYML:NASDAQ;NDX'):
+        d = tv_scan_us({'columns': cols, 'symbols': {'symbolset': [sset]}, 'range': [0, 700]})
+        for r in d.get('data', []):
+            x = dict(zip(cols, r['d'])); sym = x['name']
+            if not sym or sym in seen or not re.match(r'^[A-Z][A-Z0-9.]{0,7}$', sym) or x.get('type') not in ('stock', 'dr', None): continue
+            seen.add(sym); rows.append({'s': sym, 'n': x['description'], 'ex': x['exchange'], 'tv': r['s'], 'sec': x['sector'], 'ind': x['industry'], 'mc': x['market_cap_basic'] or 0,
+                                        'idx': ['SPX'] if sset.endswith('SPX') else ['NDX']})
+            if sym in US: rows.pop(); seen.discard(sym)
+        time.sleep(0.5)
+    # aynı sembol iki endekste: endeks listesi birleşsin
+    by = {}
+    for r in rows:
+        if r['s'] in by: by[r['s']]['idx'] = sorted(set(by[r['s']]['idx']) | set(r['idx']))
+        else: by[r['s']] = r
+    return sorted(by.values(), key=lambda r: -(r['mc'] or 0))
+
+def spf_holdings(fund):
+    b = http(SPF_HOLD % fund, raw=True, tries=3, headers={'Accept': 'text/csv,*/*'}).decode('utf-8', 'replace')
+    lines = [l for l in b.splitlines() if l.strip()]
+    if not lines or 'StockTicker' not in lines[0]: raise RuntimeError('beklenmeyen biçim')
+    hdr = [h.strip() for h in lines[0].split(',')]; it = hdr.index('StockTicker'); idd = hdr.index('Date')
+    syms, asof = set(), None
+    for l in lines[1:]:
+        c = l.split(',')
+        if len(c) <= it: continue
+        t = c[it].strip().upper().replace('/', '.').replace(' ', '.')
+        if re.match(r'^[A-Z][A-Z0-9.]{0,7}$', t): syms.add(t)
+        asof = asof or c[idd].strip()
+    if len(syms) < 10: raise RuntimeError('çok az satır (%d)' % len(syms))
+    try: m, d_, y = asof.split('/'); asof = '%s-%02d-%02d' % (y, int(m), int(d_))
+    except Exception: pass
+    return syms, asof
+
+def us_info_etfs(avail):
+    out = []
+    for k, v in US.items():
+        if k not in avail: continue
+        out.append({'s': k, 'n': v, 't': 'etf', 'tv': US_TV.get(k), 'ex': (US_TV.get(k) or ':').split(':')[0], 'h': 'uygun' if k in US_HALAL_ETF else 'uygun_degil' if k in ('SPY', 'QQQ') else None,
+                    'hr': ("Şer'i (İslami) endeks izleyen ETF" if k in US_HALAL_ETF else "Şer'i tarama yok: endeks fonu banka/sigorta gibi faizli şirketleri de içerir") })
+    return out
+
+def main_us():
+    t0 = time.time()
+    idx = load_json(os.path.join(OUT, 'index.json'))
+    if not idx: print('Önce tam çalıştırma gerekli (index.json yok)'); sys.exit(2)
+    rows = us_universe()
+    if LIMIT: rows = rows[:LIMIT]
+    halal, hsrc = {}, {}
+    for f in ('SPUS', 'SPTE', 'SPRE'):
+        try:
+            syms, asof = spf_holdings(f); hsrc[f] = {'asOf': asof, 'n': len(syms), 'url': SPF_HOLD % f}
+            for x in syms: halal.setdefault(x, []).append(f)
+        except Exception as e: hsrc[f] = {'error': str(e)[:120], 'url': SPF_HOLD % f}
+    prev_info = {x['s']: x for x in (idx.get('usInfo') or []) if x.get('t') == 'stock'}
+    if not any('asOf' in v for v in hsrc.values()):
+        # kaynak alınamadı: önceki etiketler korunur (uydurma/boşaltma yok)
+        for s_, x in prev_info.items():
+            if x.get('h') == 'uygun': halal[s_] = x.get('hs') or ['SPUS']
+        hsrc['_note'] = 'Holdings dosyaları alınamadı; önceki etiketler kullanıldı'
+    def fresh(sym):
+        o = load_json(os.path.join(OUT, 'us/%s.json' % sym))
+        if not o or not o.get('bars') or o.get('stale'): return False
+        try: age = (NOW - datetime.datetime.strptime(o['fetchedAt'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)).total_seconds() / 3600
+        except Exception: return False
+        return age < US_REFRESH_H
+    jobs = [('us', r['s'], us_yahoo(r['s']), {'name': r['n'], 'sector': r['sec'], 'industry': r['ind'], 'exchange': r['ex'], 'tv': r['tv']}) for r in rows if not fresh(r['s'])]
+    skipped = len(rows) - len(jobs)
+    results = []
+    with cf.ThreadPoolExecutor(max_workers=int(os.environ.get('US_WORKERS', '6'))) as ex:
+        for f in cf.as_completed([ex.submit(job, *j) for j in jobs]): results.append(f.result())
+    st = {r[0]: r for r in results}
+    info, okn = [], 0
+    for r in rows:
+        res = st.get(r['s'])
+        have = (res and res[2] > 0) or (not res and os.path.exists(os.path.join(OUT, 'us/%s.json' % r['s'])))
+        if not have: continue
+        okn += 1
+        hs = sorted(halal.get(r['s'], []))
+        h = 'uygun' if hs else ('uygun_degil' if r['ind'] in HARAM_IND else None)
+        hr = ("SP Funds Şer'i ETF portföyünde: " + ', '.join(hs) + " (S&P Şer'i endeks taraması)") if hs else ('Faaliyet alanı Şer\'i taramanın iş kolu kuralına takılır: ' + str(r['ind'])) if h else "Şer'i ETF portföylerinde (SPUS/SPTE/SPRE) yok; finansal oran taraması yapılmadı — belirsiz"
+        info.append({'s': r['s'], 'n': r['n'], 't': 'stock', 'tv': r['tv'], 'ex': r['ex'], 'sec': r['sec'], 'ind': r['ind'], 'idx': r['idx'], 'h': h, 'hs': hs or None, 'hr': hr})
+    etfs = [x for x in (idx.get('usInfo') or []) if x.get('t') == 'etf'] or us_info_etfs(set(idx.get('us') or []))
+    idx['usInfo'] = etfs + info
+    idx['us'] = sorted(set(x['s'] for x in etfs) | set(x['s'] for x in info))
+    idx['usHalal'] = {'source': "SP Funds günlük portföy dosyaları (sp-funds.com) — S&P Şer'i endeksleri (Ratings Intelligence taraması)", 'funds': hsrc,
+                      'industryRule': sorted(HARAM_IND), 'generatedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ')}
+    fails = sorted(r[0] + ': ' + r[1] for r in results if r[1].startswith('fail'))
+    idx['usStats'] = {'universe': len(rows), 'ok': okn, 'fetched': len(jobs), 'skippedFresh': skipped, 'fail': len(fails), 'failed': fails[:50],
+                      'halal': sum(1 for x in info if x['h'] == 'uygun'), 'notHalal': sum(1 for x in info if x['h'] == 'uygun_degil'), 'seconds': round(time.time() - t0),
+                      'source': 'Evren: TradingView (S&P 500 + Nasdaq-100); OHLCV: Yahoo Finance chart API', 'generatedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ')}
+    write(os.path.join(OUT, 'index.json'), idx)
+    print('us', json.dumps({k: v for k, v in idx['usStats'].items() if k != 'failed'}), 'helal kaynak', json.dumps(hsrc)[:600], 'örnek hata', fails[:5])
 
 def main_news():
     """Hızlı haber işi: yalnız haber akışları (RSS + Midas'ın Kulakları + resmî duyurular) → news/*. Fiyat/mum dosyalarına dokunmaz."""
@@ -542,6 +665,7 @@ def main_intraday():
 def main():
     if MODE == 'intraday': return main_intraday()
     if MODE == 'news': return main_news()
+    if MODE == 'us': return main_us()
     t0 = time.time(); copy_prev()
     rows, members = universe()
     if LIMIT: rows = rows[:LIMIT]
@@ -550,7 +674,7 @@ def main():
     jobs = [('bist', r['s'], r['s'] + '.IS', {'name': r['name'], 'sector': r['sector'], 'katilim': [k for k in KAT_IDX if r['s'] in members.get(k, [])]}) for r in rows]
     jobs += [('index', k, v[0], {'name': v[1]}) for k, v in INDEX.items()]
     jobs += [('macro', k, v[0], {'name': v[1]}) for k, v in MACRO.items()]
-    jobs += [('us', k, k, {'name': v}) for k, v in US.items()]
+    jobs += [('us', k, us_yahoo(k), {'name': v}) for k, v in US.items()]
     results = []
     with cf.ThreadPoolExecutor(max_workers=int(os.environ.get('WORKERS', '6'))) as ex:
         futs = [ex.submit(job, *j) for j in jobs]
@@ -569,6 +693,15 @@ def main():
         'stats': {'ok': len(ok), 'stale': len(stale), 'fail': len(fail), 'seconds': round(time.time() - t0)},
         'failed': sorted(r[0] + ': ' + r[1] for r in fail)[:200], 'staleList': sorted(r[0] for r in stale)[:200]
     }
+    # v8.8.2: ABD hisse evreni ayrı adımda (MODE=us) derlenir; o adım başarısız olursa önceki evren ve dosyalar (copy_prev) korunur
+    prev_idx = load_prev('index.json') or {}
+    if prev_idx.get('usInfo'):
+        keep = [x for x in prev_idx['usInfo'] if x.get('t') == 'stock' and os.path.exists(os.path.join(OUT, 'us/%s.json' % x['s']))]
+        index['usInfo'] = us_info_etfs(avail) + keep
+        index['us'] = sorted(set(index['us']) | {x['s'] for x in keep})
+        if prev_idx.get('usHalal'): index['usHalal'] = prev_idx['usHalal']
+        if prev_idx.get('usStats'): index['usStats'] = prev_idx['usStats']
+    else: index['usInfo'] = us_info_etfs(avail)
     t_daily = round(time.time() - t0)
     # Katılım endeksleri (gerçek endeks değerleri, saatlikten günlüğe) + bağımsız eşit ağırlık kontrolü
     kidx = {}

@@ -21,7 +21,7 @@ function readJson(rel) { try { return JSON.parse(fs.readFileSync(path.join(OUT, 
 function writeJson(rel, o) { var p = path.join(OUT, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(o)); }
 
 var CRYPTO = ['cg:bitcoin', 'cg:ethereum', 'cg:solana', 'cg:binancecoin', 'cg:ripple', 'cg:cardano', 'cg:dogecoin', 'cg:chainlink'];
-var STATIC = ['idx:XU100', 'idx:XKTUM', 'idx:XK050', 'metal:XAU', 'metal:XAG', 'fx:USD', 'fx:EUR', 'us:SPUS', 'us:HLAL', 'us:SPSK', 'us:SPRE', 'us:SPTE', 'us:SPWO', 'us:UMMA',
+var STATIC = ['idx:XU100', 'idx:XKTUM', 'idx:XK050', 'metal:XAU', 'metal:XAG', 'fx:USD', 'fx:EUR', 'us:SPUS', 'us:HLAL', 'us:SPSK', 'us:SPRE', 'us:SPTE', 'us:SPWO', 'us:UMMA', 'us:ISDW', 'us:ISDU', 'us:ISDE', 'us:HIWO',
   'tefas:KTV', 'tefas:KTN']; // örnek portföyün fonları (herkese açık TEFAS verisi)
 function universe() {
   if (SET === 'crypto') return CRYPTO.slice();
