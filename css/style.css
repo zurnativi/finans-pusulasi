@@ -1,6 +1,6 @@
 :root{--bg:#f5f7fb;--card:#fff;--ink:#14213d;--muted:#5b6475;--line:#e3e8f0;--brand:#1a5fd0;--brand-ink:#fff;--ok:#16794c;--ok-bg:#e6f6ee;--warn:#9a5b00;--warn-bg:#fff4e0;--danger:#b42318;--danger-bg:#fdecea;--info:#1d4ed8;--info-bg:#eaf1ff;
---safe:#2f9e6e;--medium:#e0a100;--risky:#d9534f;--radius:14px;--shadow:0 1px 2px rgba(16,24,40,.06),0 2px 8px rgba(16,24,40,.06);font-size:16px}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--card:#171e2d;--ink:#e8edf6;--muted:#9aa5b8;--line:#2a3347;--brand:#4b8cf5;--brand-ink:#0b1220;--ok-bg:#12301f;--ok:#5ad19a;--warn-bg:#352812;--warn:#f3b95f;--danger-bg:#3a1714;--danger:#ff8a80;--info-bg:#15254a;--info:#8fb3ff}}
+--safe:#2f9e6e;--medium:#e0a100;--risky:#d9534f;--radius:14px;--shadow:0 1px 2px rgba(16,24,40,.06),0 2px 8px rgba(16,24,40,.06);font-size:16px;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--card:#171e2d;--ink:#e8edf6;--muted:#9aa5b8;--line:#2a3347;--brand:#4b8cf5;--brand-ink:#0b1220;--ok-bg:#12301f;--ok:#5ad19a;--warn-bg:#352812;--warn:#f3b95f;--danger-bg:#3a1714;--danger:#ff8a80;--info-bg:#15254a;--info:#8fb3ff;color-scheme:dark}}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif;line-height:1.5}
 a{color:var(--brand)}
@@ -53,7 +53,26 @@ th{color:var(--muted);font-weight:600;font-size:.85rem}
 td.r,th.r{text-align:right}
 .tablewrap{overflow-x:auto}
 input,select,textarea,button{font:inherit;color:inherit}
-input[type=text],input[type=date],input[type=month],input[type=number],input[type=password],input[type=search],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 10px;width:100%;min-width:0}
+/* v8.8.1: type'sız input (varsayılan text) ve diğer metin türleri de koyu/açık temaya uyum sağlar.
+   :where() özgüllüğü 0 — input.amt-in, .asearch input gibi sonraki kurallar bozulmaz.
+   onay/radyo/dosya/gizli/düğme/aralık/renk hariç. */
+:where(input,select,textarea){background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 10px;width:100%;min-width:0}
+:where(input[type=checkbox],input[type=radio],input[type=file],input[type=hidden],input[type=button],input[type=submit],input[type=reset],input[type=range],input[type=color],input[type=image]){background:revert;color:inherit;border:revert;border-radius:revert;padding:revert;width:revert;min-width:0}
+input:not([type]),input[type=text],input[type=search],input[type=password],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=date],input[type=month],input[type=week],input[type=time],input[type=datetime-local],select,textarea{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 10px;width:100%;min-width:0}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:1}
+select option,select optgroup{background:var(--bg);color:var(--ink)}
+input:disabled,select:disabled,textarea:disabled{opacity:.65;cursor:not-allowed;background:var(--bg);color:var(--muted)}
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus,input:-webkit-autofill:active,
+textarea:-webkit-autofill,textarea:-webkit-autofill:hover,textarea:-webkit-autofill:focus,
+select:-webkit-autofill,select:-webkit-autofill:hover,select:-webkit-autofill:focus,
+input:autofill,textarea:autofill,select:autofill{
+  -webkit-text-fill-color:var(--ink)!important;
+  caret-color:var(--ink);
+  box-shadow:0 0 0 1000px var(--bg) inset!important;
+  border-color:var(--line);
+  transition:background-color 99999s ease-out 0s;
+  background-color:var(--bg)
+}
 input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:3px solid color-mix(in srgb,var(--brand) 45%,transparent);outline-offset:1px}
 input[aria-invalid=true]{border-color:var(--danger);background:var(--danger-bg)}
 input.money{text-align:right;font-variant-numeric:tabular-nums}
