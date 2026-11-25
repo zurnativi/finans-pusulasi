@@ -9,8 +9,7 @@
     var SUM_KEY = 'finans-pusulasi:analiz-ozet', IMP_KEY = 'finans-pusulasi:analiz-ice-aktarim';
     var cur = { key: null, loading: false, error: null, view: { tf: '1d', range: '1Y', lower: 'volume', lens: 'conservative', overlays: { ma: true, structure: true, plan: true, patterns: true, fib: false, bb: false, ichimoku: false, supertrend: false, vwap: false } } };
     var cacheA = {}, search = { q: '', results: null, loading: false }, newsBy = {}, corr = null, corrBusy = false, bulk = null, verifyRun = null, liveTimer = null;
-    var builder = { result: null, bt: null, loading: false, error: null };
-    var cacheI = {}, kapBy = {}, newsG = {}, mdIx = null, mdIxP = null, alertLast = {}, alertBusy = false, alertTimer = null, alertMsg = null;
+        var cacheI = {}, kapBy = {}, newsG = {}, mdIx = null, mdIxP = null, alertLast = {}, alertBusy = false, alertTimer = null, alertMsg = null;
     var AL = window.Alerts, NOTIFY_KEY = 'finans-pusulasi:uyari-bildirim';
     var TFS = [['1d', 'Günlük'], ['4h', '4 saat'], ['1h', '1 saat']], TF_LABEL = { '1d': 'günlük', '4h': '4 saatlik', '1h': 'saatlik' };
     var KIND_LABEL = { stock: 'BIST hissesi', fund: 'TEFAS fonu', crypto: 'Kripto', etf: 'ABD ETF/hisse', metal: 'Emtia', fx: 'Döviz', index: 'Endeks', import: 'İçe aktarılan' };
@@ -256,11 +255,11 @@
       }).join('') + '</ul><p class="hint">Kaynak: KAP (kap.org.tr), ' + when(K.generatedAt) + ' derlendi.</p></section>';
       return h;
     }
-    var SUBS = [['', 'Genel bakış'], ['varlik', 'Varlık analizi'], ['olustur', 'Portföy oluşturucu'], ['yontem', 'Yöntem ve doğrulama']];
+    var SUBS = [['', 'Genel bakış'], ['varlik', 'Varlık analizi'], ['olustur', 'Portföy oluşturucu'], ['portfoylerim', 'Kayıtlı portföylerim'], ['yontem', 'Yöntem ve doğrulama']];
     function render() {
       var sub = X.sub(), h = '<h1>Portföy Analizi</h1>' + X.subtabs('analiz', SUBS);
       if (sub === 'varlik') { var hk = decodeURIComponent(location.hash.split('/')[2] || ''); if (hk && hk !== cur.key && !cur.loading) { setTimeout(function () { open(hk); }, 0); cur.key = hk; cur.loading = true; cur.error = null; } }
-      try { h += ({ '': overview, varlik: assetPage, olustur: builderPage, yontem: methodPage }[sub] || overview)(); }
+      try { h += ({ '': overview, varlik: assetPage, olustur: builderPage, portfoylerim: labPage, yontem: methodPage }[sub] || overview)(); }
       catch (e) { console.error(e); h += '<div class="notice danger">Bu bölüm gösterilemedi: ' + esc(e.message) + '</div>'; }
       return h + '<p class="hint disc-a">Analizler hesaplama ve eğitim amaçlıdır, yatırım tavsiyesi değildir. Her sayı kaynağı ve saatiyle gösterilir; veri yetersizse sinyal verilmez.</p>';
     }
@@ -492,82 +491,35 @@
         (ks.length ? '<p class="hint">Yüklenenler: ' + ks.map(function (k) { return '<a href="#analiz/varlik/imp:' + esc(k) + '">' + esc(im[k].name) + '</a>'; }).join(', ') + '</p>' : '') + '</section>';
     }
 
-    /* ----- Portföy oluşturucu ----- */
+    /* ----- Portföy oluşturucu (v8.8: lab-ui.js) ----- */
     function prof() { var p = Object.assign({ horizon: 'medium', risk: 'medium', halal: true, usd: true }, an().profile || {}); p.halal = true; return p; }
-    function builderPage() {
-      var p = prof(), c = null; try { c = X.calc(); } catch (e) { c = null; }
-      var monthly = c && c.an.plan ? Math.max(0, c.an.plan.toInvest || 0) : 0;
-      function seg(name, f, opts) { return '<div class="seg" role="group" aria-label="' + esc(name) + '">' + opts.map(function (o) { return '<button type="button" data-act="a-prof" data-f="' + f + '" data-v="' + o[0] + '" aria-pressed="' + (String(p[f]) === String(o[0])) + '">' + o[1] + '</button>'; }).join('') + '</div>'; }
-      var h = '<section class="card"><h2>Profilin ' + tip('Vade ve risk seçimine göre güvenli/orta/riskli dağılımı belgeli bir tablodan gelir; her gruptaki araçlar canlı TEFAS ve Katılım endeksi verisinden, kurallı ölçütlerle seçilir.') + '</h2>' +
-        '<div class="prof"><div><div class="label">Vade</div>' + seg('Vade', 'horizon', [['short', 'Kısa (< 2 yıl)'], ['medium', 'Orta (2-5 yıl)'], ['long', 'Uzun (5+ yıl)']]) + '</div>' +
-        '<div><div class="label">Risk</div>' + seg('Risk', 'risk', [['low', 'Düşük'], ['medium', 'Orta'], ['high', 'Yüksek']]) + '</div>' +
-        '<div><div class="label">Döviz</div>' + seg('Dolar', 'usd', [['true', 'Dolar bazlı helal ETF dahil'], ['false', 'Yalnız TL araçlar']]) + '</div></div>' +
-        '<p>' + pill('ok', '✓ Helal filtresi açık') + ' <span class="hint">Yalnızca Katılım endeksindeki hisseler, TEFAS\'ta İslami (katılım) etiketli fonlar, fiziki altın ve Şer\'i endeks ETF\'leri önerilir. Kripto önerilmez.</span></p>' +
-        '<p class="hint">Aylık yatırılabilir tutar (Bütçe\'den, acil fon payı düşülmüş): <b>' + tl(monthly) + '</b> · <a href="#butce">Bütçe →</a></p>' +
-        '<button class="btn primary" type="button" data-act="a-build"' + (builder.loading ? ' disabled' : '') + '>' + (builder.loading ? 'Canlı veriden oluşturuluyor…' : (builder.result ? 'Yeniden oluştur' : 'Portföy oluştur')) + '</button></section>';
-      if (builder.error) h += '<div class="notice danger">' + esc(builder.error) + '</div>';
-      var R = builder.result; if (!R) return h;
-      h += '<div class="grid two"><section class="card"><h2>Önerilen dağılım</h2>' + (window.Charts ? window.Charts.donut('a-bmix', { h: 240, label: 'Önerilen dağılım', items: R.blocks.map(function (b) { return { name: b.item.name.split(' — ')[0], value: b.weightBp }; }) }) : '') +
-        '<div class="tiers">' + ['safe', 'medium', 'risky'].map(function (k) { return '<span class="tier t-' + k + '">' + C.RISK[k] + ' <b>%' + (R.tiers[k] / 100).toFixed(0) + '</b></span>'; }).join('') + '</div><p class="hint">Veri: ' + esc(R.dataNote || '') + '</p></section>';
-      h += '<section class="card"><h2>Geçmiş test ' + tip('Önerilen karışım son 3 yılın fiyatlarıyla (aylık yeniden dengeleme) test edilir. Geçmiş, geleceğin garantisi değildir; aralıklar geçmişte yaşanmış değerlerdir.') + '</h2>';
-      var B = builder.bt;
-      if (!B) h += '<p class="loading-line">Geçmiş fiyatlar alınıyor…</p>';
-      else if (B.error) h += '<p class="muted">' + esc(B.error) + '</p>';
-      else {
-        h += '<div class="kpis grid"><div class="kpi card"><div class="label">Yıllık getiri (TL)</div><div class="value">%' + pc(B.cagr) + '</div></div><div class="kpi card"><div class="label">Yıllık oynaklık</div><div class="value">%' + pc(B.vol) + '</div></div><div class="kpi card"><div class="label">En büyük düşüş</div><div class="value neg">%' + pc(B.mdd) + '</div></div></div>' +
-          '<p>Beklenen aralık (geçmiş 12 aylık dilimler): en kötü <b>%' + pc(B.worst12) + '</b>, en iyi <b>%' + pc(B.best12) + '</b>' + (B.usdCagr != null ? ' · dolar bazında yıllık %' + pc(B.usdCagr) : '') + '</p>' +
-          (window.Charts ? window.Charts.area('a-bt', { h: 190, label: 'Geçmiş test değer eğrisi (100 ile başlar)', today: X.today(), series: [{ name: 'Karışım (100 = başlangıç)', data: B.nav.map(function (x) { return { d: x.d, v: Math.round(x.c * 10000) }; }), color: 'brand' }] }) : '') +
-          '<p class="hint">' + esc(B.from) + ' → ' + esc(B.to) + ' (' + B.days + ' ortak gün)' + (B.skipped && B.skipped.length ? ' · geçmişi yetersiz olduğu için teste girmeyen: ' + esc(B.skipped.join(', ')) : '') + '. Eğri 100 ile başlayan endekstir (₺ işareti grafiğin ortak biçimindendir).</p>';
-      }
-      h += '</section></div>';
-      h += '<section class="card"><h2>Araçlar ve gerekçeleri</h2><div class="tscroll"><table class="atable"><thead><tr><th>Araç</th><th>Grup</th><th>Pay</th><th>Aylık</th><th class="detail-only">Neden</th></tr></thead><tbody>' + R.blocks.map(function (b) { var mon = M.mulBp(monthly, b.weightBp); return '<tr><td>' + (b.item.key ? '<a href="#analiz/varlik/' + esc(b.item.key) + '">' + esc(b.item.name) + '</a>' : esc(b.item.name)) + '<div class="hint simple-only">' + esc(b.item.why) + '</div></td><td>' + esc(C.RISK[b.tier]) + '</td><td>%' + (b.weightBp / 100).toFixed(1).replace('.', ',') + '</td><td>' + tl(mon) + '</td><td class="hint detail-only">' + esc(b.item.why) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
-        '<ul class="ev small">' + R.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>' +
-        '<div class="btnrow"><button class="btn primary" type="button" data-act="a-apply">Portföy Yönetimi\'ne hedef olarak uygula</button> <span class="hint">Eksik varlıklar (adet 0) oluşturulur, grup içi hedef payları ve hedeflerin risk yolu (' + esc(PF.GLIDES[R.glide] ? PF.GLIDES[R.glide].label : R.glide) + ') ayarlanır. Önce otomatik yedek alınır.</span></div></section>';
-      return h;
-    }
-    function doBuild() {
-      var p = prof();
-      builder = { loading: true, result: null, bt: null, error: null }; X.render();
-      Promise.all([MD.katilimFunds(), MD.katilimScreen().catch(function () { return { rows: [] }; })]).then(function (r) {
-        if (!r[0].items || !r[0].items.length) throw new Error('Katılım fonu listesi alınamadı');
-        var R = AN.buildPortfolio(p, { funds: r[0].items, stocks: r[1].rows || [] });
-        R.dataNote = 'TEFAS (' + r[0].items.length + ' katılım fonu, ' + when(r[0].at) + ') · Katılım Tüm taraması (' + (r[1].rows || []).length + ' hisse, TradingView ' + when(r[1].at) + ')';
-        builder.result = R; builder.loading = false; X.render();
-        return backtestFor(R).then(function (bt) { builder.bt = bt; X.render(); });
-      }).catch(function (e) { builder.loading = false; builder.error = 'Oluşturulamadı: ' + e.message + ' (canlı veri gerekli; uydurma veriyle portföy kurulmaz).'; X.render(); });
-    }
-    function backtestFor(R) {
-      var items = R.blocks.filter(function (b) { return b.item.key; }), skipped = [];
-      return Promise.all(items.map(function (b) { return MD.load(b.item.key).catch(function () { return null; }); }).concat([MD.load('fx:USD').catch(function () { return null; })])).then(function (ss) {
-        var usd = ss.pop(), um = {}; if (usd) usd.bars.forEach(function (x) { um[x.d] = x.c; });
-        var list = [], w = [];
-        ss.forEach(function (s, i) {
-          if (!s || s.bars.length < 250) { skipped.push(items[i].item.name.split(' — ')[0]); return; }
-          var bars = s.currency === 'USD' ? s.bars.filter(function (x) { return um[x.d]; }).map(function (x) { return { d: x.d, c: x.c * um[x.d] }; }) : s.bars.map(function (x) { return { d: x.d, c: x.c }; });
-          list.push(bars.slice(-756)); w.push(items[i].weightBp);
-        });
-        if (!list.length) return { error: 'Geçmiş fiyat alınamadı.' };
-        var bt = AN.backtest(list, w); if (bt.error) return bt;
-        bt.skipped = skipped;
-        if (usd) { var n0 = bt.nav[0], n1 = bt.nav[bt.nav.length - 1], u0 = um[n0.d], u1 = um[n1.d]; if (u0 && u1) { var days = (Date.parse(n1.d) - Date.parse(n0.d)) / 86400000; if (days > 200) bt.usdCagr = Math.pow((n1.c / u1) / (n0.c / u0), 365 / days) - 1; } }
-        return bt;
+    var LUI = window.LabUI ? window.LabUI(X, { when: when, pill: pill, scoreBadge: scoreBadge, bar: bar, gaugeHtml: gaugeHtml, halalOverride: halalOverride, twelveKey: twelveKey, applyLab: applyLab }) : null;
+    var LCLS = { bist: 'katilim_stock', fund: 'katilim_fund', gold: 'gold', etf: 'halal_etf' };
+    // Kayıtlı (sanal) portföyü İSTEĞE BAĞLI olarak gerçek portföyün hedef dağılımına uygula (eski "Yönetim'e uygula" davranışı; işlem/adet eklenmez)
+    function applyLab(P) {
+      var blocks = P.positions.filter(function (p) { return LCLS[p.cls] && p.halal && p.halal.status === 'uygun'; }).map(function (p) {
+        var tw = P.positions.filter(function (q) { return q.tier === p.tier; }).reduce(function (s, q) { return s + q.weightBp; }, 0);
+        var sym = p.key.split(':')[1], cls = p.cls === 'fund' && /kira/i.test(p.name) ? 'sukuk' : LCLS[p.cls];
+        return { tier: p.tier, shareOfTier: tw ? Math.round(p.weightBp * 10000 / tw) : 0, item: { key: p.key, priceKey: p.cls === 'etf' ? 'td:' + sym : p.key, symbol: sym, name: p.name, cls: cls, currency: p.cur === 'USD' ? 'USD' : 'TRY', lot: p.cls === 'bist' ? 'whole' : 'fraction' } };
       });
+      var skipped = P.positions.length - blocks.length;
+      if (!blocks.length) { X.toast('Bu portföyde gerçek portföye hedef olarak uygulanabilecek (helal uygun hisse/fon/altın/ETF) varlık yok.'); return; }
+      applyBlocks(blocks, P.glide || AN.GLIDE_FOR_RISK[P.filters.risk], skipped ? skipped + ' varlık (döviz/kripto/helal olmayan) hedefe eklenmez.' : '');
     }
-    function applyBuild() {
-      var R = builder.result; if (!R) return;
-      var n = R.blocks.filter(function (b) { return b.item.key; }).length;
-      if (!confirm('Önerilen dağılım Portföy Yönetimi\'ne uygulansın mı?\n\n• Listede olmayan araçların varlık kaydı (adet 0) oluşturulur (' + n + ' araç).\n• Grup içi hedef payları bu dağılıma göre ayarlanır; aynı gruptaki diğer varlıkların grup içi hedefi 0 olur (satış önerilmez, yeni para bu araçlara yönlenir).\n• Hedeflerin risk yolu "' + (PF.GLIDES[R.glide] ? PF.GLIDES[R.glide].label : R.glide) + '" yapılır.\n\nÖnce otomatik yedek alınır.')) return;
+    function applyBlocks(blocks, glide, extra) {
+      var n = blocks.length;
+      if (!confirm('Bu dağılım GERÇEK portföyünün hedefi olarak uygulansın mı?\n\n• Listede olmayan araçların varlık kaydı (adet 0) oluşturulur (' + n + ' araç). Alım-satım/işlem EKLENMEZ.\n• Grup içi hedef payları bu dağılıma göre ayarlanır; aynı gruptaki diğer varlıkların grup içi hedefi 0 olur (satış önerilmez).\n• Hedeflerin risk yolu "' + (PF.GLIDES[glide] ? PF.GLIDES[glide].label : glide) + '" yapılır.' + (extra ? '\n• ' + extra : '') + '\n\nÖnce otomatik yedek alınır.')) return;
       var go = function () {
         X.mutate(function (s) {
           var byTier = { safe: [], medium: [], risky: [] };
           s.assets = s.assets || [];
-          R.blocks.forEach(function (b) {
+          blocks.forEach(function (b) {
             if (!b.item.key) return;
             var pk = b.item.priceKey || b.item.key, sym = b.item.symbol || pk.split(':')[1];
             var a = s.assets.find(function (x) { return x.priceKey === pk || keyOfAsset(x) === b.item.key; });
             if (!a) { a = PF.newAssetFromSymbol(sym, b.item.currency || 'TRY', function () { return 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }); a.name = String(b.item.name).slice(0, 80); s.assets.push(a); }
             a.priceKey = pk; a.cls = b.item.cls; a.risk = b.tier; a.lot = b.item.lot || (b.item.cls === 'katilim_stock' || b.item.cls === 'halal_etf' ? 'whole' : 'fraction'); if (b.item.currency) a.currency = b.item.currency;
-            a.halal = { status: 'uygun', note: 'Portföy oluşturucu: ' + (b.item.cls === 'katilim_stock' ? 'Katılım Tüm endeksinde' : b.item.cls === 'halal_etf' ? 'Şer\'i endeks ETF' : b.item.cls === 'gold' ? 'Fiziki/peşin altın' : 'TEFAS İslami (katılım) etiketi'), source: 'Finans Pusulası analiz', date: X.today() };
+            if (!a.halal || a.halal.status !== 'uygun') a.halal = { status: 'uygun', note: 'Portföy oluşturucu: ' + (b.item.cls === 'katilim_stock' ? 'Katılım Tüm endeksinde' : b.item.cls === 'halal_etf' ? 'Şer\'i endeks ETF' : b.item.cls === 'gold' ? 'Fiziki/peşin altın' : 'TEFAS İslami (katılım) etiketi'), source: 'Finans Pusulası analiz', date: X.today() };
             byTier[b.tier].push({ a: a, w: b.shareOfTier });
           });
           ['safe', 'medium', 'risky'].forEach(function (k) {
@@ -576,13 +528,15 @@
             var tw = byTier[k].reduce(function (q, x) { return q + x.w; }, 0), acc = 0;
             byTier[k].forEach(function (x, i) { var v = i === byTier[k].length - 1 ? 10000 - acc : Math.round(x.w * 10000 / tw); x.a.withinTierBp = v; acc += v; });
           });
-          (s.goals || []).forEach(function (g) { g.glide = R.glide; });
+          (s.goals || []).forEach(function (g) { g.glide = glide; });
           s.analysis = s.analysis || { watchlist: [], profile: {} }; s.analysis.profile = Object.assign({}, prof());
-        }, 'Dağılım Portföy Yönetimi\'ne uygulandı. Dengeleme bu hedeflere göre öneri yapar.');
+        }, 'Dağılım Portföy Yönetimi\'ne hedef olarak uygulandı. Dengeleme bu hedeflere göre öneri yapar.');
         location.hash = '#portfoy/dengeleme';
       };
       if (X.snapshot) X.snapshot('Portföy oluşturucu uygulanmadan önce').then(go, go); else go();
     }
+    function builderPage() { return LUI ? LUI.builderPage() : '<div class="notice danger">Portföy oluşturucu yüklenemedi.</div>'; }
+    function labPage() { var id = decodeURIComponent(location.hash.split('/')[2] || ''); return LUI ? (id ? LUI.detailPage(id) : LUI.listPage()) : ''; }
 
     /* ----- Yöntem ve doğrulama ----- */
     function methodPage() {
@@ -671,7 +625,7 @@
         (p ? '. Plan: giriş ' + fp(p.entryLo) + '-' + fp(p.entryHi) + ', stop ' + fp(p.stop) + ', hedefler ' + p.targets.map(function (t) { return fp(t.p); }).join('/') + ', R/Ö ' + (p.rr != null ? p.rr.toFixed(2) : '—') : '') + '. Helal: ' + A.ctx.halal.label + '.';
     }
     function actions(t) {
-      return {
+      var o = {
         'a-open': function () { search.results = null; open(t.dataset.key, { symbol: t.dataset.sym }); },
         'a-refresh': function () { if (cur.key) { var k0 = cur.key; delete cacheA[k0]; Object.keys(cacheI).forEach(function (k) { if (k.indexOf(k0 + '|') === 0) delete cacheI[k]; }); delete newsBy[k0]; delete kapBy[k0.slice(5)]; open(k0); } },
         'a-tf': function () { if (t.disabled) return; cur.view.tf = t.dataset.v; X.render(); },
@@ -691,9 +645,12 @@
         'a-ov': function () { cur.view.overlays[t.dataset.v] = !cur.view.overlays[t.dataset.v]; X.render(); },
         'a-news': function () { var A = cacheA[cur.key]; if (!A) return; var k = A.key; newsG[k] = { loading: true }; X.render(); MD.news(newsQuery(A)).then(function (n) { newsG[k] = n; X.render(); }, function (e) { newsG[k] = { error: e.message }; X.render(); }); },
         'a-prof': function () { var f = t.dataset.f, v = t.dataset.v; X.mutate(function (s) { s.analysis = s.analysis || { watchlist: [], profile: {} }; s.analysis.profile = s.analysis.profile || {}; s.analysis.profile[f] = v === 'true' ? true : v === 'false' ? false : v; }); },
-        'a-build': doBuild, 'a-apply': applyBuild, 'a-verify': runVerify, 'a-corr': calcCorr, 'a-bulk': bulkAnalyze, 'a-srvall': function () { srvUi.all = !srvUi.all; X.render(); }
+        'a-verify': runVerify, 'a-corr': calcCorr, 'a-bulk': bulkAnalyze, 'a-srvall': function () { srvUi.all = !srvUi.all; X.render(); }
       };
+      if (LUI) { var LA = LUI.actions(t); Object.keys(LA).forEach(function (k) { o[k] = LA[k]; }); }
+      return o;
     }
+    function onLabChange(el) { return LUI ? LUI.onChange(el) : false; }
     function onSubmit(e) {
       if (e.target.id === 'a-search') {
         e.preventDefault(); var q = document.getElementById('a-q').value.trim(); search.q = q; if (!q) return true;
@@ -737,6 +694,6 @@
     function setHub(h) { hubUI = h; }
     function health() { try { var inp = healthInput(); return inp ? AN.health(inp) : null; } catch (e) { return null; } }
     document.addEventListener('change', function (e) { var el = e.target; if (el && el.dataset && el.dataset.asrv) { srvUi[el.dataset.asrv] = el.value; X.render(); } });
-    return { setHub: setHub, health: health, render: render, homeCard: homeCard, actions: actions, onSubmit: onSubmit, afterRender: afterRender, startAlerts: startAlerts, checkAlerts: checkAlerts, keyOfAsset: keyOfAsset, halalFor: halalFor, open: open, _cache: cacheA, _sums: sums };
+    return { setHub: setHub, health: health, render: render, homeCard: homeCard, actions: actions, onChange: onLabChange, onSubmit: onSubmit, afterRender: afterRender, startAlerts: startAlerts, checkAlerts: checkAlerts, keyOfAsset: keyOfAsset, halalFor: halalFor, open: open, _cache: cacheA, _sums: sums };
   };
 })();

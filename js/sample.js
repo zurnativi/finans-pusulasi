@@ -525,6 +525,7 @@
     Object.keys(d).forEach(function (k) { if (s.settings[k] == null) s.settings[k] = d[k]; });
     Object.keys(d.riskRules).forEach(function (k) { if (s.settings.riskRules[k] == null) s.settings.riskRules[k] = d.riskRules[k]; });
     if (s.analysis != null) s.analysis = cleanAnalysis(s.analysis);
+    if (s.labPortfolios != null) { var LBm = (typeof require === 'function' && typeof module === 'object') ? require('./lab.js') : (typeof self !== 'undefined' ? self.Lab : null); if (LBm) s.labPortfolios = LBm.cleanList(s.labPortfolios); else if (!Array.isArray(s.labPortfolios)) delete s.labPortfolios; } // v8.8: kayıtlı sanal portföyler (gerçek varlık/işlem/bütçeden ayrı)
     PF.sync(s);
     return s;
   }

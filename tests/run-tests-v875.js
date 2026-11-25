@@ -45,7 +45,7 @@
   test('Dokunulmayanlar: sıfırlama numarası/dosyası aynı; sürüm 8.7.5 (sayfa, kabuk, uygulama); stil sürümlü', function () {
     var it = MG.ITEMS[0]; eq(MG.ITEMS.length, 1); eq(it.id, 'sifirdan-midas-v2-2026-11-25'); eq(it.path, 'bg/tek-seferlik-2.enc.json');
     var idx = rd('index.html'), sw = rd('sw.js');
-    eq(IB.APP_VERSION, '8.7.5'); ok(/VERSION = '8\.7\.5'/.test(sw)); ok(idx.indexOf('css/style.css?v=8.7.5') > 0 && idx.indexOf('js/portfolio-ui.js?v=8.7.5') > 0 && idx.indexOf('?v=8.7.4') < 0);
+    eq(IB.APP_VERSION, '8.8.0'); ok(/VERSION = '8\.8\.0'/.test(sw)); ok(idx.indexOf('css/style.css?v=8.8.0') > 0 && idx.indexOf('js/portfolio-ui.js?v=8.8.0') > 0 && idx.indexOf('?v=8.7.4') < 0);
     ok(/\.trades-hub \.th-seg/.test(rd('css/style.css')));
   });
   function run() {

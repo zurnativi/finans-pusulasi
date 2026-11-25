@@ -1845,6 +1845,7 @@
     if (tab === 'hesaplar') trHint();
     if (tab === 'portfoy') PUI.afterRender();
     if (AUI) AUI.afterRender();
+    if (window.Help) { try { window.Help.inject(vw, tab, sub); } catch (e) { console.warn('yardım', e); } }
     if (SUI) SUI.afterRender();
     updateBadge();
   }
@@ -2001,6 +2002,7 @@
   function onChange(e) {
     var el = e.target;
     if (SUI && SUI.onChange(el)) return;
+    if (AUI && AUI.onChange && AUI.onChange(el)) return;
     if (PUI.onChange(el)) return;
     if (el.dataset.list && el.dataset.field) return onFieldChange(el);
     if (el.dataset.goal) {

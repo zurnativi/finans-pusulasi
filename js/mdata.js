@@ -354,6 +354,16 @@
       });
     });
   }
+  // v8.8: herhangi bir BIST endeks üyeliği için aynı tarama (helal filtresi kapalıyken BIST 100 adayları)
+  function bistScreen(set) {
+    if (!/^X[A-Z0-9]{3,5}$/.test(set)) return Promise.reject(new Error('Geçersiz endeks'));
+    var cols = ['name', 'description', 'close', 'market_cap_basic', 'average_volume_30d_calc', 'Perf.3M', 'Perf.6M', 'Perf.Y', 'RSI', 'SMA50', 'SMA200', 'price_earnings_ttm', 'price_book_fq', 'return_on_equity', 'debt_to_equity', 'Volatility.M', 'sector'];
+    return cached('screen:' + set, 30 * 60000, function () {
+      return fetchJson(URL.tvScan('turkey'), { timeout: 20000, body: { columns: cols, symbols: { symbolset: ['SYML:BIST;' + set] }, range: [0, 400] } }).then(function (j) {
+        return { at: new Date().toISOString(), source: SOURCES.tv, rows: (j.data || []).map(function (r) { var o = {}; cols.forEach(function (c, i) { o[c] = r.d[i]; }); return o; }) };
+      });
+    });
+  }
   /* ---------- Gün içi (1S / 4S) mumlar ---------- */
   var TF_MS = { '1h': 3600000, '4h': 14400000 };
   function pad2(x) { return String(x).padStart(2, '0'); }
@@ -471,5 +481,5 @@
     parseMd: parseMd, parseBinanceKlines: parseBinanceKlines, parseTefasHistory: parseTefasHistory, parseTwelve: parseTwelve, tvBarDate: tvBarDate, mergeLive: mergeLive, parseOhlcText: parseOhlcText,
     parseNumLoose: parseNumLoose, parseDateLoose: parseDateLoose, checkBars: checkBars, worstLevel: worstLevel, resolve: resolve, describe: describe, load: load, mdIndex: mdIndex, fundamentals: fundamentals,
     peerStats: peerStats, median: median, parseH1: parseH1, parseBinanceIntraday: parseBinanceIntraday, aggregate: aggregate, checkIntraday: checkIntraday, loadH1: loadH1, loadIntraday: loadIntraday, labelOfMs: labelOfMs, TF_MS: TF_MS,
-    kap: kap, newsCached: newsCached, newsTopicOf: newsTopicOf, fundPeers: fundPeers, katilimFunds: katilimFunds, katilimScreen: katilimScreen, news: news, cryptoPair: cryptoPair, tvLive: tvLive, loadMd: loadMd };
+    kap: kap, newsCached: newsCached, newsTopicOf: newsTopicOf, fundPeers: fundPeers, katilimFunds: katilimFunds, katilimScreen: katilimScreen, bistScreen: bistScreen, news: news, cryptoPair: cryptoPair, tvLive: tvLive, loadMd: loadMd };
 });
