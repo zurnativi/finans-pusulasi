@@ -96,9 +96,9 @@
       }).catch(function (e) { console.error('uzaktan düzenleme:', e && e.message); return null; }).then(function (x) { inboxBusy = false; return x; });
     }
     function applyEdit(edit) {
-      if (!edit || typeof edit.id !== 'string' || IB.seen(inbox.applied, edit.id)) return null;
+      if (!edit || typeof edit.id !== 'string' || IB.done(inbox.applied, edit.id)) return null;
       var title = String(edit.title || 'Uzaktan düzenleme').slice(0, 120), at = new Date().toISOString();
-      function done(rec) { inbox.applied = IB.record(inbox.applied, rec); return saveInbox().then(function () { return upload('auto'); }).catch(function () { return false; }).then(function () { X.render(); return rec; }); }
+      function done(rec) { rec.ver = IB.APP_VERSION; inbox.applied = IB.record(inbox.applied, rec); return saveInbox().then(function () { return upload('auto'); }).catch(function () { return false; }).then(function () { X.render(); return rec; }); }
       var errs = IB.errors(edit);
       if (errs.length) { X.toast('Uzaktan düzenleme uygulanmadı: ' + errs[0]); return done({ id: edit.id, at: at, ok: false, error: errs.slice(0, 3).join(' · ') }); }
       var pv = IB.preview(st(), edit, X.uid);

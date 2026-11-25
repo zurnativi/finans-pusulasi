@@ -52,13 +52,13 @@ function inboxRelay(S, kid, g, payload) {
   if (!K || K.length !== 32) { log('uzaktan düzenleme: FINANS_INBOX_KEY geçersiz (32 bayt base64url olmalı)'); return Promise.resolve({ status: 'bad_inbox_key' }); }
   var acks = IB.ackList(payload && payload.inboxAck), info = { status: 'none', acks: acks.length, editId: null, editErrors: null };
   return BG.kidOf(K).then(function (kin) {
-    var step = Promise.resolve();
+    var step = Promise.resolve(); addDelete(IB.LEGACY_PATH); // v8.7.1: eski yol (v8.7.0) artık kullanılmaz; eski sürüm tanımadığı işlemi "başarısız" diye kaydetmesin
     if (!g.inbox) addDelete(IB.PATH);
     else step = Promise.resolve().then(function () { return JSON.parse(g.inbox); }).then(function (env) { return BG.open(K, env); }).then(function (edit) {
       info.editId = edit && typeof edit.id === 'string' ? edit.id.slice(0, 80) : null;
       var errs = IB.errors(edit);
       if (errs.length) { info.status = 'invalid'; info.editErrors = errs.slice(0, 5); addDelete(IB.PATH); return; }
-      if (IB.seen(acks, edit.id)) { info.status = 'acked'; addDelete(IB.PATH); return; }
+      if (acks.some(function (a) { return a.id === edit.id && (a.ok || a.ver === IB.APP_VERSION); })) { info.status = 'acked'; addDelete(IB.PATH); return; }
       info.status = 'relayed';
       return BG.seal(S.key, edit, kid).then(function (e) { writeOut(IB.PATH, JSON.stringify(e)); });
     }).catch(function (e) { info.status = e && e.code === 'BAD_KEY' ? 'bad_box_envelope' : 'unreadable'; addDelete(IB.PATH); });

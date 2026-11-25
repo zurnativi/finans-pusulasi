@@ -2230,7 +2230,7 @@
     });
   }
   /* Çevrimdışı kabuk (sw.js). Yalnızca http(s) üzerinde; file:// ile açılınca kaydedilmez.
-   * Yeni sürüm bulunursa kendiliğinden geçilmez: "Yeni sürüm hazır" bildirimi çıkar, kullanıcı "Yenile" deyince geçilir. */
+   * v8.7.1: yeni sürüm kendiliğinden devreye girer; kullanıcı o an bir form/pencerede yazıyorsa yenilemez, "Yeni sürüm yüklendi — Yenile" der. */
   function registerSW() {
     if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
     var reloading = false;
@@ -2249,7 +2249,10 @@
         var w = reg.installing; if (!w) return;
         w.addEventListener('statechange', function () { if (w.state === 'installed' && navigator.serviceWorker.controller) prompt(w); });
       });
-      navigator.serviceWorker.addEventListener('controllerchange', function () { if (reloading) return; reloading = true; location.reload(); });
+      function busy() { var a = document.activeElement; return !!(document.querySelector('.modal-bg') || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'button' && a.type !== 'checkbox' && a.type !== 'radio')); }
+      function swapPrompt() { if ($('.sw-update')) $('.sw-update').remove(); var d = document.createElement('div'); d.className = 'sw-update'; d.setAttribute('role', 'status'); d.innerHTML = '<span>Yeni sürüm yüklendi. Verilerin etkilenmez.</span><button class="btn small primary" type="button">Yenile</button>'; d.querySelector('button').onclick = function () { reloading = true; location.reload(); }; document.body.appendChild(d); }
+      navigator.serviceWorker.addEventListener('controllerchange', function () { if (reloading) return; if (busy()) { swapPrompt(); return; } reloading = true; location.reload(); });
+      document.addEventListener('visibilitychange', function () { if (!document.hidden && reg.update) reg.update().catch(function () { }); });
     }).catch(function (e) { console.warn('Çevrimdışı mod açılamadı:', e && e.message); });
   }
   init();

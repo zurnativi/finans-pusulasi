@@ -9,10 +9,11 @@
   else root.Inbox = factory(root.Portfolio);
 })(typeof self !== 'undefined' ? self : this, function (PF) {
   'use strict';
-  var FORMAT = 'finans-pusulasi-duzenleme', VERSION = 1, GIST_FILE = 'finans-inbox.box.enc.json', PATH = 'bg/inbox.enc.json', ACK_PATH = 'bg/inbox-ack.enc.json';
+  var FORMAT = 'finans-pusulasi-duzenleme', VERSION = 1, GIST_FILE = 'finans-inbox.box.enc.json', PATH = 'bg/inbox.v2.enc.json', LEGACY_PATH = 'bg/inbox.enc.json', ACK_PATH = 'bg/inbox-ack.enc.json';
   var ID_RE = /^[A-Za-z0-9._:-]{4,80}$/, MAX_OPS = 50, KEEP_ACK = 20;
   var RISKS = { safe: 1, medium: 1, risky: 1 };
-  var OPS = { 'broker-replace': 1, 'asset-set': 1 };
+  var OPS = { 'holdings-wipe': 1, 'broker-replace': 1, 'asset-set': 1 }; // v8.7.1: holdings-wipe (Tüm varlıkları temizle ile aynı: bütçe durur)
+  var APP_VERSION = '8.7.1';
 
   function str(x, n) { return typeof x === 'string' && x.length <= n; }
   function findAsset(state, sym) { var f = PF.fold(sym); return (state.assets || []).filter(function (a) { return a && a.symbol && PF.fold(a.symbol) === f; })[0] || null; }
@@ -28,6 +29,7 @@
     edit.ops.forEach(function (op, i) {
       var n = 'İşlem ' + (i + 1);
       if (!op || !OPS[op.op]) { e.push(n + ': bilinmeyen işlem'); return; }
+      if (op.op === 'holdings-wipe') { if (i !== 0) e.push(n + ': tüm varlıkları temizle yalnız ilk işlem olabilir'); if (Object.keys(op).some(function (k) { return k !== 'op'; })) e.push(n + ': temizleme işlemi ek alan almaz'); return; }
       if (op.op === 'broker-replace') { PF.brokerFileErrors(op.file).slice(0, 5).forEach(function (m) { e.push(n + ': ' + m); }); return; }
       if (op.op === 'asset-set') {
         if (!str(op.symbol, 12) || !op.symbol) e.push(n + ': sembol hatalı');
@@ -51,7 +53,10 @@
     if (state.isExample) throw new Error('Uygulamada örnek veri var; düzenleme gerçek veriye uygulanır');
     var lines = [];
     edit.ops.forEach(function (op) {
-      if (op.op === 'broker-replace') {
+      if (op.op === 'holdings-wipe') {
+        var w = PF.wipeHoldings(state);
+        lines.push('Tüm varlıklar temizlendi: ' + w.assets + ' varlık, ' + w.trades + ' alım-satım, ' + w.stops + ' stop, ' + w.alerts + ' uyarı silindi; bütçe duruyor');
+      } else if (op.op === 'broker-replace') {
         var p = PF.applyBrokerImport(state, op.file, uid), open = p.rows.filter(function (r) { return r.open; });
         lines.push(p.broker + ': ' + p.trades + ' alım-satım, ' + p.rows.length + ' varlık (' + p.added + ' yeni, ' + p.replaced + ' güncellendi), ' + open.length + ' açık pozisyon' + (p.kept.length ? '; ' + p.kept.length + ' varlık dokunulmadı' : ''));
       } else if (op.op === 'asset-set') {
@@ -73,11 +78,13 @@
   /* Cihazdaki "uygulandı" kayıtları (en yeni sonda, en çok 20). Yüke yalnız bu kısa liste girer. */
   function ackList(list) {
     return (Array.isArray(list) ? list : []).filter(function (a) { return a && typeof a.id === 'string' && ID_RE.test(a.id); }).slice(-KEEP_ACK).map(function (a) {
-      return { id: a.id, at: String(a.at || '').slice(0, 30), ok: !!a.ok, lines: (a.lines || []).slice(0, 10).map(function (l) { return String(l).slice(0, 300); }), error: a.error ? String(a.error).slice(0, 300) : null, undone: !!a.undone };
+      return { id: a.id, at: String(a.at || '').slice(0, 30), ok: !!a.ok, lines: (a.lines || []).slice(0, 10).map(function (l) { return String(l).slice(0, 300); }), error: a.error ? String(a.error).slice(0, 300) : null, undone: !!a.undone, ver: a.ver ? String(a.ver).slice(0, 12) : null };
     });
   }
   function seen(list, id) { return (list || []).some(function (a) { return a && a.id === id; }); }
+  /* Yeniden denenmez mi? Başarılı kayıt ya da AYNI sürümde başarısız kayıt varsa evet (eski sürümün tanımadığı işlem yeni sürümde yeniden denenir). */
+  function done(list, id, ver) { return (list || []).some(function (a) { return a && a.id === id && (a.ok || a.ver === (ver || APP_VERSION)); }); }
   function record(list, rec) { var l = ackList(list).filter(function (a) { return a.id !== rec.id; }); l.push(rec); return ackList(l); }
 
-  return { FORMAT: FORMAT, VERSION: VERSION, GIST_FILE: GIST_FILE, PATH: PATH, ACK_PATH: ACK_PATH, ID_RE: ID_RE, errors: errors, apply: apply, preview: preview, ackList: ackList, seen: seen, record: record };
+  return { FORMAT: FORMAT, VERSION: VERSION, GIST_FILE: GIST_FILE, PATH: PATH, LEGACY_PATH: LEGACY_PATH, ACK_PATH: ACK_PATH, APP_VERSION: APP_VERSION, done: done, ID_RE: ID_RE, errors: errors, apply: apply, preview: preview, ackList: ackList, seen: seen, record: record };
 });

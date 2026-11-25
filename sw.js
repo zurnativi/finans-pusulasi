@@ -6,15 +6,16 @@
  * - Yeni sürüm kendiliğinden devreye girmez; sayfa "Yeni sürüm hazır" der, kullanıcı onaylayınca geçilir.
  * Kapsam: dosyanın bulunduğu klasör (GitHub Pages alt yolu /finans-pusulasi/ dahil) — tüm yollar göreli.
  */
-var VERSION = '8.7.0';
+var VERSION = '8.7.1';
 var CACHE = 'fp-shell-' + VERSION;
 var Q = '?v=' + VERSION;
 var SHELL = ['./', 'index.html', 'css/style.css' + Q, 'vendor/echarts.min.js'].concat(
   ['money', 'calc', 'ledger', 'importparse', 'portfolio', 'prices', 'alerts', 'stops', 'sessions', 'sample', 'cryptobox', 'syncmerge', 'sync', 'lock', 'store', 'ai', 'chartdata', 'charts', 'ta', 'structure', 'mdata', 'analysis', 'snapshot', 'labellayout', 'tachart', 'portfolio-ui', 'analysis-ui', 'security-ui', 'personal', 'autoprice', 'history', 'newsrules', 'news', 'events', 'notify', 'mood', 'freshness', 'hubdata', 'inbox', 'bgwatch', 'bgwatch-ui', 'report', 'reports-ui', 'hub-ui', 'app']
     .map(function (n) { return 'js/' + n + '.js' + Q; }));
 
+// v8.7.1: yeni sürüm kendiliğinden devreye girer (skipWaiting); sayfa, kullanıcı bir şey yazmıyorsa kendini yeniler, yazıyorsa "Yenile" sorar. Veriler (IndexedDB) etkilenmez.
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL.map(function (u) { return new Request(u, { cache: 'reload' }); })); }));
+  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL.map(function (u) { return new Request(u, { cache: 'reload' }); })); }).then(function () { return self.skipWaiting(); }));
 });
 self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (keys) {

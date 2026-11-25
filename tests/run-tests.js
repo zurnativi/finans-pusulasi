@@ -783,6 +783,13 @@
                               r87.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
                               console.log('\n' + p87 + '/' + r87.length + ' v8.7.0 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861 + p87) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length + r87.length));
                               if (p87 !== r87.length) process.exit(1);
+                              console.log('\n— v8.7.1 (uzaktan "tüm varlıkları temizle" + aracı kurum, yeniden deneme, kendiliğinden sürüm geçişi) —');
+                              return require('./run-tests-v871.js').run().then(function (r871) {
+                                var p871 = r871.filter(function (r) { return r.ok; }).length;
+                                r871.forEach(function (r) { console.log((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '  → ' + r.err)); });
+                                console.log('\n' + p871 + '/' + r871.length + ' v8.7.1 testi geçti · toplam ' + (passed + p5 + p6 + p7 + p71 + p8 + p81 + p82 + p83 + p84 + p85 + p86 + p861 + p87 + p871) + '/' + (results.length + r5.length + r6.length + r7.length + r71.length + r8.length + r81.length + r82.length + r83.length + r84.length + r85.length + r86.length + r861.length + r87.length + r871.length));
+                                if (p871 !== r871.length) process.exit(1);
+                              });
                             });
                           });
                         });

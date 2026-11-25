@@ -76,7 +76,7 @@ function cmdPush() {
   });
 }
 function readBranchFile(rel) {
-  try { var j = JSON.parse(gh(['api', '/repos/' + REPO + '/contents/' + rel + '?ref=market-data'])); return Buffer.from(j.content, 'base64').toString('utf8'); }
+  try { var j = JSON.parse(gh(['api', '/repos/' + REPO + '/contents/' + rel + '?ref=market-data'])); return j && typeof j.content === 'string' ? Buffer.from(j.content, 'base64').toString('utf8') : null; }
   catch (e) { if (/404|Not Found/.test(e.message)) return null; throw e; }
 }
 function cmdCheck() {
