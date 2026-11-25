@@ -209,8 +209,8 @@
   /* ---------- 7. Sayfa ve iş akışı denetimleri ---------- */
   test('Sayfa: Raporlar sekmesi; sessions/stops/report/reports-ui doğru sırada ve sürüm 8.7.0; çevrimdışı kabukta', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/href="#raporlar" data-tab="raporlar"/.test(idx)); ok(/VERSION = '8\.7\.2'/.test(sw));
-    function at(f) { var i = idx.indexOf('js/' + f + '.js?v=8.7.2'); ok(i > 0, f + ' yok'); return i; }
+    ok(/href="#raporlar" data-tab="raporlar"/.test(idx)); ok(/VERSION = '8\.7\.3'/.test(sw));
+    function at(f) { var i = idx.indexOf('js/' + f + '.js?v=8.7.3'); ok(i > 0, f + ' yok'); return i; }
     ok(at('stops') < at('sample') && at('sessions') < at('report') && at('report') < at('reports-ui') && at('reports-ui') < at('app') && at('bgwatch') > at('stops'));
     ['stops', 'sessions', 'report', 'reports-ui'].forEach(function (f) { ok(sw.indexOf("'" + f + "'") > 0, f + ' kabukta değil'); });
   });

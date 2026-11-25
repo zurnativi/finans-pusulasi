@@ -183,10 +183,10 @@
     ok(IB.PATH.indexOf('bg/') === 0 && IB.ACK_PATH.indexOf('bg/') === 0);
     var box = fs.readFileSync(path.join(ROOT, 'tools', 'push-edit.js'), 'utf8'); ok(!/console\.(log|error)\([^;]*(keyText\(\)|process\.env\.FINANS_INBOX_KEY)/.test(box));
   });
-  test('Sürüm: index.html ve sw.js 8.7.2; inbox.js bgwatch.js\'ten önce ve çevrimdışı kabukta', function () {
+  test('Sürüm: index.html ve sw.js 8.7.3; inbox.js bgwatch.js\'ten önce ve çevrimdışı kabukta', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/VERSION = '8\.7\.2'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.7.2') > 0); ok(idx.indexOf('8.7.1') < 0);
-    var a = idx.indexOf('js/inbox.js?v=8.7.2'), b = idx.indexOf('js/bgwatch.js?v=8.7.2'), c = idx.indexOf('js/portfolio.js?v=8.7.2'); ok(a > c && b > a);
+    ok(/VERSION = '8\.7\.3'/.test(sw)); ok(idx.indexOf('js/app.js?v=8.7.3') > 0); ok(idx.indexOf('8.7.1') < 0);
+    var a = idx.indexOf('js/inbox.js?v=8.7.3'), b = idx.indexOf('js/bgwatch.js?v=8.7.3'), c = idx.indexOf('js/portfolio.js?v=8.7.3'); ok(a > c && b > a);
     ok(/'inbox', 'bgwatch', 'bgwatch-ui'/.test(sw));
   });
 

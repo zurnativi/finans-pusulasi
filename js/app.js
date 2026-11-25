@@ -130,6 +130,16 @@
     if (APui && state && !state.isExample) setTimeout(function () { APui.run({ fresh: true }); }, 50);
   }
 
+  /* v8.7.3: tam sıfırlama (tek seferlik yerleşik düzenleme): tüm veri yeni hâlle değişir; "Geri al" ve değişiklik geçmişi bırakılmaz. */
+  function resetAll(obj, msg) {
+    var ok = mutate(function (s) { Object.keys(s).forEach(function (k) { delete s[k]; }); Object.keys(obj).forEach(function (k) { s[k] = obj[k]; }); }, null);
+    if (!ok) return false;
+    undoStack = null; try { localStorage.removeItem(HLOG_KEY); } catch (e) { /* */ }
+    setView((state.settings && state.settings.view) || 'simple'); render(); if (msg) toast(msg);
+    if (APui && state && !state.isExample) setTimeout(function () { APui.run({ fresh: true }); }, 50);
+    return true;
+  }
+
   /* ---------- Görünüm (sade/detaylı) ---------- */
   function setView(v) {
     document.body.classList.toggle('detailed', v === 'detailed');
@@ -2220,7 +2230,7 @@
       if (HUI) HUI.start();
       SUI.start();
       // v8.7.2: tek seferlik yerleşik düzenleme (her cihazda; önce otomatik kopya, Geri al)
-      if (window.Migrate) { try { window.Migrate.start({ state: function () { return state; }, mutate: mutate, toast: toast, uid: S.uid, snapshot: function (r) { return SUI && SUI.snapshot ? SUI.snapshot(r) : Promise.resolve(); } }); } catch (e) { console.error(e); } }
+      if (window.Migrate) { try { window.Migrate.start({ state: function () { return state; }, mutate: mutate, resetAll: resetAll, toast: toast, uid: S.uid, snapshot: function (r) { return SUI && SUI.snapshot ? SUI.snapshot(r) : Promise.resolve(); } }); } catch (e) { console.error(e); } }
       // v8.3: sitedeki şifreli kişisel veri paketi varsa ve bu cihazda yalnızca örnek/boş veri varsa şifre sor (dosya yüklemek gerekmez)
       if (APui) APui.start();
       if (PD && PDui) PDui.check().then(function () { if (state && PDui.available()) renderBanner(); }).catch(function (e) { console.error(e); });
