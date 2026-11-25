@@ -51,7 +51,7 @@
     ok(!IB.done([{ id: 'x-123', ok: false, ver: null }], 'x-123'), 'eski sürüm (ver yok) başarısızı yeniden denenir');
     ok(!IB.done([{ id: 'x-123', ok: false, ver: '8.7.0' }], 'x-123'));
     ok(IB.done([{ id: 'x-123', ok: false, ver: IB.APP_VERSION }], 'x-123')); ok(IB.done([{ id: 'x-123', ok: true }], 'x-123'));
-    eq(IB.ackList([{ id: 'x-123', ok: true, ver: '8.7.2' }])[0].ver, '8.7.2'); eq(IB.APP_VERSION, '8.7.4');
+    eq(IB.ackList([{ id: 'x-123', ok: true, ver: '8.7.2' }])[0].ver, '8.7.2'); eq(IB.APP_VERSION, '8.7.5');
   });
   function runJob(env, md, out) {
     return new Promise(function (res) {
@@ -74,7 +74,7 @@
   test('Sürüm geçişi: sw.js kurulunca kendiliğinden devreye girer; sayfa yazılırken yenilemez, "Yeni sürüm yüklendi — Yenile" der; görünür olunca güncelleme denetler', function () {
     var sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8'), app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
     ok(/c\.addAll\([\s\S]*?\)\.then\(function \(\) \{ return self\.skipWaiting\(\); \}\)/.test(sw), 'önbellek dolunca skipWaiting');
-    ok(/self\.clients\.claim\(\)/.test(sw) && /VERSION = '8\.7\.4'/.test(sw));
+    ok(/self\.clients\.claim\(\)/.test(sw) && /VERSION = '8\.7\.5'/.test(sw));
     ok(/function busy\(\)/.test(app) && /if \(busy\(\)\) \{ swapPrompt\(\); return; \} reloading = true; location\.reload\(\);/.test(app));
     ok(/Yeni sürüm yüklendi\. Verilerin etkilenmez\./.test(app) && /reg\.update\(\)/.test(app));
   });

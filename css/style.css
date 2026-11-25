@@ -681,3 +681,13 @@ form.editing,.card.editing{outline:2px solid var(--warn);outline-offset:4px;bord
 .broker-dialog .tablewrap{max-height:42vh;overflow-y:auto;flex:0 1 auto}
 .broker-dialog .tablewrap thead th{position:sticky;top:0;background:var(--card,#fff)}
 .broker-dialog > .row:last-child{position:sticky;bottom:0;background:var(--card,#fff);padding-top:8px;margin-top:8px}
+/* v8.7.5: Alım-satımlar tek bölüm (Tüm işlemler | Açık pozisyonlar | Kapananlar) */
+.trades-hub .th-head{display:flex;justify-content:space-between;align-items:baseline;gap:6px 12px;flex-wrap:wrap}
+.trades-hub .th-head h2{margin-bottom:4px}
+.trades-hub .th-tot{font-weight:700}.trades-hub .th-tot .muted{font-weight:400;font-size:.85rem}
+.trades-hub .th-seg{margin:4px 0 12px}
+.trades-hub .th-n{font-weight:500;opacity:.75;margin-left:2px}
+.ov-links .actions li,.idle-assets .actions li{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.trades-hub .l-short{display:none}
+@media (max-width:520px){.trades-hub .th-seg{display:flex;width:100%;flex-wrap:nowrap}.trades-hub .th-seg button{flex:1 1 0;padding:6px 4px;font-size:.85rem;white-space:nowrap}.trades-hub .l-full{display:none}.trades-hub .l-short{display:inline}}
+@media (max-width:600px){table.closed-tbl.stack tfoot,table.closed-tbl.stack tfoot tr{display:block}table.closed-tbl.stack tfoot tr{border:0;padding:2px 2px;margin:0;background:none}table.closed-tbl.stack tfoot .st-hide{display:none}table.closed-tbl.stack tfoot td{font-size:.95rem}}

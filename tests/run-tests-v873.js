@@ -59,9 +59,9 @@
     ok(/function resetAll\(obj, msg\)[\s\S]*?mutate\([\s\S]*?, null\);[\s\S]*?undoStack = null; try \{ localStorage\.removeItem\(HLOG_KEY\)/.test(app), 'Geri al ve geçmiş kalmaz');
     ok(/locks\[s\] = true/.test(mg) && /lsSet\(LS \+ s,/.test(mg), 'eski numara kilitlenir ve tamam sayılır (kutu/eski kayıt tekrar uygulanmaz)');
   });
-  test('Sürüm 8.7.4: sayfa, kabuk ve uygulama sürümü', function () {
+  test('Sürüm 8.7.5: sayfa, kabuk ve uygulama sürümü', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    eq(IB.APP_VERSION, '8.7.4'); ok(/VERSION = '8\.7\.4'/.test(sw)); ok(idx.indexOf('js/migrate.js?v=8.7.4') > 0 && idx.indexOf('?v=8.7.3') < 0);
+    eq(IB.APP_VERSION, '8.7.5'); ok(/VERSION = '8\.7\.5'/.test(sw)); ok(idx.indexOf('js/migrate.js?v=8.7.5') > 0 && idx.indexOf('?v=8.7.3') < 0);
   });
   function run() {
     return tests.reduce(function (p, t) { return p.then(function (rs) { return Promise.resolve().then(t.fn).then(function () { rs.push({ name: t.name, ok: true }); return rs; }, function (e) { rs.push({ name: t.name, ok: false, err: e && e.message || String(e) }); return rs; }); }); }, Promise.resolve([]));

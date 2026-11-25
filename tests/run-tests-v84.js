@@ -96,7 +96,7 @@
   });
   test('Ekran: Varlıklarım listesi kapanan/işlemsiz varlıkları göstermez, "Kapanan pozisyonlar" katlanır bölümü ve işlemsizler için "Alış ekle / Sil" var', function () {
     var pui = fs.readFileSync(path.join(ROOT, 'js', 'portfolio-ui.js'), 'utf8');
-    ok(/!PF\.isClosed\(s, a\) && !PF\.isIdle\(s, a\)/.test(pui)); ok(/<details class="card closed-pos"/.test(pui) && /Kapanan pozisyonlar/.test(pui) && /İşlemi girilmemiş varlıklar/.test(pui));
+    ok(/!PF\.isClosed\(s, a\) && !PF\.isIdle\(s, a\)/.test(pui)); ok(/function closedPanel\(c\)/.test(pui) && /id="closed-positions"/.test(pui) && /Kapanan pozisyon/.test(pui) && /İşlemi girilmemiş varlıklar/.test(pui)); // v8.7.5: kapananlar Alım-satım → Kapananlar sekmesinde
   });
 
   /* ---------- 3) Komisyon / BSMV / diğer masraf ---------- */
@@ -181,10 +181,10 @@
     ok(/'tx-save'[\s\S]{0,1200}tx\.editedAt = new Date\(\)\.toISOString\(\)/.test(app) && /değişiklik yok/.test(app));
     eq((app.match(/'tx-edit':/g) || []).length, 1, 'tek tx-edit eylemi');
   });
-  test('Sürüm: index.html ve sw.js 8.7.4; autoprice.js ve history.js sayfada ve çevrimdışı kabukta, app.js\'ten önce', function () {
+  test('Sürüm: index.html ve sw.js 8.7.5; autoprice.js ve history.js sayfada ve çevrimdışı kabukta, app.js\'ten önce', function () {
     var idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-    ok(/VERSION = '8\.7\.4'/.test(sw) && /'autoprice', 'history'/.test(sw)); ok(idx.indexOf('8.3.1') < 0);
-    ok(idx.indexOf('js/history.js?v=8.7.4') > 0 && idx.indexOf('js/history.js') < idx.indexOf('js/app.js') && idx.indexOf('js/autoprice.js') < idx.indexOf('js/app.js'));
+    ok(/VERSION = '8\.7\.5'/.test(sw) && /'autoprice', 'history'/.test(sw)); ok(idx.indexOf('8.3.1') < 0);
+    ok(idx.indexOf('js/history.js?v=8.7.5') > 0 && idx.indexOf('js/history.js') < idx.indexOf('js/app.js') && idx.indexOf('js/autoprice.js') < idx.indexOf('js/app.js'));
   });
 
   function run() {
