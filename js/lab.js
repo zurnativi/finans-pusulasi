@@ -475,6 +475,13 @@
     if (o.status === 'held' && !(o.units > 0)) o.status = o.budgetK ? 'cash' : 'model';
     return o;
   }
+  // v8.9.0: geçmiş performans + gelecek tahmini özeti (oran; karşılaştırma tablosu için). Bozuk/eksik → null
+  function cleanPerf(f) {
+    if (!f || typeof f !== 'object') return null;
+    function mc(m, keys) { if (!m || typeof m !== 'object') return null; var o = {}; keys.forEach(function (k) { o[k] = nOr(m[k]); }); return o; }
+    return { at: str(f.at, 40), from: str(f.from, 10), to: str(f.to, 10), r1y: nOr(f.r1y), rMax: nOr(f.rMax), cagr: nOr(f.cagr), mdd: nOr(f.mdd), vol: nOr(f.vol), sharpe: nOr(f.sharpe),
+      mc12: mc(f.mc12, ['p5', 'p50', 'p95', 'pLoss']), mc36: mc(f.mc36, ['p50', 'pLoss']) };
+  }
   function cleanOne(x) {
     if (!x || typeof x !== 'object' || typeof x.id !== 'string' || !/^[A-Za-z0-9_\-]{4,40}$/.test(x.id)) return null;
     var o = { v: VERSION, id: x.id, name: (str(x.name, 60) || 'Portföy').trim() || 'Portföy', createdAt: str(x.createdAt, 40), updatedAt: str(x.updatedAt, 40), filters: cleanFilters(x.filters),
@@ -484,6 +491,7 @@
       history: (Array.isArray(x.history) ? x.history : []).filter(function (h) { return h && /^\d{4}-\d{2}-\d{2}$/.test(h.d) && (num(h.v) || num(h.r)); }).slice(-MAX_HISTORY).map(function (h) { return { d: h.d, v: num(h.v) ? Math.round(h.v) : null, r: nOr(h.r) }; }),
       score: x.score && typeof x.score === 'object' ? { total: num(x.score.total) ? x.score.total : null, grade: str(x.score.grade, 2), at: str(x.score.at, 40), parts: Array.isArray(x.score.parts) ? x.score.parts.slice(0, 10).filter(function (p) { return p && typeof p.k === 'string'; }).map(function (p) { return { k: p.k.slice(0, 20), label: str(p.label, 80), w: nOr(p.w, 0), score: nOr(p.score), ev: str(p.ev, 200) }; }) : [], reason: str(x.score.reason, 300), coverage: nOr(x.score.coverage) } : null,
       risk: x.risk && typeof x.risk === 'object' ? { vol: nOr(x.risk.vol), mdd: nOr(x.risk.mdd), var95m: nOr(x.risk.var95m), mddEst: nOr(x.risk.mddEst), nEffCorr: nOr(x.risk.nEffCorr), days: nOr(x.risk.days), cagr: nOr(x.risk.cagr), worst12: nOr(x.risk.worst12), best12: nOr(x.risk.best12), btMdd: nOr(x.risk.btMdd), from: str(x.risk.from, 10), to: str(x.risk.to, 10) } : null,
+      perf: cleanPerf(x.perf),
       notes: Array.isArray(x.notes) ? x.notes.slice(0, 12).map(function (n) { return str(n, 300); }).filter(Boolean) : [], dataNote: str(x.dataNote, 400) };
     var hist = {}; o.history.forEach(function (h) { hist[h.d] = h; }); o.history = Object.keys(hist).sort().map(function (d) { return hist[d]; });
     return o;
@@ -494,7 +502,7 @@
   function makeRecord(draft, alloc, meta) {
     meta = meta || {};
     var rec = { v: VERSION, id: meta.id || newId(), name: meta.name || 'Portföy', createdAt: meta.at, updatedAt: meta.at, filters: draft.filters, amountK: alloc.amountK, usdtry0: alloc.usdtry, cashK: alloc.cashK,
-      tiers: draft.tiers, cashBp: draft.cashBp, glide: draft.glide, positions: alloc.positions, history: [], score: meta.score || null, risk: meta.risk || null, notes: (draft.notes || []).slice(0, 12), dataNote: meta.dataNote || null };
+      tiers: draft.tiers, cashBp: draft.cashBp, glide: draft.glide, positions: alloc.positions, history: [], score: meta.score || null, risk: meta.risk || null, perf: meta.perf || null, notes: (draft.notes || []).slice(0, 12), dataNote: meta.dataNote || null };
     return cleanOne(rec);
   }
   function addHistory(P, ymd, V) { var h = (P.history || []).filter(function (x) { return x.d !== ymd; }); h.push({ d: ymd, v: V.totalK != null ? V.totalK : null, r: V.modelRet }); P.history = h.slice(-MAX_HISTORY); return P; }
@@ -502,11 +510,11 @@
     return (list || []).map(function (P, i) {
       var V = valuations && valuations[i], held = P.positions.filter(function (p) { return p.status === 'held'; }).length;
       return { id: P.id, name: P.name, createdAt: P.createdAt, score: P.score ? P.score.total : null, grade: P.score ? P.score.grade : '—', amountK: P.amountK, totalK: V ? V.totalK : null, pnlPct: V ? (P.amountK ? V.pnlPct : V.modelRet) : null,
-        vol: P.risk ? P.risk.vol : null, mdd: P.risk ? P.risk.mdd : null, n: P.positions.length, held: held, pending: P.positions.filter(function (p) { return p.status === 'pending'; }).length, profile: P.filters.profile };
+        vol: P.risk ? P.risk.vol : null, mdd: P.risk ? P.risk.mdd : null, perf: P.perf || null, n: P.positions.length, held: held, pending: P.positions.filter(function (p) { return p.status === 'pending'; }).length, profile: P.filters.profile };
     });
   }
   return { VERSION: VERSION, CLASS: CLASS, TIER_LABEL: TIER_LABEL, PROFILES: PROFILES, SECTORS_TR: SECTORS_TR, PSCORE_W: PSCORE_W, PSCORE_LABEL: PSCORE_LABEL, FX_CAP_BP: FX_CAP_BP, MAX_PORTFOLIOS: MAX_PORTFOLIOS,
     US_ETF: US_ETF, classOfKey: classOfKey, isForeign: isForeign, fundTier: fundTier, fundTierByVol: fundTierByVol, isGoldName: isGoldName, isGoldLike: isGoldLike, sectorTr: sectorTr, defaultFilters: defaultFilters, applyProfile: applyProfile, profileMatches: profileMatches, cleanFilters: cleanFilters, resolveFilters: resolveFilters,
     assetScore: assetScore, entryStatus: entryStatus, liqOk: liqOk, filterCandidates: filterCandidates, build: build, allocate: allocate, floorStep: floorStep, valuate: valuate, scanFill: scanFill, applyFill: applyFill, scanEvents: scanEvents,
-    portfolioScore: portfolioScore, riskStats: riskStats, assetStats: assetStats, rebalance: rebalance, alertsOf: alertsOf, cleanList: cleanList, cleanOne: cleanOne, makeRecord: makeRecord, addHistory: addHistory, compare: compare, newId: newId, largestRemainder: largestRemainder };
+    portfolioScore: portfolioScore, riskStats: riskStats, assetStats: assetStats, rebalance: rebalance, alertsOf: alertsOf, cleanList: cleanList, cleanOne: cleanOne, cleanPerf: cleanPerf, makeRecord: makeRecord, addHistory: addHistory, compare: compare, newId: newId, largestRemainder: largestRemainder };
 });

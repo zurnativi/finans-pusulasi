@@ -792,3 +792,26 @@ form.editing,.card.editing{outline:2px solid var(--warn);outline-offset:4px;bord
   .lab-actions .btnrow .btn,.lab-item .btnrow .btn{flex:1 1 auto;text-align:center}
 }
 @media print{.lab-actions,.lab-go,.lab-filters,.lab-start,.crumbs{display:none!important}.lab-asset{break-inside:avoid}}
+
+/* v8.9.0: geçmiş performans + gelecek tahmini */
+.pf-sec h3{margin:16px 0 6px;font-size:1rem}
+.pf-warn{margin:8px 0 10px}
+.pf-ins{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:10px 0}
+.pf-in{display:flex;flex-direction:column;gap:4px;font-size:.88rem;font-weight:600}
+.pf-in input,.pf-in select{min-height:40px;font:inherit;font-weight:400;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.pf-in small{font-weight:400}
+.pf-chead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:14px}
+.pf-chead h3{margin:0}
+.pf-chead .seg{flex-wrap:wrap}
+.pf-sec .seg{margin:6px 0}
+.pf-cur td{font-weight:650}
+table.pf-heat{border-collapse:separate;border-spacing:2px;font-size:.78rem;min-width:620px;width:100%}
+table.pf-heat th{font-weight:600;color:var(--muted);padding:3px 4px;text-align:center}
+table.pf-heat td{text-align:center;padding:5px 2px;border-radius:5px;font-variant-numeric:tabular-nums;color:var(--ink)}
+table.pf-heat td.p{background:rgba(22,121,76,calc(.12 + var(--a,0)*.55))}
+table.pf-heat td.n{background:rgba(192,57,43,calc(.12 + var(--a,0)*.55))}
+table.pf-heat td.part{font-style:italic;opacity:.75}
+table.pf-heat td.e{background:transparent}
+.pf-g2>section{min-width:0}
+@media (max-width:600px){.pf-ins{grid-template-columns:1fr 1fr}.pf-chead{flex-direction:column;align-items:flex-start}}
+@media print{.pf-sec .seg,.pf-in small{display:none}.pf-sec{break-inside:auto}table.pf-heat td.p,table.pf-heat td.n{-webkit-print-color-adjust:exact;print-color-adjust:exact}}

@@ -13,6 +13,12 @@ Tamamen senin cihazında çalışır, ücretli hiçbir sisteme bağlı değildir
 - **Temettü, bedelsiz, bedelli (v5):** yeni işlem türleri kâr/zarara, maliyete ve getiri hesabına (XIRR/TWR) doğru girer.
 - **Otomatik TEFAS ve BIST fiyatı (v5):** TEFAS fonları ücretsiz bir TEFAS veri servisinden, BIST hisseleri TradingView'in herkese açık tarayıcısından (15 dk gecikmeli) çekilir; olmazsa liste yapıştır / ekran görüntüsünden oku / ✎ ile tek dokunuşla düzelt.
 
+### v8.9.0 — Portföy oluşturucu: geçmiş performans ve gelecek tahmini
+- **Geçmiş performans** (oluşturucu sonucu ve her kayıtlı portföy): bugünkü ağırlıklarla 1A/3A/6A/1Y/3Y/Maks getirileri, tutarın TL değeri, yıllık ve reel (TÜFE) getiri, en büyük düşüş + toparlanma süresi, oynaklık, Sharpe/Sortino (eşik TÜFE), en iyi/kötü ay, aylık ısı haritası; BIST 100, Katılım Tüm, USD/TL, gram altın ve TÜFE ile kıyas; aylık/çeyreklik dengeleme ve al-tut; düzenli aylık yatırım (DCA, XIRR) ve aynı takvimle dolar/altın/TÜFE karşılaştırması.
+- **Gelecek tahmini**: 5.000 senaryolu Monte Carlo (portföy ve USD/TL günlük getirileri birlikte, durağan blok bootstrap; Web Worker'da, arayüz donmaz) — 1/3/6 ay, 1/3/5 yıl yüzdelikleri, zarar / enflasyonu yenme / doları yenme olasılığı, olasılık yelpazesi; "geçmiş veriyle" ve "temkinli (getiri = enflasyon)" varsayımları.
+- **Stres testi**: 2018, 2020, 2021, 2022, Mart 2025 kriz dönemlerinin gerçek faktör hareketleri × varlık betası; portföyün kendi en kötü 1/3/6/12 ayı; ani TL değer kaybı şoku. **Hedef hesaplayıcı**: TL/$ hedefe ulaşma olasılığı ve %50/%75/%90 için gereken aylık yatırım.
+- Veri: TÜFE TÜİK verisi (TCMB tablosu; günlük işte `macro/TUFE.json`, yedek `refdata/tufe.json`), kriz dönemleri `refdata/stres.json` (`tools/make_ref_data.py`). Karşılaştırma tablosuna geçmiş ve beklenen getiri sütunları; özet kayda yazılır. Hesaplar `js/perf.js` (testli).
+
 ### v8.8.3 — ABD hissesi canlı fiyat etiketi ve yenilemesi
 ABD/Londra varlıklarında son fiyat kaynağı artık "ABD/Londra borsası son işlem" diye yazılır (önceden BIST'in "15 dk gecikmeli" etiketi görünüyordu); ABD hisseleri de analiz sayfasında 60 sn'de bir canlı yenilenir; Yöntem sayfasına ABD hisselerinin kaynağı ve Şer'i etiket kuralı eklendi.
 

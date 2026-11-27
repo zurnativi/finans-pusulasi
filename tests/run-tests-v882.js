@@ -124,11 +124,11 @@ module.exports.run = function () {
     ok(/tvIntl/.test(rd('js/mdata.js')) && /ABD\/Londra borsası/.test(rd('js/mdata.js')) && /um\[s\]\.tv/.test(ui), 'ABD canlı fiyat etiketi/yenilemesi yok');
     ok(/cls\.us|'us'/.test(lui) && /ABD hisseleri \(USD\)/.test(lui), 'ABD hissesi sınıfı yok');
   });
-  test('İş akışı ve sürüm: ABD adımı (MODE us, hata ana veriyi durdurmaz); sürüm 8.8.3 her yerde; migrate.js dokunulmadı', function () {
+  test('İş akışı ve sürüm: ABD adımı (MODE us, hata ana veriyi durdurmaz); sürüm 8.9.0 her yerde; migrate.js dokunulmadı', function () {
     var wf = rd('.github/workflows/market-data.yml'), py = rd('tools/fetch_market_data.py'), sw = rd('sw.js'), idx = rd('index.html');
     ok(/MODE: us/.test(wf) && /continue-on-error: true/.test(wf), 'ABD adımı yok');
     ok(/def main_us/.test(py) && /TidalFG_Holdings_/.test(py) && /SYML:SP;SPX/.test(py), 'ABD derleyicisi yok');
-    eq(IB.APP_VERSION, '8.8.3'); ok(/VERSION = '8\.8\.3'/.test(sw)); ok(idx.indexOf('?v=8.8.2') < 0 && idx.indexOf('js/mdata.js?v=8.8.3') > 0 && idx.indexOf('css/style.css?v=8.8.3') > 0);
+    eq(IB.APP_VERSION, '8.9.0'); ok(/VERSION = '8\.9\.0'/.test(sw)); ok(idx.indexOf('?v=8.8.2') < 0 && idx.indexOf('js/mdata.js?v=8.9.0') > 0 && idx.indexOf('css/style.css?v=8.9.0') > 0);
     var mg = rd('js/migrate.js'); ok(/sifirdan-midas-v2-2026-11-25/.test(mg));
   });
 

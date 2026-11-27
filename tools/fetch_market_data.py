@@ -141,6 +141,38 @@ def isy_check(sym, bars):
     return {'source': 'İş Yatırım', 'compared': len(diffs), 'maxAbsDiffPct': round(max(abs(x) for _, x in diffs), 3), 'over05': len(bad),
             'recentCompared': len(recent), 'recentMaxAbsDiffPct': round(max(abs(x) for _, x in recent), 3), 'lastDate': diffs[-1][0], 'examples': bad[-5:]}
 
+# v8.9.0: TÜFE (TÜİK verisi, TCMB "Tüketici Fiyatları" tablosu: aylık ve yıllık % değişim) — reel getiri ve enflasyon karşılaştırması için.
+TUFE_URL = 'https://www.tcmb.gov.tr/wps/wcm/connect/TR/TCMB+TR/Main+Menu/Istatistikler/Enflasyon+Verileri/Tuketici+Fiyatlari'
+def parse_tufe(h):
+    """TCMB sayfasındaki tablo: 'AA-YYYY yıllık aylık' satırları. Uydurma yok: biçime uymayan satır atlanır."""
+    t = html.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', h)))
+    out, seen = [], set()
+    for m in re.finditer(r'\b(\d{2})-(\d{4})\s+(-?\d{1,3}(?:[.,]\d{1,2})?)\s+(-?\d{1,2}(?:[.,]\d{1,2})?)\b', t):
+        mo, yr = int(m.group(1)), int(m.group(2))
+        if not (1 <= mo <= 12 and 2000 <= yr <= 2100): continue
+        ym = '%04d-%02d' % (yr, mo)
+        if ym in seen: continue
+        seen.add(ym)
+        y, mm = float(m.group(3).replace(',', '.')), float(m.group(4).replace(',', '.'))
+        if not (-50 < mm < 100 and -50 < y < 1000): continue
+        out.append({'ym': ym, 'm': mm, 'y': y})
+    out.sort(key=lambda x: x['ym'])
+    return out
+def tufe_job():
+    rel = 'macro/TUFE.json'
+    try:
+        b = http(TUFE_URL, headers={'Accept': 'text/html'}, raw=True, tries=3).decode('utf-8', 'replace')
+        rows = parse_tufe(b)
+        if len(rows) < 24: raise RuntimeError('TÜFE tablosu okunamadı (%d satır)' % len(rows))
+        write(os.path.join(OUT, rel), {'kind': 'cpi', 'name': 'TÜFE (Türkiye, aylık % değişim)', 'source': 'TÜİK — TCMB "Tüketici Fiyatları" tablosu (tcmb.gov.tr)', 'url': TUFE_URL,
+                                       'fetchedAt': NOW.strftime('%Y-%m-%dT%H:%M:%SZ'), 'months': rows})
+        return 'ok'
+    except Exception as e:
+        prev = load_prev(rel)
+        if prev:
+            prev['stale'] = True; prev['lastError'] = str(e)[:160]; write(os.path.join(OUT, rel), prev); return 'stale'
+        print('TÜFE alınamadı', e); return 'fail: ' + str(e)[:100]
+
 def write(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f: json.dump(obj, f, ensure_ascii=False, separators=(',', ':'))
@@ -716,6 +748,8 @@ def main():
             print('Katılım endeksi alınamadı', idx, e)
     index['index'] = sorted(set(index['index']) | {k for k, v in kidx.items() if v == 'ok' or os.path.exists(os.path.join(OUT, 'index/%s.json' % k))})
     index['katilimIndex'] = kidx
+    try: index['tufe'] = tufe_job()
+    except Exception as e: index['tufe'] = 'fail: ' + str(e)[:100]
     t_k = time.time(); h1, kapst, nst = run_side(rows, members)
     index['stats']['phases'] = {'daily': t_daily, 'side': round(time.time() - t_k)}
     index['intraday'] = dict(h1, generatedAt=NOW.strftime('%Y-%m-%dT%H:%M:%SZ')); index['kap'] = dict(kapst, generatedAt=NOW.strftime('%Y-%m-%dT%H:%M:%SZ')); index['news'] = nst

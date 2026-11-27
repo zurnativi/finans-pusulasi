@@ -11,6 +11,16 @@
     var job = null, form = { amount: '', name: '' }, det = {}, listBusy = false, cmpSel = {};
     function loadF() { try { return L.cleanFilters(JSON.parse(localStorage.getItem(FKEY) || 'null') || undefined); } catch (e) { return L.defaultFilters(); } }
     var F = loadF();
+    // v8.9.0: geçmiş performans + gelecek tahmini (perf-ui.js). Özet, karşılaştırma için kayda yazılır (tutardan bağımsız oranlar).
+    var PUI = window.PerfUI ? window.PerfUI(X, { onSummary: function (id, sum) {
+      if (job && job.rec && job.rec.id === id) { job.rec.perf = sum; return; }
+      if (byId(id)) X.mutate(function (s) { (s.labPortfolios || []).forEach(function (q) { if (q.id === id) q.perf = sum; }); }, null, { quiet: true });
+    } }) : null;
+    function pfOf(positions, seriesOf, usdSeries, usdMap, usd, cashBp) { // Perf girdisi: varlıkların TL ve (dolar bazlıysa) USD günlük kapanışları
+      return { at: Date.now(), cashBp: cashBp || 0, usdNow: usd || null, usdBars: usdSeries ? usdSeries.bars.map(function (b) { return { d: b.d, c: b.c }; }) : null,
+        items: positions.map(function (p) { var se = seriesOf(p), ok = se && se.bars && se.bars.length; return { key: p.key, name: p.name, cls: p.cls, tier: p.tier, fundType: p.fundType || null, w: p.weightBp || 0,
+          tl: ok ? toTLSeries(se, usdMap) : null, usd: ok && se.currency === 'USD' ? se.bars.map(function (b) { return { d: b.d, c: b.c }; }) : null }; }) };
+    }
     function saveF() { try { localStorage.setItem(FKEY, JSON.stringify(F)); } catch (e) { /* kota */ } }
     function list() { var s = X.state(); return (s && Array.isArray(s.labPortfolios)) ? s.labPortfolios : []; }
     function byId(id) { return list().filter(function (p) { return p.id === id; })[0] || null; }
@@ -148,7 +158,8 @@
         var rec = L.makeRecord(draft, alloc, { name: name, at: at, score: { total: sc.total, grade: sc.grade, at: at, parts: sc.parts, reason: sc.reason, coverage: sc.coverage }, risk: R, dataNote: job.dataNote + (usd ? ' · USD/TL ' + fp(usd) : '') });
         var quotes = {}; draft.positions.forEach(function (p) { quotes[p.key] = { price: p.price, at: p.priceAt }; });
         var V = L.valuate(rec, quotes, usd); L.addHistory(rec, ymdTR(at), V);
-        job = { running: false, done: true, rec: rec, bt: bt.error ? null : bt, btErr: bt.error || null, V: V, usd: usd, excluded: draft.excluded, warnings: draft.warnings, info: draft.info, corr: rk ? rk.corr : null, corrNames: withS.map(function (p) { return short(p.name); }), log: job.log };
+        var pf = pfOf(draft.positions, function (p) { return p.series; }, usdSeries, usdMap, usd, draft.cashBp);
+        job = { running: false, done: true, pf: pf, rec: rec, bt: bt.error ? null : bt, btErr: bt.error || null, V: V, usd: usd, excluded: draft.excluded, warnings: draft.warnings, info: draft.info, corr: rk ? rk.corr : null, corrNames: withS.map(function (p) { return short(p.name); }), log: job.log };
         X.render();
         setTimeout(function () { var el = document.getElementById('lab-result'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' }); }, 60);
       }).catch(function (e) { console.error(e); job = { running: false, error: 'Oluşturulamadı: ' + (e && e.message || e) + ' — canlı veri gerekli; uydurma veriyle portföy kurulmaz.', log: job ? job.log : [] }; X.render(); });
@@ -158,7 +169,7 @@
       var rec = job.rec, nameEl = document.getElementById('lab-save-name'); if (nameEl && nameEl.value.trim()) rec.name = nameEl.value.trim().slice(0, 60);
       if (list().length >= L.MAX_PORTFOLIOS) { X.toast('En fazla ' + L.MAX_PORTFOLIOS + ' portföy kaydedilebilir; eskilerden birini sil.'); return; }
       var id = rec.id;
-      det[id] = { V: job.V, at: Date.now(), usd: job.usd, bt: job.bt, corr: job.corr, corrNames: job.corrNames };
+      det[id] = { V: job.V, at: Date.now(), usd: job.usd, bt: job.bt, corr: job.corr, corrNames: job.corrNames, pf: job.pf };
       var ok = X.mutate(function (s) { s.labPortfolios = Array.isArray(s.labPortfolios) ? s.labPortfolios : []; s.labPortfolios.push(JSON.parse(JSON.stringify(rec))); }, '"' + rec.name + '" kaydedildi (sanal portföy — gerçek varlıklarına dokunulmadı).');
       if (ok) { job = null; location.hash = '#analiz/portfoylerim/' + id; }
     }
@@ -195,6 +206,7 @@
           if (!rk.error) Q.risk = Object.assign({}, Q.risk || {}, { vol: rk.vol, mdd: rk.mdd, var95m: rk.var95m, mddEst: rk.mddEst, nEffCorr: rk.nEffCorr, days: rk.days, from: rk.from, to: rk.to });
           if (!bt.error) Q.risk = Object.assign({}, Q.risk || {}, { cagr: bt.cagr, worst12: bt.worst12, best12: bt.best12, btMdd: bt.mdd });
           L.addHistory(Q, ymdTR(), V); Q.updatedAt = nowIso();
+          D.pf = pfOf(Q.positions, function (p) { return series[p.key]; }, us, usdMap, usd, Q.cashBp);
           D.V = V; D.usd = usd; D.bt = bt.error ? null : bt; D.corr = rk.error ? null : rk.corr; D.corrNames = withS.map(function (p) { return short(p.name); });
         }, null, { quiet: true });
         D.at = Date.now(); D.autoTried = false; D.fails = fails; D.fills = fills;
@@ -247,7 +259,7 @@
       if (job && job.done && job.rec) {
         h += '<section class="card lab-savebar" id="lab-result"><h2>Oluşturulan portföy (henüz kaydedilmedi)</h2><div class="lab-saverow"><label class="sr" for="lab-save-name">Ad</label><input id="lab-save-name" maxlength="60" value="' + esc(job.rec.name) + '"> <button class="btn primary" type="button" data-act="lab-save">💾 Kaydet ve takibe al</button> <button class="btn" type="button" data-act="lab-discard">Vazgeç</button></div>' +
           '<p class="hint">Kaydedilen portföy "Kayıtlı portföylerim"de durur; gerçek varlıklarına, alım-satımlarına ve bütçene karışmaz. Eşitleme açıksa diğer cihazlarına da gider.</p>' + notices(job.warnings.concat(job.info || [])) + '</section>';
-        h += report(job.rec, { V: job.V, bt: job.bt, corr: job.corr, corrNames: job.corrNames, excluded: job.excluded, btErr: job.btErr });
+        h += report(job.rec, { V: job.V, bt: job.bt, corr: job.corr, corrNames: job.corrNames, excluded: job.excluded, btErr: job.btErr, pf: job.pf });
       }
       return h;
     }
@@ -377,6 +389,7 @@
         '<div class="kpi card"><div class="label">Olası en büyük düşüş tahmini</div><div class="value neg">' + (num(rk.mddEst) ? '−%' + pc(rk.mddEst) : '—') + '</div><div class="sub">geçmiş düşüş ile 2σ\'nın büyüğü</div></div></div>' +
         (num(rk.cagr) ? '<p>Geçmiş test (aylık dengeleme): yıllık getiri <b>%' + pc(rk.cagr) + '</b>, en kötü 12 ay <b>%' + pc(rk.worst12) + '</b>, en iyi 12 ay <b>%' + pc(rk.best12) + '</b>.</p>' : '<p class="hint">Geçmiş test için ortak tarihli yeterli fiyat geçmişi yok' + (o.btErr ? ' (' + esc(o.btErr) + ')' : '') + '.</p>') +
         btChart(P, o.bt || D.bt) + corrTable(o.corr || D.corr, o.corrNames || D.corrNames) + '<p class="hint">Oynaklık ve düşüş, seçilen varlıkların son 1 yılının günlük TL fiyatlarından (dolar bazlılar günün kuruyla) hesaplanır. Geçmiş, geleceğin garantisi değildir.</p></section>';
+      if (PUI) h += PUI.section(P.id, P, o.pf || D.pf || null, { loading: !!D.busy });
       var nowN = P.positions.filter(function (p) { return p.entry && (p.entry.code === 'now' || p.entry.code === 'trail'); }).length;
       h += '<section class="card"><h2>Varlıklar: alım, hedef ve stop seviyeleri</h2><p class="hint">' + P.positions.length + ' varlık · ' + nowN + ' tanesi şu an alım bölgesinde · seviyeler gerçek fiyat yapısından (destek/direnç bölgeleri, ATR) hesaplanır.</p><div class="lab-assets">' + P.positions.map(function (p, i) { return assetCard(P, p, i, V); }).join('') + '</div></section>';
       h += '<section class="card"><h2>Özet tablo</h2><div class="tscroll"><table class="atable stack lab-tbl"><thead><tr><th>Varlık</th><th>Pay</th><th>Skor</th><th>Durum</th><th>Alım bölgesi</th><th>Stop</th><th>Hedef 1 / 2</th><th>R/Ö</th>' + (P.amountK ? '<th>K/Z</th>' : '') + '</tr></thead><tbody>' +
@@ -393,6 +406,11 @@
     }
 
     /* ---------- Kayıtlı portföyler ---------- */
+    function perfCells(r) {
+      var f = r.perf; if (!f) return '<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>';
+      var m = f.mc12 || {};
+      return '<td class="' + cls(f.r1y) + '">' + pcS(f.r1y) + '</td><td class="' + cls(f.cagr) + '">' + (f.cagr != null ? pcS(f.cagr) : '<span class="muted">1 yıldan kısa</span>') + '</td><td class="' + cls(m.p50) + '">' + pcS(m.p50) + '</td><td>' + pcS(m.p5) + ' / ' + pcS(m.p95) + '</td><td>' + (m.pLoss != null ? '%' + Math.round(m.pLoss * 100) : '—') + '</td>';
+    }
     function listPage() {
       var L0 = list(), h = '<section class="card lab-listc"><h2>Kayıtlı portföylerim</h2>';
       if (!L0.length) return h + '<p class="muted">Henüz kayıtlı portföy yok. <a href="#analiz/olustur">Portföy oluşturucu</a>dan bir portföy oluşturup "Kaydet ve takibe al"a bas.</p></section>';
@@ -408,8 +426,8 @@
       var ids = Object.keys(cmpSel).filter(function (k) { return cmpSel[k] && byId(k); }), chosen = ids.length >= 2 ? ids.map(byId) : L0;
       if (chosen.length >= 2) {
         var rows = L.compare(chosen, chosen.map(valOf));
-        h += '<section class="card"><h2>Portföy karşılaştırma</h2><p class="hint">' + (ids.length >= 2 ? 'Seçtiğin ' + ids.length + ' portföy.' : 'Tüm portföyler (karşılaştırmak istediklerini kutucukla seç).') + '</p><div class="tscroll"><table class="atable stack lab-cmp"><thead><tr><th>Portföy</th><th>Skor</th><th>K/Z</th><th>Oynaklık</th><th>En büyük düşüş</th><th>Varlık</th><th>Alınan / bekleyen</th></tr></thead><tbody>' +
-          rows.map(function (r) { return '<tr><td><a href="#analiz/portfoylerim/' + esc(r.id) + '">' + esc(r.name) + '</a></td><td>' + U.scoreBadge(r.score) + ' ' + esc(r.grade || '') + '</td><td class="' + cls(r.pnlPct) + '">' + pcS(r.pnlPct, 2) + '</td><td>' + (r.vol != null ? '%' + pc(r.vol) : '—') + '</td><td>' + (r.mdd != null ? '−%' + pc(Math.abs(r.mdd)) : '—') + '</td><td>' + r.n + '</td><td>' + r.held + ' / ' + r.pending + '</td></tr>'; }).join('') + '</tbody></table></div><p class="hint">K/Z son güncellemedeki değerdir ("Tümünü güncelle" canlı fiyatlardan yeniler).</p></section>';
+        h += '<section class="card"><h2>Portföy karşılaştırma</h2><p class="hint">' + (ids.length >= 2 ? 'Seçtiğin ' + ids.length + ' portföy.' : 'Tüm portföyler (karşılaştırmak istediklerini kutucukla seç).') + '</p><div class="tscroll"><table class="atable stack lab-cmp"><thead><tr><th>Portföy</th><th>Skor</th><th>K/Z</th><th>Geçmiş 1 yıl</th><th>Yıllık (geçmiş, maks)</th><th>Beklenen 1 yıl (medyan)</th><th>1 yıl %5–%95</th><th>1 yıl zarar olasılığı</th><th>Oynaklık</th><th>En büyük düşüş</th><th>Varlık</th><th>Alınan / bekleyen</th></tr></thead><tbody>' +
+          rows.map(function (r) { return '<tr><td><a href="#analiz/portfoylerim/' + esc(r.id) + '">' + esc(r.name) + '</a></td><td>' + U.scoreBadge(r.score) + ' ' + esc(r.grade || '') + '</td><td class="' + cls(r.pnlPct) + '">' + pcS(r.pnlPct, 2) + '</td>' + perfCells(r) + '<td>' + (r.vol != null ? '%' + pc(r.vol) : '—') + '</td><td>' + (r.mdd != null ? '−%' + pc(Math.abs(r.mdd)) : '—') + '</td><td>' + r.n + '</td><td>' + r.held + ' / ' + r.pending + '</td></tr>'; }).join('') + '</tbody></table></div><p class="hint">K/Z son güncellemedeki değerdir ("Tümünü güncelle" canlı fiyatlardan yeniler). Geçmiş ve beklenen getiriler, portföy detayı açıldığında hesaplanıp kaydedilir (bugünkü ağırlıklarla; tahmin istatistikseldir, garanti değildir).' + (rows.some(function (r) { return !r.perf; }) ? ' "—" görünenleri bir kez açman yeterli.' : '') + '</p></section>';
       }
       return h;
     }
@@ -442,7 +460,7 @@
       saveF(); rememberForm(); X.render();
     }
     function actions(t) {
-      return {
+      var A0 = {
         'lab-f': function () { setF(t.dataset.f, t.dataset.v); },
         'lab-std': function () { F = L.defaultFilters(); saveF(); rememberForm(); X.render(); X.toast('Standart filtre yüklendi: Dengeli profil, helal filtresi açık.'); },
         'lab-create': function () { create(); },
@@ -456,10 +474,13 @@
         'lab-apply': function () { var P = byId(t.dataset.id); if (P) U.applyLab(P); },
         'lab-print': function () { window.print(); }
       };
+      if (PUI) { var PA = PUI.actions(t); Object.keys(PA).forEach(function (k) { A0[k] = PA[k]; }); }
+      return A0;
     }
     function onChange(el) {
       if (el.dataset && el.dataset.labF) { setF(el.dataset.labF, el.type === 'checkbox' ? el.checked : el.value); return true; }
       if (el.dataset && el.dataset.labCmp) { cmpSel[el.dataset.labCmp] = el.checked; X.render(); return true; }
+      if (PUI && PUI.onChange(el)) return true;
       return false;
     }
     return { builderPage: builderPage, listPage: listPage, detailPage: detailPage, actions: actions, onChange: onChange, report: report, refreshOne: refreshOne, filters: function () { return F; }, job: function () { return job; } };

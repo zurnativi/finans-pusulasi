@@ -37,11 +37,11 @@
     ok(rd('css/style.css').indexOf('input:not([type])') >= 0);
   });
 
-  test('Dokunulmayanlar: migrate.js ve arka plan izleme/kutu yolları aynı; sürüm 8.8.3 her yerde', function () {
+  test('Dokunulmayanlar: migrate.js ve arka plan izleme/kutu yolları aynı; sürüm 8.9.0 her yerde', function () {
     var sw = rd('sw.js'), idx = rd('index.html');
-    eq(IB.APP_VERSION, '8.8.3');
-    ok(/VERSION = '8\.8\.3'/.test(sw));
-    ok(idx.indexOf('?v=8.8.0') < 0 && idx.indexOf('css/style.css?v=8.8.3') > 0 && idx.indexOf('js/app.js?v=8.8.3') > 0);
+    eq(IB.APP_VERSION, '8.9.0');
+    ok(/VERSION = '8\.9\.0'/.test(sw));
+    ok(idx.indexOf('?v=8.8.0') < 0 && idx.indexOf('css/style.css?v=8.9.0') > 0 && idx.indexOf('js/app.js?v=8.9.0') > 0);
     var mg = rd('js/migrate.js');
     ok(/sifirdan-midas-v2-2026-11-25/.test(mg) && /tek-seferlik-2\.enc\.json/.test(mg));
     var bg = rd('js/bgwatch.js'), inbox = rd('js/inbox.js');
